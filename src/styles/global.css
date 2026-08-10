@@ -1,0 +1,200 @@
+:root {
+  --gold: #f5c542;
+  --ink: #1c1913;
+  --page: #fdfcfa;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #e8e5df;
+  font-family: Manrope, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+}
+
+a {
+  color: #b0891f;
+}
+a:hover {
+  color: #c99a1e;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+input {
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+[dir='rtl'] {
+  font-family: 'IBM Plex Sans Arabic', Manrope, system-ui, sans-serif;
+}
+
+/* Visible keyboard focus, suppressed for pointer interaction. */
+:focus-visible {
+  outline: 2px solid #b0891f;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Scroll panes hide their scrollbars, as in the design. */
+.scr {
+  scrollbar-width: none;
+}
+.scr::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Horizontal rails are draggable with a pointer. */
+.hscroll {
+  cursor: grab;
+  scroll-behavior: auto;
+}
+.hscroll:active {
+  cursor: grabbing;
+}
+
+/*
+ * Latin-and-digit runs such as "-20%" or "0.8 km" keep their own direction so
+ * the bidi algorithm cannot reorder them inside Arabic text.
+ */
+.ltr-run {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.press {
+  transition: transform 0.12s ease, filter 0.12s ease, opacity 0.12s ease;
+}
+.press:active {
+  transform: scale(0.98);
+}
+
+/* --- Phone shell -------------------------------------------------------- */
+
+.stage {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 34px;
+}
+
+.bezel {
+  width: 356px;
+  background: #e9e6df;
+  border-radius: 46px;
+  padding: 11px;
+  box-shadow: 0 46px 100px -34px rgba(60, 50, 20, 0.5), 0 0 0 1px #d6d2c8,
+    inset 0 0 0 2px #f3f1ec;
+}
+
+.viewport {
+  position: relative;
+  width: 334px;
+  height: 724px;
+  border-radius: 36px;
+  overflow: hidden;
+  background: #fdfcfa;
+  color: #1c1913;
+}
+
+.notch {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 104px;
+  height: 26px;
+  background: #0d0c0a;
+  border-radius: 0 0 16px 16px;
+  z-index: 60;
+}
+
+/* On real handsets the app fills the screen and the bezel disappears. */
+@media (max-width: 430px), (max-height: 810px) and (pointer: coarse) {
+  .stage {
+    padding: 0;
+    align-items: stretch;
+  }
+  .bezel {
+    width: 100%;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fdfcfa;
+  }
+  .viewport {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+  }
+  .notch {
+    display: none;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes slideup {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

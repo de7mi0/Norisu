@@ -1,0 +1,83 @@
+import type { PayMethod } from '../types';
+
+/**
+ * Payment methods common in Saudi Arabia. These are presentational only — the
+ * prototype simulates checkout and never collects card or wallet credentials.
+ */
+export const PAY_METHODS: PayMethod[] = [
+  {
+    id: 'applepay',
+    name: 'Apple Pay',
+    nameAr: 'أبل باي',
+    badge: 'Pay',
+    badgeBg: '#000',
+    badgeFg: '#fff',
+    badgeBd: '#000',
+  },
+  {
+    id: 'mada',
+    name: 'mada',
+    nameAr: 'مدى',
+    sub: '•••• 4921',
+    subAr: '•••• 4921',
+    badge: 'mada',
+    badgeBg: '#fff',
+    badgeFg: '#159d8f',
+    badgeBd: '#159d8f',
+  },
+  {
+    id: 'samsung',
+    name: 'Samsung Pay',
+    nameAr: 'سامسونج باي',
+    sub: '•••• 5510',
+    subAr: '•••• 5510',
+    badge: 'Pay',
+    badgeBg: '#1428a0',
+    badgeFg: '#fff',
+    badgeBd: '#1428a0',
+  },
+  {
+    id: 'stc',
+    name: 'STC Pay',
+    nameAr: 'إس تي سي باي',
+    sub: 'Wallet balance SAR 340',
+    subAr: 'رصيد المحفظة 340 ر.س',
+    badge: 'stc',
+    badgeBg: '#4f008c',
+    badgeFg: '#fff',
+    badgeBd: '#4f008c',
+  },
+  {
+    id: 'visa',
+    name: 'Visa',
+    nameAr: 'فيزا',
+    sub: '•••• 7734',
+    subAr: '•••• 7734',
+    badge: 'VISA',
+    badgeBg: '#1a1f71',
+    badgeFg: '#fff',
+    badgeBd: '#1a1f71',
+  },
+  {
+    id: 'tabby',
+    name: 'Tabby',
+    nameAr: 'تابي',
+    sub: '4 interest-free payments',
+    subAr: '4 دفعات بدون فوائد',
+    badge: 'tabby',
+    badgeBg: '#3fd6c1',
+    badgeFg: '#04231f',
+    badgeBd: '#3fd6c1',
+  },
+  {
+    id: 'tamara',
+    name: 'Tamara',
+    nameAr: 'تمارا',
+    sub: 'Split in 3 · no interest',
+    subAr: 'قسّمها على 3 · بدون فوائد',
+    badge: 'tamara',
+    badgeBg: '#e9ddff',
+    badgeFg: '#5b2be0',
+    badgeBd: '#d3bdff',
+  },
+];
