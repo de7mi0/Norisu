@@ -27,11 +27,10 @@ jobs:
           node-version: 22
           cache: npm
 
-      # `enablement: true` switches Pages on the first time this runs, so the
-      # repository settings do not have to be changed by hand.
+      # Pages must be switched on once by an admin under
+      # Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
+      # The workflow token is not permitted to create the site itself.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - run: npm ci
 
