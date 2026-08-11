@@ -4,7 +4,46 @@ A bilingual (English / Arabic) salon booking platform for Saudi Arabia, implemen
 the "Saloni Prototype" design. It covers two apps in one shell: the **customer** booking
 journey and the **vendor** portal salon owners use to run their business.
 
-## Running it
+## ▶ Try it
+
+**https://de7mi0.github.io/Norisu/**
+
+Opens on a phone or a laptop, nothing to install. It redeploys automatically every time
+this branch is pushed. On a desktop it appears inside a phone frame; on a real phone it
+fills the screen.
+
+### A guided tour
+
+Some of the best parts aren't obvious, so here is the order worth clicking:
+
+1. **Book an appointment.** "I'm a customer" → tap the big featured salon → tap two
+   services (the total appears at the bottom) → Continue → pick a specialist → Pick a time
+   → choose a slot → Continue to payment → Confirm & pay. Greyed-out slots are already taken.
+2. **The waitlist.** On the time screen, pick the **5th date chip** — that day is fully
+   booked. Tap "Join the waitlist", then **wait about 3 seconds**: a seat opens, a banner
+   appears, and the freed slot turns green and becomes bookable. The banner follows you
+   around the app until you tap it or dismiss it with ✕.
+3. **Arabic.** Use the **EN / ع** toggle at the top-right of the home screen, or
+   Profile → Language. Every screen mirrors to right-to-left, including the tab bar.
+4. **Reschedule.** Bookings tab → Reschedule on any card.
+5. **The assistant.** The 🤖 button floating above the tab bar. Try the topic chips, or
+   type a message containing "refund" to see it branch.
+6. **The vendor portal.** Profile → **"Switch to vendor portal"**. Then explore the
+   dashboard, the calendar, and Services (toggle a service between Live and Hidden, or add
+   one with "+ Add a service"). Under **More** you'll find the photo gallery, team
+   management ("+ Add team member"), reviews, and waitlist settings. "Switch to customer
+   app" takes you back.
+
+### What's deliberately fake
+
+This is a prototype, so the things a real backend would do are simulated in the browser:
+payment is never actually taken and no card details are ever asked for or collected; the
+salon chat and the assistant reply from a built-in script; and all data is in memory, so
+**refreshing the page resets everything**. That's expected, not a bug.
+
+## Running it locally
+
+Only needed if you want to edit the code. Requires Node 20+.
 
 ```bash
 npm install
@@ -13,7 +52,8 @@ npm run build    # typecheck (tsc -b) + production build
 npm run lint     # oxlint
 ```
 
-Requires Node 20+.
+For a quick look without installing anything, this repo also opens directly in a browser
+sandbox at [stackblitz.com/github/de7mi0/Norisu](https://stackblitz.com/github/de7mi0/Norisu).
 
 ## What's implemented
 
