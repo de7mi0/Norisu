@@ -68,6 +68,7 @@ export function Staff() {
                   ★ {person.rating} · {localizeUnits(person.todayCount, state.lang)}
                 </div>
               </div>
+              {/* TODO(roadmap A1): not yet a control — editing a team member is unbuilt. */}
               <div style={{ font: `600 12px ${font.sans}`, color: color.goldLink }}>{t.edit}</div>
             </div>
           ))}

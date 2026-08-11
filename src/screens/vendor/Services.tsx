@@ -6,7 +6,13 @@ import { localizeUnits } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
-/** Vendor service catalogue with live/hidden switches and an add-service sheet. */
+/**
+ * Vendor service catalogue with live/hidden switches and an add-service sheet.
+ *
+ * TODO(roadmap A1): services can be added but not edited or removed. Reuse SheetModal in
+ * an edit mode prefilled from the record, and archive rather than delete. Note that
+ * bookings must keep the price they were made at. See ROADMAP.md.
+ */
 export function Services() {
   const { t, state, dispatch, isArabic, money } = useApp();
 

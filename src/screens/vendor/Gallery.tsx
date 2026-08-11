@@ -78,6 +78,11 @@ export function Gallery() {
           </div>
         ))}
 
+        {/*
+          TODO(roadmap A2): this button has no handler — uploading is unbuilt. Needs a file
+          input, client-side resize/compress, and a signed upload to object storage. Strip
+          EXIF server-side: phone photos carry GPS coordinates. See ROADMAP.md.
+        */}
         <button
           type="button"
           className="press"

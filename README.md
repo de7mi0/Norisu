@@ -34,6 +34,12 @@ Some of the best parts aren't obvious, so here is the order worth clicking:
    management ("+ Add team member"), reviews, and waitlist settings. "Switch to customer
    app" takes you back.
 
+### What's next
+
+[**ROADMAP.md**](ROADMAP.md) covers what's still to build — editing services, photo
+upload, and how a customer actually gets told a seat opened — plus the path from this
+prototype to apps on the App Store and Google Play.
+
 ### What's deliberately fake
 
 This is a prototype, so the things a real backend would do are simulated in the browser:

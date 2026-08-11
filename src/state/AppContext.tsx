@@ -124,6 +124,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'joinWaitlist' });
     flash(isArabic ? 'أضفناك لقائمة الانتظار ✓' : 'You’re on the waitlist ✓');
     // A seat frees up shortly afterwards, demonstrating the notification.
+    // TODO(roadmap A3): simulated. Really this is a server-side reaction to a cancellation
+    // that offers the slot to the first matching entry and holds it for a fixed window.
     later(() => {
       dispatch({ type: 'seatOpened' });
       flash(isArabic ? 'تفرّغ موعد! اضغط للحجز' : 'A spot opened! Tap to book');

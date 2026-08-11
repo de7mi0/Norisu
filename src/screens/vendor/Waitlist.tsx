@@ -151,6 +151,12 @@ export function Waitlist() {
                       {isArabic ? entry.arPref : entry.pref}
                     </div>
                   </div>
+                  {/*
+                    TODO(roadmap A3): only shows a toast on the owner's own screen — the
+                    customer is never actually contacted. Needs push (FCM/APNs) plus a
+                    WhatsApp template, offered one customer at a time with a ~10-15 min
+                    hold so the seat is not promised twice. See ROADMAP.md.
+                  */}
                   <button
                     type="button"
                     onClick={() =>
