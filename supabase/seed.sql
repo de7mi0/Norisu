@@ -4,9 +4,10 @@
 -- currently hardcodes in src/data/. Running this gives a new Supabase project
 -- something to show.
 --
--- Prerequisite: sign in to the app at least once so an account exists. This
--- script makes the OLDEST account the owner of all four demo salons, which is
--- what you want when it is only you testing.
+-- Prerequisite: at least one user must exist. Create one from the dashboard
+-- under Authentication -> Users -> Add user. This script makes the OLDEST
+-- account the owner of all four demo salons, which is what you want when it is
+-- only you testing.
 --
 -- Safe to re-run: it removes the demo salons by slug first.
 
@@ -134,3 +135,13 @@ end
 $$;
 
 commit;
+
+-- Confirmation. The Supabase SQL Editor displays returned rows but not notices,
+-- so this reports the result in a form you can actually see.
+-- Expect: 4 salons, 11 services, 6 staff, 28 working_hours.
+select
+  (select count(*) from salons)        as salons,
+  (select count(*) from services)      as services,
+  (select count(*) from staff)         as staff,
+  (select count(*) from working_hours) as working_hours,
+  (select count(*) from profiles)      as profiles;

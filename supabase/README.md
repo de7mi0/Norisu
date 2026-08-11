@@ -133,10 +133,14 @@ services and staff, so there's something to see once the app is connected. It
 also makes the account from step 4 their owner, so you can use the vendor portal.
 
 Same as step 2, with **[`seed.sql`](seed.sql)**: copy it, SQL Editor → New
-query, paste, Run.
+query, paste, Run. Safe to run more than once.
 
-This one **does** print something: a notice saying `Seeded 4 salons owned by …`.
-Safe to run more than once.
+This one ends with a count, so you get a table back rather than "No rows
+returned":
+
+| salons | services | staff | working_hours | profiles |
+| --- | --- | --- | --- | --- |
+| 4 | 11 | 6 | 28 | 1 |
 
 If it stops with *"No accounts exist yet"*, step 4 didn't complete — create the
 user first, then run it again.
@@ -165,9 +169,15 @@ database password.
 
 The SQL Editor shows errors in red beneath the query. The likely ones:
 
+**First, a note on what "nothing happened" means.** The Supabase SQL Editor
+displays returned rows, but **not** Postgres notices. A script that only creates
+things therefore reports `Success. No rows returned` — which is what success
+looks like, not a warning. If something had actually failed you would get a red
+error instead.
+
 | Message | What it means |
 | --- | --- |
-| `type "user_role" already exists` | The script has already been run. The database is fine — carry on to step 3. |
+| `type "user_role" already exists` | `setup.sql` has already been run. The database is fine — carry on. Re-running it always stops here, because the first thing it creates is already there. |
 | `relation "profiles" already exists` | Same: an earlier partial run. See "starting over" below. |
 | `extension "btree_gist" is not available` | Rare on hosted Supabase. Tell me and I'll rework the double-booking constraint to avoid it. |
 | `permission denied for schema auth` | You're running as a restricted role. Use the dashboard SQL Editor, which runs with the right privileges. |
