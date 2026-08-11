@@ -103,18 +103,26 @@ the dashboard in step 4 works either way.
 > `auth.users` table, which starts out empty. Salons have to belong to one of
 > those.
 
-The app has no sign-in screen yet, so create the first one from the dashboard:
+After step 2 the `profiles` table exists but is **empty**, which is correct — a
+row appears only once a user exists. Creating that user is this step.
 
-1. **Authentication** in the left sidebar → **Users**.
+The app has no sign-in screen yet, so create the first one from the dashboard.
+This happens under Authentication, not the Table Editor:
+
+1. Go to **[Authentication → Users](https://supabase.com/dashboard/project/_/auth/users)**
+   (or press **Ctrl+K** and type "Users").
 2. **Add user** (top right) → **Create new user**.
 3. Any email and password will do — it's your own test account, e.g.
    `owner@saloni.test`.
 4. Tick **Auto Confirm User** so it's usable immediately.
 5. **Create user**.
 
-The Users list should now show one row. Open **Table Editor → profiles** and
-there should be a matching row there too — created automatically by a trigger.
-Seeing it is a good sign: it means the schema from step 2 is working.
+Now open **Table Editor → profiles**. A row should have appeared, matching the
+user you just made. You did not create it — the trigger from step 2 did. That is
+the best confirmation that the schema is working.
+
+If the Users list has a row but `profiles` is still empty, the trigger did not
+fire; tell me and I'll look into it.
 
 ### Step 5 — Add the demo salons
 
