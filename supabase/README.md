@@ -35,34 +35,84 @@ All of the above are covered by assertions in `tests/01_policy_tests.sql`.
 
 ## Setting up a Supabase project
 
-**1. Create the project** at [supabase.com](https://supabase.com) → New project.
-Pick the region closest to Saudi Arabia (check the region list — Frankfurt is
-usually the nearest available). Save the database password it gives you; it is
-shown once.
+### Step 1 — Create the project
 
-**2. Apply the migrations.** In the dashboard, open **SQL Editor** → New query,
-paste the contents of `migrations/0001_schema.sql`, run it, then do the same for
-`migrations/0002_row_level_security.sql`. Order matters.
+At [supabase.com](https://supabase.com) → **New project**. Pick the region
+closest to Saudi Arabia (check the list — Frankfurt is usually the nearest
+available). Save the database password it shows you; it is only shown once.
 
-Or, with the [Supabase CLI](https://supabase.com/docs/guides/cli):
+Wait until the project finishes provisioning — a minute or two.
+
+### Step 2 — Run the setup script
+
+**Everything the app needs is in one file: [`setup.sql`](setup.sql).** You paste
+it once. You do not need the files in `migrations/` — `setup.sql` is built from
+them.
+
+1. Open **[setup.sql on GitHub](https://github.com/de7mi0/Norisu/blob/claude/saloni-prototype-dev-idl8tr/supabase/setup.sql)**.
+2. Click the **copy icon** at the top right of the file (its tooltip says "Copy
+   raw file"). That puts the whole file on your clipboard.
+3. Back in Supabase, click **SQL Editor** in the left sidebar — the icon that
+   looks like a database terminal.
+4. Click **"+ New query"** at the top of the list. You get a large empty text
+   area, which is where you were stuck: it starts blank and there is nothing to
+   choose or upload. It is just a box you paste SQL into.
+5. Click inside that box and paste (Ctrl+V, or Cmd+V on a Mac).
+6. Click the green **Run** button at the bottom right — or press Ctrl+Enter
+   (Cmd+Enter on a Mac).
+
+It takes a couple of seconds. **Success looks underwhelming:** a message like
+"Success. No rows returned". That is correct — the script creates tables, it
+doesn't return data. Nothing else will appear to happen.
+
+To confirm it worked, click **Table Editor** in the left sidebar. You should now
+see `profiles`, `salons`, `services`, `staff`, `bookings` and the rest, all
+empty. That's the real proof.
+
+<details>
+<summary>Prefer the command line?</summary>
+
+With the [Supabase CLI](https://supabase.com/docs/guides/cli), the migrations
+apply the same way:
 
 ```bash
 supabase link --project-ref <your-project-ref>
 supabase db push
 ```
+</details>
 
-**3. Turn on phone sign-in.** Authentication → Providers → Phone → enable. It
-needs an SMS provider (Twilio, MessageBird or Vonage) with its credentials
-entered there. While testing you can skip this and enable email sign-in instead —
-the schema doesn't care which one creates the account.
+### Step 3 — Turn on sign-in
 
-**4. Create your account.** Sign in to the app once so a row exists in
-`auth.users`. A trigger creates the matching profile automatically.
+Authentication → Providers.
 
-**5. Seed the demo data.** SQL Editor → paste `seed.sql` → run. It makes your
-account the owner of all four demo salons. It's safe to run more than once.
+- **Phone** is what Saloni will use in production, but it needs an SMS provider
+  (Twilio, MessageBird or Vonage) with credentials entered there, which costs
+  money and takes setup.
+- **For now, enable Email instead.** The schema does not care which method
+  creates the account, and you can switch to phone later without changing
+  anything in the database.
 
-**6. Collect the keys.** Settings → API:
+### Step 4 — Create your account
+
+Sign up once through whichever provider you enabled. Authentication → Users
+should then show one user. A trigger creates the matching row in `profiles`
+automatically — you can check that in the Table Editor.
+
+### Step 5 — Add the demo salons
+
+Same as step 2, with **[`seed.sql`](seed.sql)**: copy it, SQL Editor → New
+query, paste, Run.
+
+This one **does** print something: a notice saying `Seeded 4 salons owned by …`.
+It makes your account the owner of all four demo salons, and is safe to run more
+than once.
+
+If it stops with *"No accounts exist yet"*, step 4 didn't complete — sign in to
+the app first, then run it again.
+
+### Step 6 — Collect the keys
+
+Settings → API:
 
 | Key | Where it goes |
 | --- | --- |
@@ -74,6 +124,30 @@ The `anon` key is designed to be public; it ends up in the browser bundle no
 matter what you do, and row-level security is what actually protects the data.
 The `service_role` key bypasses every policy in `0002` — treat it like the
 database password.
+
+## If something goes wrong
+
+The SQL Editor shows errors in red beneath the query. The likely ones:
+
+| Message | What it means |
+| --- | --- |
+| `type "user_role" already exists` | The script has already been run. The database is fine — carry on to step 3. |
+| `relation "profiles" already exists` | Same: an earlier partial run. See "starting over" below. |
+| `extension "btree_gist" is not available` | Rare on hosted Supabase. Tell me and I'll rework the double-booking constraint to avoid it. |
+| `permission denied for schema auth` | You're running as a restricted role. Use the dashboard SQL Editor, which runs with the right privileges. |
+| `No accounts exist yet` (from `seed.sql`) | Step 4 hasn't happened — create your account first. |
+
+**Starting over.** Nothing here is precious while you're setting up. Run this in
+the SQL Editor to wipe the schema, then re-run `setup.sql`:
+
+```sql
+drop schema public cascade;
+create schema public;
+grant usage on schema public to anon, authenticated, service_role;
+```
+
+This deletes every table and all data in `public`. It leaves your account and
+the Supabase project itself alone.
 
 ## Running the tests
 
