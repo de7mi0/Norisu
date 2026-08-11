@@ -92,25 +92,53 @@ Authentication → Providers.
   creates the account, and you can switch to phone later without changing
   anything in the database.
 
-### Step 4 — Create your account
+This step only matters for signing in *from the app* later. Creating a user from
+the dashboard in step 4 works either way.
 
-Sign up once through whichever provider you enabled. Authentication → Users
-should then show one user. A trigger creates the matching row in `profiles`
-automatically — you can check that in the Table Editor.
+### Step 4 — Create the first app user
+
+> **Two different accounts, easily confused.** The account you log into
+> supabase.com with is *yours*, and the database knows nothing about it. What
+> the app needs is a **user of Saloni** — a row in your project's own
+> `auth.users` table, which starts out empty. Salons have to belong to one of
+> those.
+
+The app has no sign-in screen yet, so create the first one from the dashboard:
+
+1. **Authentication** in the left sidebar → **Users**.
+2. **Add user** (top right) → **Create new user**.
+3. Any email and password will do — it's your own test account, e.g.
+   `owner@saloni.test`.
+4. Tick **Auto Confirm User** so it's usable immediately.
+5. **Create user**.
+
+The Users list should now show one row. Open **Table Editor → profiles** and
+there should be a matching row there too — created automatically by a trigger.
+Seeing it is a good sign: it means the schema from step 2 is working.
 
 ### Step 5 — Add the demo salons
+
+**What it's for:** your database is currently empty — no salons, no services. The
+app would show a blank screen. This puts the four demo salons from the prototype
+(Maison Noir, The Barber Atelier, Rose & Oud, Kingdom Cuts) into it, with their
+services and staff, so there's something to see once the app is connected. It
+also makes the account from step 4 their owner, so you can use the vendor portal.
 
 Same as step 2, with **[`seed.sql`](seed.sql)**: copy it, SQL Editor → New
 query, paste, Run.
 
 This one **does** print something: a notice saying `Seeded 4 salons owned by …`.
-It makes your account the owner of all four demo salons, and is safe to run more
-than once.
+Safe to run more than once.
 
-If it stops with *"No accounts exist yet"*, step 4 didn't complete — sign in to
-the app first, then run it again.
+If it stops with *"No accounts exist yet"*, step 4 didn't complete — create the
+user first, then run it again.
 
 ### Step 6 — Collect the keys
+
+**What they're for:** these are how the app finds your project. Supabase hosts
+millions of databases; the URL says which one is yours, and the anon key is the
+credential the app presents when it connects. Without them the app has no idea
+your database exists. You send them to me and I put them in the app's config.
 
 Settings → API:
 
