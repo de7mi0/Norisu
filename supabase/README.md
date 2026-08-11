@@ -152,18 +152,33 @@ millions of databases; the URL says which one is yours, and the anon key is the
 credential the app presents when it connects. Without them the app has no idea
 your database exists. You send them to me and I put them in the app's config.
 
-Settings → API:
+You need two things: the **Project URL** and the **publishable key**.
 
-| Key | Where it goes |
+**The Project URL** is easiest to read off your browser's address bar. Any
+dashboard page looks like:
+
+```
+https://supabase.com/dashboard/project/abcdefghijklmnop/editor
+                                       ^^^^^^^^^^^^^^^^ your project ref
+```
+
+The Project URL is that ref plus `.supabase.co`:
+`https://abcdefghijklmnop.supabase.co`. The green **Connect** button in the top
+bar shows it too, ready to copy.
+
+**The keys** are under Settings → API. Supabase has two generations of key names
+and which you see depends on when the project was created — they do the same
+jobs:
+
+| Public key (safe in the app) | Secret key (never in the app) |
 | --- | --- |
-| Project URL | app config, safe to commit |
-| `anon` public key | app config, safe to commit |
-| `service_role` key | **server-side only — never in the app, never in git** |
+| `sb_publishable_…` | `sb_secret_…` |
+| `anon` `eyJ…` *(older projects)* | `service_role` `eyJ…` *(older projects)* |
 
-The `anon` key is designed to be public; it ends up in the browser bundle no
-matter what you do, and row-level security is what actually protects the data.
-The `service_role` key bypasses every policy in `0002` — treat it like the
-database password.
+The public key is designed to be public: it ships inside the browser bundle no
+matter what you do, and the row-level security in `0002` is what actually
+protects the data. The secret key **bypasses every one of those policies** —
+treat it like the database password, and never put it in the app or in git.
 
 ## If something goes wrong
 
