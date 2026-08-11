@@ -1,15 +1,59 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { appReducer, initialState } from './appReducer';
-import { AppContext, dateAtOffset, type AppContextValue } from './context';
+import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } from './context';
 import { BOT_TOPICS, REPLY_DELAY, SALON_AUTO_REPLY, botReplyFor, type BotTopicKey } from './replies';
-import { findSalon } from '../data/salons';
-import { SERVICES, SLOTS, VAT_RATE, priceNow } from '../data/services';
-import { ANY_PROFESSIONAL, STAFF } from '../data/staff';
+import { demoCatalog, loadCatalog, type Catalog } from '../data/repository';
+import { SLOTS, VAT_RATE, priceNow } from '../data/services';
+import { ANY_PROFESSIONAL } from '../data/staff';
+import { isSupabaseConfigured } from '../lib/supabase';
 import { dictionaryFor, formatMoney } from '../i18n';
 import type { Booking, CustomerScreen } from '../types';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // The catalogue starts as the bundled sample data so the app renders
+  // immediately, then swaps to live rows once they arrive.
+  const [catalog, setCatalog] = useState<Catalog>(() => demoCatalog());
+  const [catalogSource, setCatalogSource] = useState<CatalogSource>(
+    isSupabaseConfigured ? 'loading' : 'demo',
+  );
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+
+    loadCatalog()
+      .then((loaded) => {
+        if (cancelled) return;
+        // An empty database means the seed has not been run; keep the demo
+        // data rather than showing an empty app.
+        if (loaded.salons.length === 0) {
+          setCatalogSource('demo');
+          return;
+        }
+        setCatalog(loaded);
+        setCatalogSource('live');
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setCatalogError(error instanceof Error ? error.message : String(error));
+        setCatalogSource('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Every simulated delay is tracked so it can be cancelled on unmount.
   const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
@@ -40,11 +84,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.lang],
   );
 
-  const salon = useMemo(() => findSalon(state.salonId), [state.salonId]);
+  const salon = useMemo(
+    () => catalog.salons.find((item) => item.id === state.salonId) ?? catalog.salons[0],
+    [catalog.salons, state.salonId],
+  );
+
+  const salonServices = useMemo(
+    () => catalog.servicesBySalon[salon?.id] ?? [],
+    [catalog.servicesBySalon, salon],
+  );
+
+  const salonStaff = useMemo(
+    () => catalog.staffBySalon[salon?.id] ?? [],
+    [catalog.staffBySalon, salon],
+  );
 
   const selectedServices = useMemo(
-    () => SERVICES.filter((service) => state.selected[service.id]),
-    [state.selected],
+    () => salonServices.filter((service) => state.selected[service.id]),
+    [salonServices, state.selected],
   );
 
   const totals = useMemo(() => {
@@ -55,8 +112,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [selectedServices]);
 
   const staffMember = useMemo(
-    () => STAFF.find((person) => person.id === state.staffId),
-    [state.staffId],
+    () => salonStaff.find((person) => person.id === state.staffId),
+    [salonStaff, state.staffId],
   );
 
   const staffName = staffMember
@@ -165,6 +222,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       arrow: isArabic ? '←' : '→',
       chevron: isArabic ? '‹' : '›',
       money,
+      catalogSource,
+      catalogError,
+      salons: catalog.salons,
+      salonServices,
+      salonStaff,
       salon,
       selectedServices,
       totals,
@@ -180,6 +242,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       openConversation,
     }),
     [
+      catalog.salons,
+      catalogError,
+      catalogSource,
       confirmBooking,
       dateSummary,
       flash,
@@ -189,6 +254,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       openConversation,
       pickBotTopic,
       salon,
+      salonServices,
+      salonStaff,
       selectedServices,
       sendBot,
       sendChat,

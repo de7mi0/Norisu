@@ -33,9 +33,15 @@ export interface Salon {
   name: string;
   ar: string;
   tags: string;
+  /** Set when the Arabic tags come from the database rather than translation. */
+  tagsAr?: string;
   cat: string;
-  rating: number;
+  /** As above, for the category label. */
+  catAr?: string;
+  /** Null for a salon with no reviews yet; the UI shows "New" instead of a score. */
+  rating: number | null;
   reviews: number;
+  /** Empty until the app asks for the customer's location. */
   distance: string;
   area: string;
   arArea: string;

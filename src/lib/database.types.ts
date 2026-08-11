@@ -1,0 +1,54 @@
+/**
+ * Row shapes for the tables this app reads, mirroring supabase/migrations/.
+ *
+ * Only the columns the app actually uses are listed. If you change the schema,
+ * change these to match — or regenerate the full set with the Supabase CLI:
+ *   supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
+ */
+
+export interface SalonRow {
+  id: string;
+  slug: string;
+  name_en: string;
+  name_ar: string;
+  tags_en: string;
+  tags_ar: string;
+  category_en: string;
+  category_ar: string;
+  area_en: string;
+  area_ar: string;
+  phone: string | null;
+  is_published: boolean;
+}
+
+export interface ServiceRow {
+  id: string;
+  salon_id: string;
+  name_en: string;
+  name_ar: string;
+  duration_minutes: number;
+  price_halalas: number;
+  discount_percent: number;
+  is_active: boolean;
+  is_archived: boolean;
+  sort_order: number;
+}
+
+export interface StaffRow {
+  id: string;
+  salon_id: string;
+  name_en: string;
+  name_ar: string;
+  role_en: string;
+  role_ar: string;
+  initials: string;
+  is_active: boolean;
+  is_archived: boolean;
+  sort_order: number;
+}
+
+export interface SalonRatingRow {
+  salon_id: string;
+  rating: number | null;
+  review_count: number | null;
+}

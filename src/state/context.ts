@@ -1,8 +1,17 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
-import type { Salon, Service } from '../types';
+import type { Salon, Service, StaffMember } from '../types';
 import type { BotTopicKey } from './replies';
+
+/**
+ * Where the catalogue on screen came from:
+ *   demo    — the bundled sample data; no backend configured
+ *   loading — the first fetch is in flight
+ *   live    — read from Supabase
+ *   error   — the backend was configured but unreachable, showing demo data
+ */
+export type CatalogSource = 'demo' | 'loading' | 'live' | 'error';
 
 /** The prototype's calendar starts on 31 July 2026. */
 const CALENDAR_START = { year: 2026, month: 6, day: 31 } as const;
@@ -26,6 +35,15 @@ export interface AppContextValue {
   arrow: string;
   chevron: string;
   money: (amount: number) => string;
+
+  /** Where the salon catalogue currently comes from. */
+  catalogSource: CatalogSource;
+  /** Set when the backend was configured but could not be reached. */
+  catalogError: string | null;
+  salons: Salon[];
+  /** Services and staff offered by the salon currently being viewed. */
+  salonServices: Service[];
+  salonStaff: StaffMember[];
 
   salon: Salon;
   selectedServices: Service[];

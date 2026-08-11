@@ -366,4 +366,60 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 15. The catalogue query the app actually issues.
+--     Names every column src/data/repository.ts reads, so renaming one here
+--     fails the tests rather than the app in someone's browser.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon_count integer;
+  service_count integer;
+  staff_count integer;
+begin
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+
+  select count(*) into salon_count from (
+    select id, slug, name_en, name_ar, tags_en, tags_ar, category_en, category_ar,
+           area_en, area_ar, phone, is_published
+    from salons
+    where is_published
+    order by name_en
+  ) q;
+
+  select count(*) into service_count from (
+    select id, salon_id, name_en, name_ar, duration_minutes, price_halalas,
+           discount_percent, is_active, is_archived, sort_order
+    from services
+    where is_active and not is_archived
+    order by sort_order
+  ) q;
+
+  select count(*) into staff_count from (
+    select id, salon_id, name_en, name_ar, role_en, role_ar, initials,
+           is_active, is_archived, sort_order
+    from staff
+    where is_active and not is_archived
+    order by sort_order
+  ) q;
+
+  -- The rating view must be readable too, even while it is empty.
+  perform salon_id, rating, review_count from salon_ratings;
+
+  if salon_count <> 2 then
+    raise exception 'FAIL 15: anon sees % published salons, expected 2', salon_count;
+  end if;
+  if service_count <> 1 then
+    raise exception 'FAIL 15: anon sees % live services, expected 1', service_count;
+  end if;
+  if staff_count <> 1 then
+    raise exception 'FAIL 15: anon sees % active staff, expected 1', staff_count;
+  end if;
+  raise notice 'PASS 15: the app''s catalogue query works for an anonymous visitor';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

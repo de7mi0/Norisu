@@ -29,7 +29,9 @@ export function Reviews() {
         }}
       >
         <div style={{ textAlign: 'center' }}>
-          <div style={{ font: `600 42px/1 ${font.serif}` }}>{salon.rating}</div>
+          <div style={{ font: `600 42px/1 ${font.serif}` }}>
+            {salon.rating ?? (isArabic ? 'جديد' : 'New')}
+          </div>
           <div style={{ font: `500 11px ${font.sans}`, color: color.goldDeep }} aria-hidden="true">
             ★★★★★
           </div>

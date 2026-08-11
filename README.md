@@ -40,12 +40,19 @@ Some of the best parts aren't obvious, so here is the order worth clicking:
 upload, and how a customer actually gets told a seat opened — plus the path from this
 prototype to apps on the App Store and Google Play.
 
-### What's deliberately fake
+### What's real and what isn't
 
-This is a prototype, so the things a real backend would do are simulated in the browser:
-payment is never actually taken and no card details are ever asked for or collected; the
-salon chat and the assistant reply from a built-in script; and all data is in memory, so
-**refreshing the page resets everything**. That's expected, not a bug.
+**Real:** the salons, services and staff you see are read from a Supabase database at
+startup — see [`supabase/`](supabase/) for the schema and its security policies. Change a
+price in the database and the app shows the new one on the next load.
+
+**Still simulated:** payment is never actually taken and no card details are ever asked
+for or collected; the salon chat and the assistant reply from a built-in script; and
+bookings, the waitlist and the vendor edits live only in the browser, so **refreshing the
+page resets them**. Those are the next things to connect.
+
+If the database can't be reached, the app falls back to bundled sample data after a few
+seconds and says so at the top of the home screen, rather than showing an empty list.
 
 ## Running it locally
 

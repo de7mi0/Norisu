@@ -1,8 +1,8 @@
 import { BottomBar, Screen } from '../../components/Screen';
 import { ChatIcon, PhoneIcon } from '../../components/icons';
 import { SALON_PHONE } from '../../data/salons';
-import { SERVICES, priceNow } from '../../data/services';
-import { localizeUnits, translateCategory } from '../../i18n';
+import { priceNow } from '../../data/services';
+import { localizeUnits, salonCategory } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -14,6 +14,7 @@ export function SalonDetail() {
     dispatch,
     isArabic,
     salon,
+    salonServices,
     selectedServices,
     totals,
     money,
@@ -156,7 +157,13 @@ export function SalonDetail() {
             color: color.muted,
           }}
         >
-          <span style={{ color: color.goldDeep, fontWeight: 600 }}>★ {salon.rating}</span>
+          {salon.rating != null ? (
+            <span style={{ color: color.goldDeep, fontWeight: 600 }}>★ {salon.rating}</span>
+          ) : (
+            <span style={{ color: color.goldDeep, fontWeight: 600 }}>
+              {isArabic ? 'جديد' : 'New'}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => dispatch({ type: 'go', screen: 'reviews' })}
@@ -164,11 +171,15 @@ export function SalonDetail() {
           >
             {isArabic ? `${salon.reviews} تقييم` : `${salon.reviews} reviews`}
           </button>
-          <span
-            aria-hidden="true"
-            style={{ width: 3, height: 3, background: '#c9c3b7', borderRadius: '50%' }}
-          />
-          <span className="ltr-run">{salon.distance}</span>
+          {salon.distance ? (
+            <>
+              <span
+                aria-hidden="true"
+                style={{ width: 3, height: 3, background: '#c9c3b7', borderRadius: '50%' }}
+              />
+              <span className="ltr-run">{salon.distance}</span>
+            </>
+          ) : null}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
@@ -196,7 +207,7 @@ export function SalonDetail() {
             }}
           >
             <div style={{ font: `700 12px ${font.sans}` }}>
-              {translateCategory(salon.cat, state.lang)}
+              {salonCategory(salon, state.lang)}
             </div>
             <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>
               {t.privateRooms}
@@ -254,7 +265,7 @@ export function SalonDetail() {
       </div>
 
       <div style={{ padding: '12px 24px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {SERVICES.map((service) => {
+        {salonServices.map((service) => {
           const active = Boolean(state.selected[service.id]);
           return (
             <button

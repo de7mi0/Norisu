@@ -1,12 +1,11 @@
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
-import { STAFF } from '../../data/staff';
 import { localizeUnits } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
 /** Step 1 of the booking flow: pick the specialist. */
 export function StaffPicker() {
-  const { t, state, dispatch, isArabic, backIcon, salon } = useApp();
+  const { t, state, dispatch, isArabic, backIcon, salon, salonStaff } = useApp();
   const chosen = state.staffId != null;
 
   return (
@@ -20,7 +19,7 @@ export function StaffPicker() {
       />
 
       <div style={{ padding: '22px 24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {STAFF.map((person) => {
+        {salonStaff.map((person) => {
           const active = state.staffId === person.id;
           return (
             <button

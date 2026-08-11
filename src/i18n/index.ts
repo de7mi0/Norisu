@@ -49,6 +49,27 @@ export function translateCategory(category: string, lang: Lang): string {
   return lang === 'ar' ? CATEGORY_TRANSLATIONS[category] ?? category : category;
 }
 
+/**
+ * A salon's tags and category. Rows from the database carry their own Arabic
+ * text, which is used in preference to translating the English — a salon may
+ * write tags the lookup table has never seen.
+ */
+export function salonTags(
+  salon: { tags: string; tagsAr?: string },
+  lang: Lang,
+): string {
+  if (lang !== 'ar') return salon.tags;
+  return salon.tagsAr || translateTags(salon.tags, 'ar');
+}
+
+export function salonCategory(
+  salon: { cat: string; catAr?: string },
+  lang: Lang,
+): string {
+  if (lang !== 'ar') return salon.cat;
+  return salon.catAr || translateCategory(salon.cat, 'ar');
+}
+
 export function translateStatus(status: string, lang: Lang): string {
   return lang === 'ar' ? STATUS_TRANSLATIONS[status] ?? status : status;
 }

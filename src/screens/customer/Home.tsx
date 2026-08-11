@@ -1,16 +1,18 @@
 import { LangToggle } from '../../components/LangToggle';
 import { Screen } from '../../components/Screen';
 import { PinIcon } from '../../components/icons';
-import { CATEGORIES, SALONS, matchesCategory } from '../../data/salons';
-import { translateTags } from '../../i18n';
+import { CATEGORIES, matchesCategory } from '../../data/salons';
+import { salonTags } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
 /** Discovery screen: featured salon, category filter, and nearby salons. */
 export function Home() {
-  const { t, state, dispatch, isArabic } = useApp();
+  const { t, state, dispatch, isArabic, salons: allSalons, catalogSource } = useApp();
 
-  const salons = SALONS.filter((salon) => matchesCategory(salon, state.activeCat));
+  const salons = allSalons.filter((salon) => matchesCategory(salon, state.activeCat));
+  // The first published salon is the one featured at the top.
+  const featured = allSalons[0];
 
   return (
     <Screen bottomInset={88}>
@@ -71,6 +73,35 @@ export function Home() {
         <LangToggle variant="pill" />
       </div>
 
+      {/*
+        Only shown when the catalogue is not live, so it is obvious that these
+        salons are samples rather than real rows. Silent in the normal case.
+      */}
+      {catalogSource === 'demo' || catalogSource === 'error' ? (
+        <div style={{ padding: '10px 24px 0' }}>
+          <span
+            style={{
+              display: 'inline-block',
+              font: `600 10px ${font.sans}`,
+              letterSpacing: '.06em',
+              color: color.mutedSoft,
+              background: color.surfaceSand,
+              border: `1px solid ${color.lineSand}`,
+              borderRadius: 12,
+              padding: '4px 10px',
+            }}
+          >
+            {catalogSource === 'error'
+              ? isArabic
+                ? 'تعذّر الاتصال — بيانات تجريبية'
+                : 'Could not reach the database — sample data'
+              : isArabic
+                ? 'بيانات تجريبية'
+                : 'Sample data'}
+          </span>
+        </div>
+      ) : null}
+
       <div style={{ padding: '18px 24px 0' }}>
         <div
           style={{ font: `500 11px ${font.sans}`, letterSpacing: '.24em', color: color.goldDeep }}
@@ -86,7 +117,7 @@ export function Home() {
 
       <button
         type="button"
-        onClick={() => dispatch({ type: 'openSalon', salonId: 'maison' })}
+        onClick={() => featured && dispatch({ type: 'openSalon', salonId: featured.id })}
         className="press"
         style={{
           display: 'block',
@@ -120,21 +151,23 @@ export function Home() {
             background: 'linear-gradient(180deg,rgba(0,0,0,0) 42%,rgba(20,15,3,.82) 100%)',
           }}
         />
-        <span
-          style={{
-            position: 'absolute',
-            top: 14,
-            insetInlineEnd: 14,
-            background: color.gold,
-            color: color.goldInkAlt,
-            font: `700 12px ${font.sans}`,
-            padding: '6px 11px',
-            borderRadius: 10,
-          }}
-          className="ltr-run"
-        >
-          -20%
-        </span>
+        {featured && featured.discount > 0 ? (
+          <span
+            style={{
+              position: 'absolute',
+              top: 14,
+              insetInlineEnd: 14,
+              background: color.gold,
+              color: color.goldInkAlt,
+              font: `700 12px ${font.sans}`,
+              padding: '6px 11px',
+              borderRadius: 10,
+            }}
+            className="ltr-run"
+          >
+            -{featured.discount}%
+          </span>
+        ) : null}
         <span
           style={{
             position: 'absolute',
@@ -146,12 +179,12 @@ export function Home() {
           }}
         >
           <span style={{ display: 'block', font: `600 26px/1 ${font.serif}` }}>
-            {isArabic ? 'ميزون نوار' : 'Maison Noir'}
+            {featured ? (isArabic ? featured.ar : featured.name) : ''}
           </span>
           <span
             style={{ display: 'block', font: `700 17px ${font.arabicDisplay}`, color: color.goldSoft }}
           >
-            {isArabic ? 'Maison Noir' : 'ميزون نوار'}
+            {featured ? (isArabic ? featured.name : featured.ar) : ''}
           </span>
           <span
             style={{
@@ -163,8 +196,10 @@ export function Home() {
               color: '#ece7dd',
             }}
           >
-            <span style={{ color: color.goldSoft }}>★ 4.9</span>
-            <span>{translateTags('Hair · Skin · Bridal', state.lang)}</span>
+            {featured?.rating != null ? (
+              <span style={{ color: color.goldSoft }}>★ {featured.rating}</span>
+            ) : null}
+            <span>{featured ? salonTags(featured, state.lang) : ''}</span>
           </span>
         </span>
       </button>
@@ -235,7 +270,7 @@ export function Home() {
                   {isArabic ? salon.ar : salon.name}
                 </span>
                 <span style={{ font: `600 11.5px ${font.sans}`, color: color.goldDeep }}>
-                  ★ {salon.rating}
+                  {salon.rating != null ? `★ ${salon.rating}` : isArabic ? 'جديد' : 'New'}
                 </span>
               </span>
               <span
@@ -246,7 +281,7 @@ export function Home() {
                   margin: '3px 0',
                 }}
               >
-                {translateTags(salon.tags, state.lang)}
+                {salonTags(salon, state.lang)}
               </span>
               <span
                 style={{
@@ -259,8 +294,13 @@ export function Home() {
                 }}
               >
                 <PinIcon />
-                {isArabic ? salon.arArea : salon.area} ·{' '}
-                <span className="ltr-run">{salon.distance}</span>
+                {isArabic ? salon.arArea : salon.area}
+                {salon.distance ? (
+                  <>
+                    {' · '}
+                    <span className="ltr-run">{salon.distance}</span>
+                  </>
+                ) : null}
               </span>
               <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ font: `600 11px ${font.sans}`, color: color.goldLink }}>
