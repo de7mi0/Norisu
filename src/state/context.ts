@@ -3,6 +3,7 @@ import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
 import type { Salon, Service, StaffMember } from '../types';
 import type { BotTopicKey } from './replies';
+import type { SessionValue } from './useSession';
 
 /**
  * Where the catalogue on screen came from:
@@ -51,6 +52,14 @@ export interface AppContextValue {
   staffName: string;
   dateSummary: string;
   slotSummary: string;
+
+  /** Who is signed in, and the profile row that goes with them. */
+  session: SessionValue;
+  /** Sends a passcode to the identifier currently typed into the sign-in sheet. */
+  requestPasscode: () => void;
+  /** Exchanges the typed passcode for a session. */
+  submitPasscode: () => void;
+  signOut: () => void;
 
   /** Shows a transient toast; a second call replaces the first. */
   flash: (message: string) => void;

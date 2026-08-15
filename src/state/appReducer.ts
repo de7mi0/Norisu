@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { INITIAL_BOOKINGS } from '../data/reviews';
 import { BOT_GREETING, MAX_FIELD_LENGTH, MAX_MESSAGE_LENGTH, SALON_GREETING } from './replies';
+import { defaultChannel, normalizeCode, type AuthChannel, type AuthFailure } from '../lib/auth';
 import { tile } from '../theme';
 
 export interface ServiceForm {
@@ -18,6 +19,37 @@ export interface ServiceForm {
   price: string;
   dur: string;
 }
+
+/**
+ * The sign-in sheet's own state. The session itself is not here — it lives with
+ * Supabase and is read through `useSession` — this is only what the two steps
+ * of the form need to draw themselves.
+ */
+export interface AuthForm {
+  channel: AuthChannel;
+  /** What the customer typed: a mobile number or an e-mail address. */
+  identifier: string;
+  code: string;
+  step: 'identifier' | 'code';
+  /** A request is in flight; the buttons are disabled while it is. */
+  pending: boolean;
+  error: AuthFailure | null;
+  /** When the last passcode went out, so the screen can time the resend. */
+  sentAt: number;
+}
+
+const emptyAuthForm: AuthForm = {
+  channel: defaultChannel,
+  identifier: '',
+  code: '',
+  step: 'identifier',
+  pending: false,
+  error: null,
+  sentAt: 0,
+};
+
+/** An identifier is longer than a service name but still worth capping. */
+const MAX_IDENTIFIER_LENGTH = 80;
 
 export interface StaffForm {
   name: string;
@@ -69,6 +101,10 @@ export interface AppState {
   staffModal: boolean;
   staffForm: StaffForm;
 
+  /** The sign-in sheet, which floats over whichever screen is showing. */
+  authOpen: boolean;
+  authForm: AuthForm;
+
   toast: string;
 }
 
@@ -110,6 +146,9 @@ export const initialState: AppState = {
   svcForm: { name: '', price: '', dur: '' },
   staffModal: false,
   staffForm: { name: '', role: '' },
+
+  authOpen: false,
+  authForm: emptyAuthForm,
 
   toast: '',
 };
@@ -162,6 +201,16 @@ export type Action =
   | { type: 'setStaffForm'; field: keyof StaffForm; value: string }
   | { type: 'saveStaff' }
   | { type: 'goOnboarding'; from: 'chooser' | 'v_more' }
+  | { type: 'openAuth' }
+  | { type: 'closeAuth' }
+  | { type: 'setAuthChannel'; channel: AuthChannel }
+  | { type: 'setAuthIdentifier'; value: string }
+  | { type: 'setAuthCode'; value: string }
+  | { type: 'authPending' }
+  | { type: 'authCodeSent'; identifier: string; at: number }
+  | { type: 'authFailed'; failure: AuthFailure }
+  | { type: 'authEditIdentifier' }
+  | { type: 'authSucceeded' }
   | { type: 'setToast'; message: string };
 
 function clamp(value: string, max: number): string {
@@ -379,6 +428,71 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'goOnboarding':
       return { ...state, screen: 'v_onboard', obBack: action.from };
+
+    case 'openAuth':
+      // A fresh form each time: a half-typed number from a dismissed attempt
+      // is never what the next one wants.
+      return { ...state, authOpen: true, authForm: emptyAuthForm };
+
+    case 'closeAuth':
+      return { ...state, authOpen: false, authForm: emptyAuthForm };
+
+    case 'setAuthChannel':
+      // Changing channel invalidates the identifier — a number is not an e-mail.
+      return {
+        ...state,
+        authForm: { ...emptyAuthForm, channel: action.channel },
+      };
+
+    case 'setAuthIdentifier':
+      return {
+        ...state,
+        authForm: {
+          ...state.authForm,
+          identifier: clamp(action.value, MAX_IDENTIFIER_LENGTH),
+          error: null,
+        },
+      };
+
+    case 'setAuthCode':
+      return {
+        ...state,
+        authForm: { ...state.authForm, code: normalizeCode(action.value), error: null },
+      };
+
+    case 'authPending':
+      return { ...state, authForm: { ...state.authForm, pending: true, error: null } };
+
+    case 'authCodeSent':
+      return {
+        ...state,
+        authForm: {
+          ...state.authForm,
+          step: 'code',
+          // Show the normalised form — the customer typed "0512 345 678" but
+          // the message went to "+966512345678", and that is what to confirm.
+          identifier: action.identifier,
+          // A resend clears digits already typed against the old passcode.
+          code: '',
+          pending: false,
+          error: null,
+          sentAt: action.at,
+        },
+      };
+
+    case 'authFailed':
+      return { ...state, authForm: { ...state.authForm, pending: false, error: action.failure } };
+
+    case 'authEditIdentifier':
+      return {
+        ...state,
+        authForm: { ...state.authForm, step: 'identifier', code: '', pending: false, error: null },
+      };
+
+    case 'authSucceeded':
+      // The sheet floats over whatever screen opened it, so closing it is all
+      // there is to do — the customer carries on where they left off.
+      return { ...state, authOpen: false, authForm: emptyAuthForm };
 
     case 'setToast':
       return { ...state, toast: action.message };

@@ -1,10 +1,12 @@
 import { LangToggle } from '../../components/LangToggle';
 import { useApp } from '../../state/context';
+import { accountLabel } from '../../state/account';
 import { color, font } from '../../theme';
 
 /** Entry screen: enter as a customer, or as a salon owner. */
 export function Chooser() {
-  const { t, arrow, dispatch } = useApp();
+  const { t, arrow, dispatch, session, isArabic } = useApp();
+  const signedIn = session.status === 'signedIn';
 
   const options = [
     {
@@ -113,6 +115,39 @@ export function Chooser() {
             </span>
           </button>
         ))}
+        {/* Signing in is optional — the catalogue is readable anonymously — so
+            it sits under the two ways in rather than blocking them. */}
+        {signedIn ? (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 6,
+              font: `500 12px ${font.sans}`,
+              color: '#cfc7b4',
+              marginTop: 2,
+            }}
+          >
+            <span>{t.authSignedInAs}</span>
+            <span className="ltr-run" style={{ color: color.goldSoft, fontWeight: 600 }}>
+              {accountLabel(session, isArabic)}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'openAuth' })}
+            style={{
+              font: `500 12px ${font.sans}`,
+              color: '#cfc7b4',
+              padding: '4px 0',
+              textAlign: 'center',
+            }}
+          >
+            {t.authHaveAccount}{' '}
+            <span style={{ color: color.goldSoft, fontWeight: 700 }}>{t.authSignIn}</span>
+          </button>
+        )}
         <LangToggle variant="dark" />
       </div>
     </div>

@@ -6,6 +6,15 @@
  *   supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
  */
 
+/** The signed-in user's own row. Created by a trigger on `auth.users`. */
+export interface UserProfileRow {
+  id: string;
+  role: 'customer' | 'vendor' | 'admin';
+  full_name: string;
+  phone: string | null;
+  locale: string;
+}
+
 export interface SalonRow {
   id: string;
   slug: string;

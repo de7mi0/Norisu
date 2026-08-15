@@ -1,8 +1,8 @@
 # Saloni — database
 
-The Postgres schema behind Saloni, built for Supabase. Nothing here is wired into
-the app yet: the prototype still runs on its in-memory demo data. This is the
-foundation that replaces it.
+The Postgres schema behind Saloni, built for Supabase. The app reads its
+catalogue from here and signs people in against it; bookings are still
+browser-only and are the next thing to move across.
 
 ```
 supabase/
@@ -83,17 +83,56 @@ supabase db push
 
 ### Step 3 — Turn on sign-in
 
-Authentication → Providers.
+The app has a sign-in screen, and it is passcode-only: you type an e-mail
+address or a mobile number, a six-digit code arrives, you type it back. There
+are no passwords anywhere in Saloni.
 
-- **Phone** is what Saloni will use in production, but it needs an SMS provider
-  (Twilio, MessageBird or Vonage) with credentials entered there, which costs
-  money and takes setup.
-- **For now, enable Email instead.** The schema does not care which method
-  creates the account, and you can switch to phone later without changing
-  anything in the database.
+**Authentication → Providers.**
 
-This step only matters for signing in *from the app* later. Creating a user from
-the dashboard in step 4 works either way.
+- **Email** — enable it. This is what runs today.
+- **Phone** is what Saloni will use in production, because an SMS code is the
+  Saudi norm. It needs an SMS provider (Twilio, MessageBird or Vonage) with
+  credentials entered there, which costs money and takes setup. Leave it off
+  until you have one.
+
+Two settings decide whether the codes actually arrive.
+
+**3a — Make the e-mail carry a code, not just a link.**
+
+Authentication → Emails → **Magic Link**. Supabase's stock template contains
+only a link. The app asks for a six-digit code, so the template has to include
+the token. Add this line to the template body:
+
+```html
+<p>Your Saloni code is: <strong>{{ .Token }}</strong></p>
+```
+
+Leave the existing `{{ .ConfirmationURL }}` link in place. The same mail then
+works both ways — type the code, or tap the link — and a customer who does
+either gets in.
+
+**3b — Allow the app's address to be redirected back to.**
+
+Authentication → URL Configuration → **Redirect URLs**. Add the addresses the
+app is served from, otherwise tapping the link in the e-mail goes nowhere:
+
+```
+https://de7mi0.github.io/Norisu/
+http://localhost:5173/
+```
+
+**Switching to SMS later.** Enable the Phone provider, then set
+`VITE_AUTH_PHONE_OTP=true` in [`.env`](../.env) and redeploy. That is the whole
+change on the app's side — the two steps are identical for both channels, so
+the screen simply starts offering the mobile-number option. The database does
+not care which method created an account.
+
+> **The 60-second rule.** Supabase rate-limits passcode requests to one per
+> minute per address, and its default of **4 e-mails per hour** on the built-in
+> SMTP is low enough to hit while testing. The app shows a countdown before it
+> will let you ask again; if you see "Too many attempts", that is this limit,
+> not a bug. For real use, configure your own SMTP under Authentication →
+> Emails → SMTP Settings.
 
 ### Step 4 — Create the first app user
 
@@ -106,20 +145,33 @@ the dashboard in step 4 works either way.
 After step 2 the `profiles` table exists but is **empty**, which is correct — a
 row appears only once a user exists. Creating that user is this step.
 
-The app has no sign-in screen yet, so create the first one from the dashboard.
-This happens under Authentication, not the Table Editor:
+You can now sign in from the app itself, and the first account will be created
+for you the first time you do. But `seed.sql` in step 5 needs an account to
+exist *before* it runs, so that it has an owner to hand the demo salons to —
+which is why this step comes first. Creating it from the dashboard happens
+under Authentication, not the Table Editor:
 
 1. Go to **[Authentication → Users](https://supabase.com/dashboard/project/_/auth/users)**
    (or press **Ctrl+K** and type "Users").
 2. **Add user** (top right) → **Create new user**.
-3. Any email and password will do — it's your own test account, e.g.
-   `owner@saloni.test`.
+3. **Use an e-mail address you can actually read.** The app signs in by sending
+   a code to it, so `owner@saloni.test` would lock you out of your own vendor
+   account. A password is required by this form but Saloni never uses it.
 4. Tick **Auto Confirm User** so it's usable immediately.
 5. **Create user**.
 
 Now open **Table Editor → profiles**. A row should have appeared, matching the
 user you just made. You did not create it — the trigger from step 2 did. That is
 the best confirmation that the schema is working.
+
+The `profiles` row starts with `role = 'customer'`. If this account is the salon
+owner, set it to `vendor` — the app shows the role on the profile screen, so you
+will see the change:
+
+```sql
+update profiles set role = 'vendor', full_name = 'Your Name'
+where id = (select id from auth.users order by created_at limit 1);
+```
 
 If the Users list has a row but `profiles` is still empty, the trigger did not
 fire; tell me and I'll look into it.

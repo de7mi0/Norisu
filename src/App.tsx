@@ -17,6 +17,7 @@ import { CUSTOMER_TAB_SCREENS, VENDOR_TAB_SCREENS } from './state/appReducer';
 import { color, font } from './theme';
 import type { CustomerScreen, VendorScreen } from './types';
 
+import { Auth } from './screens/Auth';
 import { AssistantBot } from './screens/customer/AssistantBot';
 import { Bookings } from './screens/customer/Bookings';
 import { Chat } from './screens/customer/Chat';
@@ -261,6 +262,9 @@ function Overlays() {
           <span aria-hidden="true">🤖</span>
         </button>
       ) : null}
+
+      {/* Above every screen and both tab bars, so it can be opened from any of them. */}
+      {state.authOpen ? <Auth /> : null}
 
       <Toast message={state.toast} />
     </>

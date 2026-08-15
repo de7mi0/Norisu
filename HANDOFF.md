@@ -1,7 +1,7 @@
 # Saloni — project handoff
 
 Everything a new contributor (or a new AI session) needs to pick this up. Current as of
-commit `112702d`.
+the authentication work on `claude/norisu-authentication-tgqvy7`.
 
 ---
 
@@ -59,6 +59,7 @@ src/
   styles/global.css         reset, fonts, keyframes, phone-frame CSS, .ltr-run
   lib/
     supabase.ts             client; `isSupabaseConfigured` false ⇒ demo mode
+    auth.ts                 ★ passcode sign-in, identifier normalisation, profile reads
     database.types.ts       row types for the tables the app reads
   data/
     repository.ts           ★ loads the catalogue from Supabase, maps rows → app types
@@ -68,10 +69,13 @@ src/
     index.ts                money/tags/category/units formatting helpers
   state/
     appReducer.ts           ★ all app state + actions (one reducer)
-    AppContext.tsx          provider: timers, catalogue loading, derived values
+    AppContext.tsx          provider: timers, catalogue loading, session, derived values
     context.ts              context object + `useApp()` hook + `dateAtOffset`
+    useSession.ts           who is signed in; listens to Supabase, does not drive it
+    account.ts              display name / label / initials for the signed-in user
     replies.ts              scripted chat/assistant content, delays, input caps
   components/               PhoneFrame, Screen, TabBar, SheetModal, Conversation, Toast, LangToggle, icons
+  screens/Auth.tsx          sign-in sheet, floats over any screen in either mode
   screens/customer/         12 screens
   screens/vendor/           9 screens
   hooks/useDragScroll.ts    mouse-drag for horizontal rails
@@ -86,7 +90,7 @@ supabase/
 ROADMAP.md                  backlog + path to the app stores
 ```
 
-**50 TypeScript files, ~6,800 lines. ~740 lines of SQL.**
+**54 TypeScript files, ~7,900 lines. ~740 lines of SQL.**
 
 ---
 
@@ -210,7 +214,9 @@ Supabase renamed its keys: `sb_publishable_` = old `anon`, `sb_secret_` = old `s
 | --- | --- |
 | Salons, services, staff, prices | **Live from Supabase** |
 | Salon ratings | Live (view); currently empty ⇒ "New" |
-| Auth / sign-in | **Not built.** No sign-in screen exists. Users are created from the Supabase dashboard. |
+| Auth / sign-in | **Real.** Passcode to e-mail (or SMS, when enabled). Session persists across reloads. |
+| Who you are | Real — the profile screen shows the signed-in account, its role, and a sign-out. |
+| Language preference | Real — stored on `profiles.locale`, so it follows the account, not the browser. |
 | Bookings | Browser-only. Lost on refresh. |
 | Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
 | Vendor edits (add service/staff, live-hidden toggle) | Browser-only. |
@@ -235,9 +241,12 @@ Grep `TODO(roadmap` — five markers, all cross-referenced to `ROADMAP.md`:
 
 ## 10. Suggested next steps
 
-1. **Authentication** — a real sign-in screen (phone OTP is the KSA norm; email is enabled for
-   now). Nothing else can be user-specific until this exists. **This is the recommended next task.**
-2. **Persist bookings** — write to `bookings` + `booking_items` (snapshot prices!), read "My bookings" back.
+1. ~~**Authentication**~~ — **done.** Passcode sign-in, session persistence, profile loading and
+   sign-out all work; see §12. Phone OTP is one flag away from being the primary channel.
+2. **Persist bookings** — write to `bookings` + `booking_items` (snapshot prices!), read "My bookings"
+   back. **This is the recommended next task**, and the first that needs `auth.uid()` — every
+   booking policy keys on it, so the plumbing is now in place.
+   The screens that still show fiction are named in §12.
 3. **Real availability** — replace the hardcoded `SLOTS`/`DISABLED_SLOTS` with a query over
    `working_hours`, service durations and existing bookings.
 4. Vendor CRUD (roadmap A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
@@ -259,3 +268,68 @@ The Claude Code environment's egress proxy **blocks `supabase.co` and `github.io
 agent working on this repo **cannot** query the live database or load the deployed site. Work
 around it by running Postgres locally with the same schema (`scripts/test-db.sh`) and by
 testing the app's fallback path; the live behaviour has to be confirmed in the user's browser.
+
+Playwright is not a dependency of this repo — install it ad hoc when you need it
+(`npm install --no-save playwright`, browser at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`).
+For anything that needs a *working* backend, `page.route()` the Supabase endpoints
+(`**/auth/v1/otp*`, `**/auth/v1/verify*`, `**/rest/v1/profiles*`) and answer them yourself. That
+exercises this app's own code end to end without reaching the network. It is how the sign-in flow
+below was checked; what it does **not** prove is that Supabase behaves as assumed, which still has
+to be confirmed in a real browser.
+
+---
+
+## 12. Authentication — how it works
+
+**Passcodes only. There is no password anywhere in Saloni**, so there is nothing to reset, store
+or leak. Both channels take the identical path — send a code to an identifier, verify it — which
+is why switching from e-mail to SMS is one flag rather than a rewrite.
+
+```
+Auth.tsx  ──dispatch──>  appReducer (authForm: the two steps)
+    │
+    └── requestPasscode / submitPasscode (AppContext)
+              └──> lib/auth.ts ──> Supabase Auth
+                                        │
+        useSession.ts <──onAuthStateChange──┘
+              └──> profiles row ──> account.ts ──> Profile screen
+```
+
+- **`lib/auth.ts`** is the only file that talks to Supabase Auth. Every call returns
+  `AuthFailure | null` rather than throwing: a wrong passcode is an ordinary outcome of signing
+  in, not an exception. Failures come back as **codes**, which `Auth.tsx` translates — so an
+  error reads in Arabic too, unlike Supabase's own English strings.
+- **`normalizePhone`** accepts what a Saudi customer actually types (`05x`, `5x`, `+9665x`,
+  `009665x`) and returns E.164, which is the only form Supabase takes.
+- **`useSession.ts`** listens to `onAuthStateChange` rather than driving the session — supabase-js
+  restores and refreshes it from storage itself, and a sign-in in another tab lands here too. The
+  profile is fetched from a **separate effect on purpose**: Supabase holds an internal lock while
+  an auth-change callback runs, and querying from inside one can deadlock.
+- **Nothing is gated.** Browsing, picking services and the vendor portal all still work signed
+  out, because RLS lets anonymous visitors read the published catalogue and nothing else is
+  user-specific yet. Gating arrives with persisted bookings, not before — a sign-in wall in front
+  of data that is identical for everyone would be theatre.
+- **`profiles.locale`** is the one genuinely per-account behaviour today: the account's language
+  wins on sign-in, and a change made afterwards is written back. The reconciliation is a single
+  effect in `AppContext.tsx` guarded by a ref; split into two effects it races itself and
+  overwrites the stored choice with whatever the browser was set to.
+
+**What still has to be true on the Supabase side** — all of it in `supabase/README.md` §3:
+the Magic Link e-mail template must contain `{{ .Token }}` (Supabase's stock template has only a
+link, and the app asks for a code), and the app's URL must be in the Redirect URLs list.
+
+### Known gaps
+
+- **Untested against real Supabase.** The sandbox cannot reach `supabase.co`, so the flow was
+  driven against stubbed endpoints. The unreachable-backend path is the one that was exercised
+  for real, and it reports honestly.
+- **Phone OTP is written but unexercised** — no SMS provider has ever been configured, so the
+  `type: 'sms'` branch has never sent anything. Set `VITE_AUTH_PHONE_OTP=true` after enabling
+  the provider.
+- **`profiles.full_name` is never set by the app.** A new account signs in with a blank name and
+  the profile screen falls back to the e-mail or number. There is no "edit your details" screen
+  yet — the Personal details row is still inert.
+- **The profile screen's other rows are still fiction** ("Saved salons 6", "3 cards"). They
+  belong to the persistence work, not to auth.
+- **`role` is displayed but never enforced.** Nothing checks it before opening the vendor portal,
+  because the portal is not yet reading per-owner data. When it does, that check is the gate.

@@ -422,4 +422,57 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 16. Sign-in: a user reads their own profile and nobody else's, and can save
+--     their language preference. These are the two policies src/lib/auth.ts
+--     depends on the moment somebody signs in.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  visible integer;
+  own_role user_role;
+  saved text;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"11111111-1111-1111-1111-111111111111"}',
+    true
+  );
+  set local role authenticated;
+
+  -- Four profiles exist; the policy narrows that to one.
+  select count(*) into visible from profiles;
+  if visible <> 1 then
+    raise exception 'FAIL 16a: customer A sees % profiles, expected only their own', visible;
+  end if;
+
+  -- Exactly the columns fetchProfile() selects.
+  select role into own_role from profiles
+  where id = '11111111-1111-1111-1111-111111111111';
+  perform id, role, full_name, phone, locale from profiles;
+  if own_role <> 'customer' then
+    raise exception 'FAIL 16b: new accounts default to role %, expected customer', own_role;
+  end if;
+
+  update profiles set locale = 'ar'
+  where id = '11111111-1111-1111-1111-111111111111';
+  select locale into saved from profiles
+  where id = '11111111-1111-1111-1111-111111111111';
+  if saved <> 'ar' then
+    raise exception 'FAIL 16c: language preference saved as %, expected ar', saved;
+  end if;
+
+  -- Writing somebody else's preference must change nothing.
+  update profiles set locale = 'ar'
+  where id = '22222222-2222-2222-2222-222222222222';
+  if found then
+    raise exception 'FAIL 16d: customer A rewrote another account''s profile';
+  end if;
+
+  raise notice 'PASS 16: a signed-in user reads and updates only their own profile';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

@@ -49,7 +49,6 @@ export const en = {
   reschedule: 'Reschedule',
   directions: 'Directions',
 
-  userName: 'Nora Al-Harbi',
   switchVendor: 'Switch to vendor portal',
 
   registerSalon: 'Register your salon',
@@ -131,6 +130,44 @@ export const en = {
   notify: 'Notify',
   waitlistOffMsg:
     "Waitlist is turned off. Customers won't be able to join when you're fully booked.",
+
+  authTitle: 'Sign in',
+  authCodeTitle: 'Enter your code',
+  authStep1: 'Step 1 of 2',
+  authStep2: 'Step 2 of 2',
+  authChannel: 'Sign in with',
+  authPhone: 'Mobile number',
+  authEmail: 'Email',
+  authPhoneHint: "We'll text you a 6-digit code. Saudi mobile numbers only for now.",
+  authEmailHint: "We'll email you a 6-digit code. No password to remember.",
+  authSentTo: 'We sent a 6-digit code to',
+  authCodeLabel: '6-DIGIT CODE',
+  authSend: 'Send code',
+  authVerify: 'Verify & sign in',
+  authWorking: 'Just a moment…',
+  authResend: 'Send another code',
+  authResendIn: 'You can ask for another code in',
+  authChange: 'Use a different number',
+  authNoPassword: 'Saloni has no passwords — every sign-in uses a fresh code.',
+  authSignIn: 'Sign in',
+  authSignOut: 'Sign out',
+  authGuest: 'Browsing as a guest',
+  authGuestSub: 'Sign in to keep your bookings',
+  authSignedInAs: 'Signed in',
+  authHaveAccount: 'Already have an account?',
+  authRoleCustomer: 'Customer',
+  authRoleVendor: 'Salon owner',
+  authRoleAdmin: 'Admin',
+
+  authBadPhone: "That doesn't look like a Saudi mobile number. Try 05X XXX XXXX.",
+  authBadEmail: 'Please enter a valid email address.',
+  authBadCode: "That code isn't right. Check the digits and try again.",
+  authExpiredCode: 'That code has expired. Ask for a new one.',
+  authTooMany: 'Too many attempts. Wait a minute before trying again.',
+  authProviderOff: 'This sign-in method is switched off for this project.',
+  authOffline: "Couldn't reach the server. Check your connection and try again.",
+  authFailed: "That didn't work. Please try again.",
+  authNoBackend: 'Sign-in needs a backend, and this build has none configured — the app is running on sample data.',
 };
 
 /** Every dictionary carries the same keys; values are plain strings. */

@@ -10,12 +10,14 @@ import {
 import { appReducer, initialState } from './appReducer';
 import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } from './context';
 import { BOT_TOPICS, REPLY_DELAY, SALON_AUTO_REPLY, botReplyFor, type BotTopicKey } from './replies';
+import { useSession } from './useSession';
 import { demoCatalog, loadCatalog, type Catalog } from '../data/repository';
 import { SLOTS, VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { CODE_LENGTH, normalizeIdentifier, sendPasscode, verifyPasscode } from '../lib/auth';
 import { dictionaryFor, formatMoney } from '../i18n';
-import type { Booking, CustomerScreen } from '../types';
+import type { Booking, CustomerScreen, Lang } from '../types';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
@@ -145,6 +147,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const session = useSession();
+  const { profile, setProfileLocale, signOut: endSession } = session;
+
+  // A signed-in customer's language belongs to their account, not to this
+  // browser, so it follows them to a new phone. The ref remembers what has
+  // already been reconciled for this account — without it the write-back would
+  // race the adoption and immediately overwrite the stored choice with
+  // whatever this browser happened to be set to.
+  const adopted = useRef<{ id: string; locale: Lang } | null>(null);
+  useEffect(() => {
+    if (!profile) {
+      // Cleared on sign-out, so signing back in adopts afresh.
+      adopted.current = null;
+      return;
+    }
+    if (adopted.current?.id !== profile.id) {
+      adopted.current = { id: profile.id, locale: profile.locale };
+      dispatch({ type: 'setLang', lang: profile.locale });
+      return;
+    }
+    if (state.lang !== adopted.current.locale) {
+      adopted.current = { id: profile.id, locale: state.lang };
+      setProfileLocale(state.lang);
+    }
+  }, [profile, setProfileLocale, state.lang]);
+
+  const requestPasscode = useCallback(() => {
+    const { channel, identifier, pending } = state.authForm;
+    if (pending) return;
+    const normalized = normalizeIdentifier(channel, identifier);
+    if (!normalized) {
+      const code = channel === 'phone' ? 'invalidPhone' : 'invalidEmail';
+      dispatch({ type: 'authFailed', failure: { code } });
+      return;
+    }
+    dispatch({ type: 'authPending' });
+    void sendPasscode(channel, normalized).then((failure) => {
+      if (failure) dispatch({ type: 'authFailed', failure });
+      else dispatch({ type: 'authCodeSent', identifier: normalized, at: Date.now() });
+    });
+  }, [state.authForm]);
+
+  const submitPasscode = useCallback(() => {
+    const { channel, identifier, code, pending } = state.authForm;
+    if (pending) return;
+    const normalized = normalizeIdentifier(channel, identifier);
+    if (!normalized) {
+      dispatch({ type: 'authEditIdentifier' });
+      return;
+    }
+    if (code.length !== CODE_LENGTH) {
+      dispatch({ type: 'authFailed', failure: { code: 'invalidCode' } });
+      return;
+    }
+    dispatch({ type: 'authPending' });
+    void verifyPasscode(channel, normalized, code).then((failure) => {
+      if (failure) {
+        dispatch({ type: 'authFailed', failure });
+        return;
+      }
+      dispatch({ type: 'authSucceeded' });
+      flash(isArabic ? 'تم تسجيل الدخول ✓' : 'Signed in ✓');
+    });
+  }, [flash, isArabic, state.authForm]);
+
+  const signOut = useCallback(() => {
+    void endSession().then(() => flash(isArabic ? 'تم تسجيل الخروج' : 'Signed out'));
+  }, [endSession, flash, isArabic]);
+
   const sendChat = useCallback(() => {
     if (!state.chatInput.trim()) return;
     dispatch({ type: 'sendChat' });
@@ -233,6 +304,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       staffName,
       dateSummary,
       slotSummary,
+      session,
+      requestPasscode,
+      submitPasscode,
+      signOut,
       flash,
       sendChat,
       sendBot,
@@ -253,13 +328,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       money,
       openConversation,
       pickBotTopic,
+      requestPasscode,
       salon,
       salonServices,
       salonStaff,
       selectedServices,
       sendBot,
       sendChat,
+      session,
+      signOut,
       slotSummary,
+      submitPasscode,
       staffName,
       state,
       t,

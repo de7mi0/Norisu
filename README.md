@@ -44,12 +44,17 @@ prototype to apps on the App Store and Google Play.
 
 **Real:** the salons, services and staff you see are read from a Supabase database at
 startup — see [`supabase/`](supabase/) for the schema and its security policies. Change a
-price in the database and the app shows the new one on the next load.
+price in the database and the app shows the new one on the next load. **Signing in is real
+too:** a six-digit code goes to your e-mail (SMS once a provider is configured), the session
+survives a reload, and the profile screen shows the account it belongs to. Saloni has no
+passwords at all.
 
 **Still simulated:** payment is never actually taken and no card details are ever asked
 for or collected; the salon chat and the assistant reply from a built-in script; and
 bookings, the waitlist and the vendor edits live only in the browser, so **refreshing the
-page resets them**. Those are the next things to connect.
+page resets them**. Those are the next things to connect — which is also why nothing is
+locked behind signing in yet: there is not yet anything on screen that differs from one
+account to the next.
 
 If the database can't be reached, the app falls back to bundled sample data after a few
 seconds and says so at the top of the home screen, rather than showing an empty list.
@@ -115,7 +120,8 @@ stays simulated and runs entirely in the browser:
   wallet, or credential is ever collected or transmitted.
 - **Chat and the assistant reply from a local script** (`src/state/replies.ts`). Nothing
   is sent anywhere.
-- **Data is seeded and in-memory**, so it resets on reload.
+- **Bookings, the waitlist and vendor edits are in-memory**, so they reset on reload. The
+  catalogue and the session are not — those are real.
 
 The seams are deliberate: the data modules and the reducer's actions are where a real API
 would be introduced, without touching the screens.
