@@ -100,16 +100,15 @@ Two settings decide whether the codes actually arrive.
 **3a — Make the e-mail carry a code, not just a link.**
 
 Authentication → Emails → **Magic Link**. Supabase's stock template contains
-only a link. The app asks for a six-digit code, so the template has to include
-the token. Add this line to the template body:
+only a link, and it is English-only. The app asks for a six-digit code, so
+without the token there is nothing to type and sign-in cannot complete.
 
-```html
-<p>Your Saloni code is: <strong>{{ .Token }}</strong></p>
-```
-
-Leave the existing `{{ .ConfirmationURL }}` link in place. The same mail then
-works both ways — type the code, or tap the link — and a customer who does
-either gets in.
+Replace the whole **Message body** with
+[`email-templates/magic-link.html`](email-templates/magic-link.html). It carries
+the code *and* keeps the link, so a customer who taps instead of typing still
+gets in — and it says everything in both English and Arabic, because Supabase
+sends one template to everybody and cannot know which language the recipient
+chose in the app.
 
 **3b — Allow the app's address to be redirected back to.**
 

@@ -1,0 +1,117 @@
+<!--
+  Saloni — the sign-in e-mail.
+
+  Paste the whole of this file into Supabase:
+    Authentication → Emails → Magic Link → Message body
+
+  Two things make this different from Supabase's stock template:
+
+  1. It contains {{ .Token }}. The stock template has only a link, but the app
+     asks for a six-digit code, so without the token there is nothing to type
+     and sign-in cannot complete. The link is kept as well, so a customer who
+     taps it instead of typing gets in either way.
+
+  2. It is bilingual. Supabase sends one template to everybody — it does not
+     know which language the recipient chose in the app — so rather than pick
+     one, the message says the same thing twice: English, then Arabic in its
+     own right-to-left block. Roughly half of Saudi users would otherwise
+     receive a sign-in code they cannot read.
+
+  Written as tables with inline styles on purpose. Mail clients — Outlook
+  above all — strip <style> blocks, ignore flexbox and drop external fonts,
+  so this deliberately uses none of them.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#f4f1ea;padding:28px 12px;font-family:Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:480px;background:#ffffff;border-radius:16px;overflow:hidden;">
+
+        <!-- Wordmark. Both scripts, so the brand reads for either audience. -->
+        <tr>
+          <td align="center" style="background:#1c1913;padding:26px 24px;">
+            <div style="font-size:30px;font-weight:bold;color:#ffffff;letter-spacing:.5px;">
+              Saloni
+            </div>
+            <div dir="rtl" lang="ar" style="font-size:19px;color:#f5d97a;padding-top:4px;">
+              صالوني
+            </div>
+          </td>
+        </tr>
+
+        <!-- The code. Kept above everything else: it is the only thing most
+             people opened this message for. -->
+        <tr>
+          <td align="center" style="padding:32px 24px 8px;">
+            <div style="font-size:13px;color:#6a6459;padding-bottom:14px;">
+              Your sign-in code
+            </div>
+            <div style="font-family:'Courier New',Courier,monospace;font-size:34px;
+                        font-weight:bold;color:#1c1913;letter-spacing:8px;
+                        background:#f7f4ed;border:1px solid #eee9de;border-radius:12px;
+                        padding:16px 20px;display:inline-block;">
+              {{ .Token }}
+            </div>
+            <div style="font-size:12px;color:#8a857a;padding-top:14px;line-height:1.6;">
+              Enter it in the app to finish signing in.<br>
+              It expires in one hour and can be used once.
+            </div>
+          </td>
+        </tr>
+
+        <!-- The same code as a link, for anyone who would rather tap than type.
+             Supabase fills this in; the app reads the session out of the URL. -->
+        <tr>
+          <td align="center" style="padding:20px 24px 4px;">
+            <a href="{{ .ConfirmationURL }}"
+               style="background:#f5c542;color:#2a2205;text-decoration:none;
+                      font-size:14px;font-weight:bold;border-radius:12px;
+                      padding:14px 28px;display:inline-block;">
+              Or tap here to sign in
+            </a>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:26px 24px 0;">
+            <div style="border-top:1px solid #efece4;"></div>
+          </td>
+        </tr>
+
+        <!-- Arabic. dir="rtl" on the cell itself, because mail clients do not
+             reliably inherit direction from a parent element. -->
+        <tr>
+          <td dir="rtl" lang="ar" align="right" style="padding:22px 24px 8px;">
+            <div style="font-size:15px;font-weight:bold;color:#1c1913;padding-bottom:8px;">
+              رمز تسجيل الدخول الخاص بك
+            </div>
+            <div style="font-size:13px;color:#6a6459;line-height:1.8;">
+              أدخل الرمز أعلاه في التطبيق لإكمال تسجيل الدخول. الرمز صالح لمدة ساعة
+              واحدة ويُستخدم مرة واحدة فقط. أو اضغط على الزر أعلاه للدخول مباشرة.
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <td dir="rtl" lang="ar" align="right" style="padding:0 24px 24px;">
+            <div style="font-size:12px;color:#8a857a;line-height:1.8;">
+              إذا لم تطلب هذا الرمز، تجاهل هذه الرسالة — لن يتم تسجيل دخول أحد بدونه.
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="background:#f7f4ed;padding:18px 24px;">
+            <div style="font-size:11px;color:#a39e93;line-height:1.7;">
+              If you didn't request this code, ignore this message —
+              nobody can sign in without it.<br>
+              Saloni never asks for a password. There isn't one.
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>

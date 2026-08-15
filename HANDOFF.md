@@ -80,6 +80,7 @@ src/
   screens/vendor/           9 screens
   hooks/useDragScroll.ts    mouse-drag for horizontal rails
 supabase/
+  email-templates/magic-link.html       ★ the sign-in e-mail; bilingual, carries {{ .Token }}
   migrations/0001_schema.sql            tables, constraints, rating view
   migrations/0002_row_level_security.sql  30 policies + grants
   setup.sql                 GENERATED — the two migrations concatenated, for one-paste setup
@@ -314,9 +315,16 @@ Auth.tsx  ──dispatch──>  appReducer (authForm: the two steps)
   effect in `AppContext.tsx` guarded by a ref; split into two effects it races itself and
   overwrites the stored choice with whatever the browser was set to.
 
-**What still has to be true on the Supabase side** — all of it in `supabase/README.md` §3:
-the Magic Link e-mail template must contain `{{ .Token }}` (Supabase's stock template has only a
-link, and the app asks for a code), and the app's URL must be in the Redirect URLs list.
+**What still has to be true on the Supabase side** — all of it in `supabase/README.md` §3: the
+Magic Link e-mail template must be replaced with `supabase/email-templates/magic-link.html`
+(Supabase's stock template has only a link, and the app asks for a code), and the app's URL must
+be in the Redirect URLs list.
+
+**Arabic.** Postgres stores it byte-exact — the catalogue is bilingual already — and Supabase's
+own English-only *error* messages never reach the screen, because `lib/auth.ts` returns codes that
+the dictionaries translate. The one place Arabic genuinely did not reach was the sign-in e-mail:
+Supabase sends a single template to everybody and cannot know which language the recipient picked
+in the app, so the template says everything twice rather than choosing.
 
 ### Known gaps
 
