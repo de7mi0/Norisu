@@ -126,11 +126,13 @@ change on the app's side — the two steps are identical for both channels, so
 the screen simply starts offering the mobile-number option. The database does
 not care which method created an account.
 
-> **The 60-second rule.** Supabase rate-limits passcode requests to one per
-> minute per address, and its default of **4 e-mails per hour** on the built-in
-> SMTP is low enough to hit while testing. The app shows a countdown before it
-> will let you ask again; if you see "Too many attempts", that is this limit,
-> not a bug. For real use, configure your own SMTP under Authentication →
+> **Rate limits will bite you while testing.** Supabase allows one passcode per
+> minute per address, and the built-in e-mail service is capped at a handful of
+> messages per hour — the exact number is under Authentication → **Rate Limits**,
+> and Supabase has lowered it over time, so read it there rather than trusting a
+> number written down here. The app shows a countdown before it will let you ask
+> again; "Too many attempts" is this limit, not a bug. The built-in service is
+> for testing only — for real use, add your own SMTP under Authentication →
 > Emails → SMTP Settings.
 
 ### Step 4 — Create the first app user
