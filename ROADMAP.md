@@ -108,7 +108,7 @@ Nothing else can be real until data persists.
 - ~~**Phone-OTP authentication**~~ — **built**, as passcode sign-in with the roles and
   row-level security already in place. It runs on e-mail codes today; the SMS channel that is
   the Saudi norm is written and waits only on an SMS provider being paid for
-  (`VITE_AUTH_PHONE_OTP`). See `HANDOFF.md` §12.
+  (`VITE_AUTH_PHONE_OTP`). See `CLAUDE.md` §6.
 
 Recommended: **Supabase** (Postgres, auth, storage, realtime and row-level security in one
 product) rather than assembling four services. The swap-in points already exist in this

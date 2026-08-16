@@ -58,6 +58,7 @@ dashboard rather than assuming. The local test harness runs against Postgres 16.
 ```
 .env                          Supabase URL + publishable key (committed on purpose — see §7)
 .github/workflows/deploy.yml  builds and deploys to GitHub Pages on push to the default branch
+index.html                    fonts, favicon, meta
 scripts/
   test-db.sh                  applies migrations to a throwaway Postgres, runs assertions
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
@@ -99,7 +100,6 @@ supabase/
   tests/01_policy_tests.sql   16 assertions
   README.md                   Supabase setup walkthrough, written for a non-developer
 ROADMAP.md                    backlog + the path to the app stores
-HANDOFF.md                    longer-form architectural notes; this file is the summary
 ```
 
 ---
@@ -206,6 +206,13 @@ Link e-mail template must be replaced with `supabase/email-templates/magic-link.
 template contains only a link and the app asks for a six-digit code — and the app's URL must be in
 the Redirect URLs allow-list. Email OTP length must stay at 6; `CODE_LENGTH` in `lib/auth.ts`
 hardcodes it.
+
+**Why that e-mail is bilingual.** Supabase sends one identical template to everybody and cannot see
+`profiles.locale`, so it has no way to know which language the recipient chose in the app. Rather
+than pick one, the template says everything twice — English, then Arabic in its own `dir="rtl"`
+block, with the code above both since digits need no translation. Note the split this illustrates:
+Postgres stores Arabic byte-exact and the app translates Supabase's English-only *errors* itself,
+so the e-mail was the only place Arabic genuinely could not reach.
 
 ---
 
