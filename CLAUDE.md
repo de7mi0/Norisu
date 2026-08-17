@@ -25,7 +25,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 54 TypeScript files, ~7,900 lines. ~740 lines of schema SQL, ~1,440 including tests and seed.
+**Scale:** 55 TypeScript files, ~8,800 lines. ~740 lines of schema SQL, ~1,650 including tests and seed.
 
 ---
 
@@ -283,7 +283,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Sign-in** | **Real.** Passcode to e-mail (SMS when enabled). Session survives reloads. |
 | **Who you are** | **Real.** Profile screen shows the account, its role, and sign-out. |
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
-| **Bookings** | **Real.** Written to `bookings` + `booking_items` with prices snapshotted; read back into "My bookings". Survive a refresh. |
+| **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
 | Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
 | Vendor edits (add service/staff, live-hidden toggle) | Browser-only. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
@@ -352,13 +352,14 @@ constraint ignores cancelled rows, so the slot frees immediately.
    real, so the app can offer a time that is already taken and only find out on submit, when the
    double-booking constraint rejects it. The app handles that honestly ("That time was just taken")
    but it should not be reachable in the first place. It applies to rescheduling too.
-2. **Payments.** Deferred deliberately until closer to launch — see `ROADMAP.md` Part B, Phase 2.
-   Nothing is paid today: `payment_method` is recorded but `paid_at` stays null.
-3. **Gate the vendor portal on `role`**, once it reads per-owner data.
-4. Vendor CRUD (A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
-5. Payments, compliance, Capacitor wrap — see `ROADMAP.md` Part B. **Start the commercial
-   registration and payment-gateway paperwork early**; it runs for weeks in the background and is
-   the thing most likely to delay launch.
+2. **Gate the vendor portal on `role`**, and give it per-owner data — it currently shows the same
+   demo dashboard to everyone, signed in or not.
+3. Vendor CRUD (A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
+4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+   Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
+   commercial registration and payment-gateway paperwork early** — it runs for weeks in the
+   background and is the thing most likely to delay launch.
+5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
 
 ---
 
