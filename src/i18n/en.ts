@@ -179,6 +179,12 @@ export const en = {
 
   authWhyBooking: 'Your booking is ready — sign in to save it to your account.',
 
+  bookCancel: 'Cancel',
+  bookCancelAsk: 'Cancel this appointment? This cannot be undone.',
+  bookCancelKeep: 'Keep it',
+  bookCancelYes: 'Yes, cancel',
+  bookConfirmMove: 'Confirm new time',
+
 };
 
 /** Every dictionary carries the same keys; values are plain strings. */

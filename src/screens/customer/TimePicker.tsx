@@ -13,7 +13,8 @@ const DATE_OFFSETS = [0, 1, 2, 3, 4, 5];
 
 /** Step 2 of the booking flow: date, time slot, and the waitlist path. */
 export function TimePicker() {
-  const { t, state, dispatch, isArabic, backIcon, staffName, joinWaitlist } = useApp();
+  const { t, state, dispatch, isArabic, backIcon, staffName, joinWaitlist, rescheduleBooking } =
+    useApp();
 
   const dayIsFull = state.dateIdx === FULLY_BOOKED_DATE_INDEX;
   const slotChosen = state.slotIdx != null;
@@ -228,7 +229,14 @@ export function TimePicker() {
       <BottomBar>
         <button
           type="button"
-          onClick={() => slotChosen && dispatch({ type: 'go', screen: 'pay' })}
+          // Moving an existing appointment skips checkout entirely: it was paid
+          // for (or not) once already, and its prices are snapshotted. Sending
+          // it through payment again is what created a second booking.
+          onClick={() => {
+            if (!slotChosen) return;
+            if (state.reschedule) void rescheduleBooking();
+            else dispatch({ type: 'go', screen: 'pay' });
+          }}
           disabled={!slotChosen}
           className="press"
           style={{
@@ -242,13 +250,15 @@ export function TimePicker() {
             cursor: slotChosen ? 'pointer' : 'not-allowed',
           }}
         >
-          {slotChosen
+          {!slotChosen
             ? isArabic
-              ? 'المتابعة للدفع'
-              : 'Continue to payment'
-            : isArabic
               ? 'اختر وقتاً'
-              : 'Select a slot'}
+              : 'Select a slot'
+            : state.reschedule
+              ? t.bookConfirmMove
+              : isArabic
+                ? 'المتابعة للدفع'
+                : 'Continue to payment'}
         </button>
       </BottomBar>
     </Screen>

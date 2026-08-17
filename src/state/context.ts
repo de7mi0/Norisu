@@ -77,6 +77,9 @@ export interface AppContextValue {
   bookingsLoading: boolean;
   /** Reference of the booking just made, for the confirmation screen. */
   lastReference: string;
+  /** Moves the booking being rescheduled to the slot now selected. */
+  rescheduleBooking: () => Promise<void>;
+  cancelBooking: (bookingId: string) => Promise<void>;
 
   /** Shows a transient toast; a second call replaces the first. */
   flash: (message: string) => void;

@@ -589,4 +589,102 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 19. Rescheduling MOVES a booking. It must not leave the old one standing,
+--     which is what creating a second row did — the salon was then holding two
+--     appointments for one customer.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  before_count integer;
+  after_count  integer;
+  moved        record;
+  items_after  integer;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"22222222-2222-2222-2222-222222222222"}',
+    true
+  );
+  set local role authenticated;
+
+  select count(*) into before_count from bookings
+  where customer_id = '22222222-2222-2222-2222-222222222222';
+
+  -- Exactly the update src/data/bookings.ts issues.
+  update bookings
+     set starts_at = '2027-03-05 16:00+03', ends_at = '2027-03-05 16:45+03'
+   where reference = 'SL-APPTEST1';
+
+  select count(*) into after_count from bookings
+  where customer_id = '22222222-2222-2222-2222-222222222222';
+
+  if after_count <> before_count then
+    raise exception 'FAIL 19a: rescheduling changed the booking count from % to %',
+      before_count, after_count;
+  end if;
+
+  select starts_at, reference, total_halalas into moved
+  from bookings where reference = 'SL-APPTEST1';
+
+  if moved.starts_at <> '2027-03-05 16:00+03'::timestamptz then
+    raise exception 'FAIL 19b: booking did not move, starts_at is %', moved.starts_at;
+  end if;
+  -- The reference and the money must survive the move untouched.
+  if moved.total_halalas <> 13800 then
+    raise exception 'FAIL 19c: moving the booking changed its total to %', moved.total_halalas;
+  end if;
+
+  select count(*) into items_after from booking_items i
+  join bookings b on b.id = i.booking_id where b.reference = 'SL-APPTEST1';
+  if items_after <> 1 then
+    raise exception 'FAIL 19d: the price snapshot was disturbed (% items)', items_after;
+  end if;
+
+  raise notice 'PASS 19: rescheduling moves the booking instead of duplicating it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 20. A cancelled booking keeps its history but releases its slot, so somebody
+--     else can take the time.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  still_there integer;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"22222222-2222-2222-2222-222222222222"}',
+    true
+  );
+  set local role authenticated;
+
+  update bookings set status = 'cancelled', cancelled_at = now()
+  where reference = 'SL-APPTEST1';
+
+  select count(*) into still_there from bookings where reference = 'SL-APPTEST1';
+  if still_there <> 1 then
+    raise exception 'FAIL 20a: cancelling deleted the row instead of marking it';
+  end if;
+
+  -- The freed time is immediately bookable by the same staff member, because
+  -- the exclusion constraint ignores cancelled rows.
+  insert into bookings (
+    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    'SL-AFTERCANCEL', '22222222-2222-2222-2222-222222222222',
+    'aaaaaaaa-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001',
+    '2027-03-05 16:00+03', '2027-03-05 16:45+03', 'confirmed', 15000, 17250
+  );
+
+  raise notice 'PASS 20: cancelling keeps the record and frees the slot';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

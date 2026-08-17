@@ -98,7 +98,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   18 assertions
+  tests/01_policy_tests.sql   20 assertions
   README.md                   Supabase setup walkthrough, written for a non-developer
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -222,7 +222,7 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view. 30 RLS policies. 18 assertions.
+plus a `salon_ratings` view. 30 RLS policies. 20 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -248,7 +248,7 @@ professional") — there is nobody to compare against. Needs either assignment a
 separate capacity check. Recorded on the constraint itself.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-18 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+20 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -315,6 +315,13 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 - **`role` is displayed but never enforced.** Nothing checks it before opening the vendor portal.
 - The profile screen's other rows ("Saved salons 6", "3 cards") are **still fiction**.
 
+**Booking lifecycle.** Create, move and cancel all go through `data/bookings.ts`.
+**Rescheduling is an UPDATE, not a new row** — the customer keeps their reference, the price
+snapshot is untouched, and the salon sees one appointment that moved. It also skips checkout
+entirely, because the appointment was already paid for (or not) once. Cancelling sets
+`status = 'cancelled'` and keeps the row: it is history the salon needs, and the exclusion
+constraint ignores cancelled rows, so the slot frees immediately.
+
 **Booking gaps:**
 - **The two inserts are not one transaction.** supabase-js speaks REST, which cannot open one, so
   `createBooking` writes the booking, then its items, and deletes the booking again if the items
@@ -323,8 +330,6 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 - **Times are still invented.** The *dates* are real now, but `SLOTS`/`DISABLED_SLOTS` are
   hardcoded, so the app can offer a slot that is already taken. The database rejects it and the app
   says "That time was just taken" — correct, but it should not have been offered.
-- **"Reschedule" does not reschedule.** It re-enters the booking flow and creates a *second*
-  booking; the first is untouched. There is no cancel at all.
 - **"Any professional" is still outside the no-double-booking constraint** — `staff_id` is null,
   so Postgres has nobody to compare against.
 - **Nothing is paid.** `payment_method` is recorded but `paid_at` stays null, because no money
@@ -346,9 +351,9 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
    service durations and existing bookings. **This is the recommended next task**: bookings are now
    real, so the app can offer a time that is already taken and only find out on submit, when the
    double-booking constraint rejects it. The app handles that honestly ("That time was just taken")
-   but it should not be reachable in the first place.
-2. **Cancel and reschedule against the database.** "Reschedule" still only re-enters the booking
-   flow — it creates a second booking rather than moving the first, and there is no way to cancel.
+   but it should not be reachable in the first place. It applies to rescheduling too.
+2. **Payments.** Deferred deliberately until closer to launch — see `ROADMAP.md` Part B, Phase 2.
+   Nothing is paid today: `payment_method` is recorded but `paid_at` stays null.
 3. **Gate the vendor portal on `role`**, once it reads per-owner data.
 4. Vendor CRUD (A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
 5. Payments, compliance, Capacitor wrap — see `ROADMAP.md` Part B. **Start the commercial

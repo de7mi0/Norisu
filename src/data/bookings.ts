@@ -173,6 +173,68 @@ export async function createBooking(
   }
 }
 
+/**
+ * Moves an existing booking to a new time.
+ *
+ * This is an update, not a new row: the customer keeps their reference, the
+ * salon sees one appointment that moved rather than two, and the prices agreed
+ * on the original day stay snapshotted on the items untouched. Creating a
+ * second booking and leaving the first standing — which is what "Reschedule"
+ * used to do — double-books the salon for the same customer.
+ *
+ * The appointment keeps its original length, so the caller passes the duration
+ * read off the booking being moved.
+ */
+export async function rescheduleBooking(
+  bookingId: string,
+  date: Date,
+  time: string,
+  durationMs: number,
+): Promise<{ ok: true } | { error: BookingFailure }> {
+  if (!supabase) return { error: 'notConfigured' };
+
+  const start = startsAt(date, time);
+  if (Number.isNaN(start.getTime())) return { error: 'noSlot' };
+  const end = new Date(start.getTime() + (durationMs > 0 ? durationMs : 45 * 60_000));
+
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({ starts_at: start.toISOString(), ends_at: end.toISOString() })
+      .eq('id', bookingId);
+
+    if (error) {
+      // Somebody else holds the new time. The original booking is untouched,
+      // so the customer still has the appointment they started with.
+      const conflict = error.code === '23P01' || /exclusion|overlap/i.test(error.message ?? '');
+      return { error: conflict ? 'slotTaken' : 'network' };
+    }
+    return { ok: true };
+  } catch {
+    return { error: 'network' };
+  }
+}
+
+/**
+ * Cancels a booking. The row stays — it is history, and the salon needs to see
+ * that it happened — but `cancelled` is outside the no-double-booking
+ * constraint, so the slot is immediately bookable by somebody else.
+ */
+export async function cancelBooking(
+  bookingId: string,
+): Promise<{ ok: true } | { error: BookingFailure }> {
+  if (!supabase) return { error: 'notConfigured' };
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+      .eq('id', bookingId);
+    return error ? { error: 'network' } : { ok: true };
+  } catch {
+    return { error: 'network' };
+  }
+}
+
 /** A booking row joined to its items and salon, as the screens want it. */
 interface JoinedBooking extends BookingRow {
   booking_items: BookingItemRow[];
@@ -207,6 +269,7 @@ function mapBooking(row: JoinedBooking, index: number): Booking {
     id: row.id,
     reference: row.reference,
     startsAt: row.starts_at,
+    endsAt: row.ends_at,
     tile: TILES[index % TILES.length],
     salon: row.salons?.name_en ?? '',
     salonAr: row.salons?.name_ar ?? '',
@@ -217,7 +280,12 @@ function mapBooking(row: JoinedBooking, index: number): Booking {
     when: whenLabel(row.starts_at),
     staff: row.staff?.name_en ?? ANY_PROFESSIONAL.en,
     staffAr: row.staff?.name_ar ?? ANY_PROFESSIONAL.ar,
-    status: row.status === 'completed' ? 'COMPLETED' : 'CONFIRMED',
+    status:
+      row.status === 'cancelled'
+        ? 'CANCELLED'
+        : row.status === 'completed'
+          ? 'COMPLETED'
+          : 'CONFIRMED',
     totalHalalas: row.total_halalas,
   };
 }
@@ -244,14 +312,19 @@ export async function loadMyBookings(): Promise<Booking[]> {
   return data.map(mapBooking);
 }
 
-/** Split for the two tabs. A booking is "past" once its start time has gone. */
+/**
+ * Split for the two tabs. A booking is "past" once its start time has gone —
+ * and a cancelled one is past whatever its date says, because it is no longer
+ * something the customer is expected to turn up to.
+ */
 export function splitByTime(bookings: Booking[]): { upcoming: Booking[]; past: Booking[] } {
   const now = Date.now();
   const upcoming: Booking[] = [];
   const past: Booking[] = [];
   for (const booking of bookings) {
     const at = booking.startsAt ? new Date(booking.startsAt).getTime() : NaN;
-    if (Number.isNaN(at) || at >= now) upcoming.push(booking);
+    if (booking.status === 'CANCELLED') past.push(booking);
+    else if (Number.isNaN(at) || at >= now) upcoming.push(booking);
     else past.push(booking);
   }
   // Soonest first is what somebody checking their next appointment wants.

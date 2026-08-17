@@ -127,13 +127,15 @@ export interface Booking {
   when: string;
   staff: string;
   staffAr: string;
-  status: 'CONFIRMED' | 'COMPLETED';
+  status: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
 
   /** Set on bookings read back from the database; absent on demo rows. */
   id?: string;
   reference?: string;
-  /** ISO instant, used to sort and to split upcoming from past. */
+  /** ISO instants. Used to sort, to split upcoming from past, and — for the
+   *  pair — to keep an appointment's length when it is moved. */
   startsAt?: string;
+  endsAt?: string;
   salonId?: string;
   totalHalalas?: number;
 }

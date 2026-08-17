@@ -13,8 +13,10 @@ import { BOT_TOPICS, REPLY_DELAY, SALON_AUTO_REPLY, botReplyFor, type BotTopicKe
 import { useSession } from './useSession';
 import { demoCatalog, loadCatalog, type Catalog } from '../data/repository';
 import {
+  cancelBooking as cancelBookingRow,
   createBooking,
   loadMyBookings,
+  rescheduleBooking as moveBooking,
   splitByTime,
   type BookingFailure,
 } from '../data/bookings';
@@ -394,6 +396,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     userId,
   ]);
 
+  /** Moves the booking the customer tapped "Reschedule" on to the chosen slot. */
+  const rescheduleBooking = useCallback(async () => {
+    const target = [...upcomingBookings, ...pastBookings].find(
+      (booking) => booking.id === state.rescheduleId,
+    );
+    if (!state.rescheduleId || !target) {
+      // Nothing to move — most likely a demo booking with no database row.
+      dispatch({ type: 'cancelRescheduling' });
+      dispatch({ type: 'go', screen: 'bookings' });
+      return;
+    }
+
+    // Keep the appointment's original length; only its start is changing.
+    const durationMs =
+      target.startsAt && target.endsAt
+        ? new Date(target.endsAt).getTime() - new Date(target.startsAt).getTime()
+        : 0;
+
+    const result = await moveBooking(
+      state.rescheduleId,
+      dateAtOffset(state.dateIdx),
+      slotSummary,
+      durationMs,
+    );
+    if ('error' in result) {
+      flash(bookingFailureText(result.error));
+      return;
+    }
+    await refreshBookings();
+    dispatch({ type: 'cancelRescheduling' });
+    dispatch({ type: 'go', screen: 'bookings' });
+    flash(isArabic ? 'تم نقل موعدك ✓' : 'Your appointment has been moved ✓');
+  }, [
+    bookingFailureText,
+    flash,
+    isArabic,
+    pastBookings,
+    refreshBookings,
+    slotSummary,
+    state.dateIdx,
+    state.rescheduleId,
+    upcomingBookings,
+  ]);
+
+  const cancelBooking = useCallback(
+    async (bookingId: string) => {
+      const result = await cancelBookingRow(bookingId);
+      dispatch({ type: 'dismissCancel' });
+      if ('error' in result) {
+        flash(bookingFailureText(result.error));
+        return;
+      }
+      await refreshBookings();
+      flash(isArabic ? 'تم إلغاء الموعد' : 'Appointment cancelled');
+    },
+    [bookingFailureText, flash, isArabic, refreshBookings],
+  );
+
   const openConversation = useCallback(
     (target: 'chat' | 'bot') => {
       dispatch({ type: 'openConversation', target, from: state.screen as CustomerScreen });
@@ -432,6 +492,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bookingsPersisted: persistBookings,
       bookingsLoading,
       lastReference,
+      rescheduleBooking,
+      cancelBooking,
       flash,
       sendChat,
       sendBot,
@@ -468,6 +530,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       persistBookings,
       bookingsLoading,
       lastReference,
+      rescheduleBooking,
+      cancelBooking,
       staffName,
       state,
       t,

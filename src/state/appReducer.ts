@@ -70,7 +70,15 @@ export interface AppState {
   activeCat: string;
   saved: Record<string, boolean>;
   bookTab: 'upcoming' | 'past';
+  /** True while the time picker is moving an existing booking. */
   reschedule: boolean;
+  /**
+   * Which booking is being moved. Without this the flow could only ever create
+   * a new appointment, which is exactly the bug: the old one stayed booked.
+   */
+  rescheduleId: string | null;
+  /** Booking awaiting a "yes, really" before it is cancelled. */
+  cancelingId: string | null;
 
   /** Screen to return to when leaving chat or the assistant. */
   retScreen: CustomerScreen;
@@ -125,6 +133,8 @@ export const initialState: AppState = {
   saved: {},
   bookTab: 'upcoming',
   reschedule: false,
+  rescheduleId: null,
+  cancelingId: null,
 
   retScreen: 'home',
   obBack: 'chooser',
@@ -179,7 +189,10 @@ export type Action =
   | { type: 'pickPayment'; payId: string }
   | { type: 'bookingConfirmed' }
   | { type: 'setBookTab'; tab: 'upcoming' | 'past' }
-  | { type: 'startReschedule'; salonId: string }
+  | { type: 'startReschedule'; salonId: string; bookingId: string }
+  | { type: 'cancelRescheduling' }
+  | { type: 'askCancel'; bookingId: string }
+  | { type: 'dismissCancel' }
   | { type: 'openConversation'; target: 'chat' | 'bot'; from: CustomerScreen }
   | { type: 'setChatInput'; value: string }
   | { type: 'setBotInput'; value: string }
@@ -251,7 +264,7 @@ export function appReducer(state: AppState, action: Action): AppState {
       const { screen, reschedule, retScreen } = state;
       // Abandoning a reschedule returns to the bookings list, not the flow.
       if (screen === 'time' && reschedule) {
-        return { ...state, screen: 'bookings', reschedule: false };
+        return { ...state, screen: 'bookings', reschedule: false, rescheduleId: null };
       }
       if (screen === 'chat' || screen === 'bot') {
         return { ...state, screen: retScreen || 'home' };
@@ -268,6 +281,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         staffId: null,
         slotIdx: null,
         reschedule: false,
+        rescheduleId: null,
       };
 
     case 'setCategory':
@@ -301,6 +315,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         ...state,
         screen: 'confirm',
         reschedule: false,
+        rescheduleId: null,
         seatOpen: false,
         seatBannerDismissed: false,
         waitlistJoined: false,
@@ -310,7 +325,24 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, bookTab: action.tab };
 
     case 'startReschedule':
-      return { ...state, salonId: action.salonId, screen: 'time', reschedule: true };
+      return {
+        ...state,
+        salonId: action.salonId,
+        screen: 'time',
+        reschedule: true,
+        rescheduleId: action.bookingId,
+        slotIdx: null,
+        cancelingId: null,
+      };
+
+    case 'cancelRescheduling':
+      return { ...state, reschedule: false, rescheduleId: null };
+
+    case 'askCancel':
+      return { ...state, cancelingId: action.bookingId };
+
+    case 'dismissCancel':
+      return { ...state, cancelingId: null };
 
     case 'openConversation':
       return { ...state, retScreen: action.from, screen: action.target };

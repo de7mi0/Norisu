@@ -116,15 +116,17 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
 
 ### Phase 1 — Real business logic
 - ~~Bookings that persist~~ — **built.** Written to `bookings` + `booking_items` with prices
-  snapshotted, read back into "My bookings", and gated on sign-in. Still to do here: cancel and
-  reschedule against the database (today "Reschedule" creates a second booking), and moving the
-  two inserts into one Postgres function so they cannot half-succeed.
+  snapshotted, read back into "My bookings", and gated on sign-in. Rescheduling moves the booking
+  rather than creating a second one, and cancelling frees the slot while keeping the record.
+  Still to do here: moving the two inserts into one Postgres function so they cannot
+  half-succeed, and a cancellation policy (how late is too late to cancel free of charge).
 - **A genuine availability engine.** The `SLOTS` and `DISABLED_SLOTS` arrays in
   `src/data/services.ts` are hardcoded fiction. Real availability needs working hours,
   per-staff schedules, service durations and buffer time.
 - **Double-booking must be prevented by a database constraint**, not by the UI. Two people
   will tap the same slot at the same moment; the UI cannot stop that.
-- Booking lifecycle: confirm, cancel, reschedule, no-show, and a cancellation policy.
+- Booking lifecycle: ~~confirm, cancel, reschedule~~ built; **no-show** and a **cancellation
+  policy** (notice period, fees) still to do.
 - The vendor CRUD from backlog items 1 and 2.
 
 ### Phase 2 — Payments (start the paperwork now)

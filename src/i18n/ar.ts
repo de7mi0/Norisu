@@ -178,4 +178,10 @@ export const ar: Dictionary = {
 
   authWhyBooking: 'حجزك جاهز — سجّل الدخول لحفظه في حسابك.',
 
+  bookCancel: 'إلغاء',
+  bookCancelAsk: 'إلغاء هذا الموعد؟ لا يمكن التراجع عن ذلك.',
+  bookCancelKeep: 'الإبقاء عليه',
+  bookCancelYes: 'نعم، ألغِ',
+  bookConfirmMove: 'تأكيد الوقت الجديد',
+
 };

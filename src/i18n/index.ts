@@ -34,6 +34,7 @@ const CATEGORY_TRANSLATIONS: Record<string, string> = {
 const STATUS_TRANSLATIONS: Record<string, string> = {
   CONFIRMED: 'مؤكد',
   COMPLETED: 'مكتمل',
+  CANCELLED: 'ملغي',
 };
 
 /** Translates a " · "-joined tag list, e.g. "Hair · Skin · Bridal". */

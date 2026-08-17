@@ -18,6 +18,7 @@ export function Bookings() {
     bookingsPersisted,
     bookingsLoading,
     session,
+    cancelBooking,
   } = useApp();
 
   const showingUpcoming = state.bookTab === 'upcoming';
@@ -174,8 +175,9 @@ export function Bookings() {
                   <span
                     style={{
                       font: `600 10px ${font.sans}`,
-                      color: color.goldInkAlt,
-                      background: color.gold,
+                      color: booking.status === 'CANCELLED' ? color.muted : color.goldInkAlt,
+                      background:
+                        booking.status === 'CANCELLED' ? color.surfaceSand : color.gold,
                       padding: '3px 8px',
                       borderRadius: 8,
                       height: 'fit-content',
@@ -198,46 +200,114 @@ export function Bookings() {
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', borderTop: `1px solid ${color.lineFaint}` }}>
-              <button
-                type="button"
-                onClick={() => {
-                  // Saved bookings carry their salon id; demo ones only have a
-                  // name, so fall back to matching on that.
-                  const match =
-                    booking.salonId ??
-                    (salons.find(
-                      (candidate) =>
-                        candidate.name === booking.salon || candidate.ar === booking.salonAr,
-                    ) ?? currentSalon).id;
-                  dispatch({ type: 'startReschedule', salonId: match });
-                  flash(isArabic ? 'إعادة الجدولة — اختر وقتاً' : 'Rescheduling — pick a time');
-                }}
-                style={{
-                  flex: 1,
-                  textAlign: 'center',
-                  padding: 12,
-                  font: `600 12px ${font.sans}`,
-                  color: color.ink,
-                  borderInlineEnd: `1px solid ${color.lineFaint}`,
-                }}
-              >
-                {t.reschedule}
-              </button>
-              <button
-                type="button"
-                onClick={() => flash(t.openingMaps)}
-                style={{
-                  flex: 1,
-                  textAlign: 'center',
-                  padding: 12,
-                  font: `600 12px ${font.sans}`,
-                  color: color.goldLink,
-                }}
-              >
-                {t.directions}
-              </button>
-            </div>
+            {/* Cancelling is destructive and irreversible, so it asks first. */}
+            {state.cancelingId === booking.id ? (
+              <div style={{ borderTop: `1px solid ${color.lineFaint}`, padding: '12px 14px' }}>
+                <div
+                  style={{
+                    font: `600 12px ${font.sans}`,
+                    color: color.ink,
+                    marginBottom: 10,
+                  }}
+                >
+                  {t.bookCancelAsk}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: 'dismissCancel' })}
+                    className="press"
+                    style={{
+                      flex: 1,
+                      padding: 11,
+                      borderRadius: 11,
+                      border: `1.5px solid ${color.lineSand}`,
+                      font: `600 12px ${font.sans}`,
+                      color: color.ink,
+                    }}
+                  >
+                    {t.bookCancelKeep}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void cancelBooking(booking.id ?? '')}
+                    className="press"
+                    style={{
+                      flex: 1,
+                      padding: 11,
+                      borderRadius: 11,
+                      background: color.danger,
+                      color: '#fff',
+                      font: `700 12px ${font.sans}`,
+                    }}
+                  >
+                    {t.bookCancelYes}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', borderTop: `1px solid ${color.lineFaint}` }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Saved bookings carry their salon id; demo ones only have a
+                    // name, so fall back to matching on that.
+                    const match =
+                      booking.salonId ??
+                      (salons.find(
+                        (candidate) =>
+                          candidate.name === booking.salon || candidate.ar === booking.salonAr,
+                      ) ?? currentSalon).id;
+                    dispatch({
+                      type: 'startReschedule',
+                      salonId: match,
+                      bookingId: booking.id ?? '',
+                    });
+                    flash(isArabic ? 'إعادة الجدولة — اختر وقتاً' : 'Rescheduling — pick a time');
+                  }}
+                  style={{
+                    flex: 1,
+                    textAlign: 'center',
+                    padding: 12,
+                    font: `600 12px ${font.sans}`,
+                    color: color.ink,
+                    borderInlineEnd: `1px solid ${color.lineFaint}`,
+                  }}
+                >
+                  {t.reschedule}
+                </button>
+                {/* Only a saved, still-upcoming booking can be cancelled. */}
+                {booking.id && showingUpcoming ? (
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: 'askCancel', bookingId: booking.id ?? '' })}
+                    style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      padding: 12,
+                      font: `600 12px ${font.sans}`,
+                      color: color.danger,
+                      borderInlineEnd: `1px solid ${color.lineFaint}`,
+                    }}
+                  >
+                    {t.bookCancel}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => flash(t.openingMaps)}
+                  style={{
+                    flex: 1,
+                    textAlign: 'center',
+                    padding: 12,
+                    font: `600 12px ${font.sans}`,
+                    color: color.goldLink,
+                  }}
+                >
+                  {t.directions}
+                </button>
+              </div>
+            )}
           </article>
         ))}
       </div>
