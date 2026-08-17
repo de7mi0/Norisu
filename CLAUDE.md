@@ -73,6 +73,7 @@ src/
     database.types.ts         row types for the tables the app reads
   data/
     repository.ts           ★ loads the catalogue from Supabase, maps rows → app types
+    bookings.ts             ★ writes and reads bookings; the price snapshot lives here
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -97,7 +98,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   16 assertions
+  tests/01_policy_tests.sql   18 assertions
   README.md                   Supabase setup walkthrough, written for a non-developer
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -192,10 +193,11 @@ Auth.tsx  ──dispatch──>  appReducer (authForm: the two steps)
   lock while an auth-change callback runs, and querying from inside one can deadlock.
 - **SMS is written but unexercised.** Set `VITE_AUTH_PHONE_OTP=true` once an SMS provider is
   configured in Supabase. Phone OTP is the Saudi norm and should become the primary channel.
-- **Nothing is gated, deliberately.** Browsing, the booking flow and the vendor portal all work
-  signed out, because RLS lets anonymous visitors read the published catalogue and nothing on
-  screen yet differs between accounts. **Gating arrives with persisted bookings, not before** — a
-  sign-in wall in front of identical data would be theatre.
+- **One thing is gated: confirming a booking.** Browsing, picking services and the vendor portal
+  still work signed out, because RLS lets anonymous visitors read the published catalogue. But a
+  booking has to belong to somebody, so "Confirm & pay" opens the sign-in sheet with
+  `reason: 'booking'`, which tells the customer why they were interrupted. Nothing is written
+  before they sign in.
 - **`profiles.locale`** is the one genuinely per-account behaviour today: the account's language
   wins on sign-in, and a later change is written back. Its reconciliation is a **single effect in
   `AppContext.tsx` guarded by a ref**. Split into two effects it races itself and overwrites the
@@ -220,7 +222,7 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view. 30 RLS policies. 16 assertions.
+plus a `salon_ratings` view. 30 RLS policies. 18 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -246,7 +248,7 @@ professional") — there is nobody to compare against. Needs either assignment a
 separate capacity check. Recorded on the constraint itself.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-16 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+18 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -281,13 +283,13 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Sign-in** | **Real.** Passcode to e-mail (SMS when enabled). Session survives reloads. |
 | **Who you are** | **Real.** Profile screen shows the account, its role, and sign-out. |
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
-| Bookings | Browser-only. **Lost on refresh.** |
+| **Bookings** | **Real.** Written to `bookings` + `booking_items` with prices snapshotted; read back into "My bookings". Survive a refresh. |
 | Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
 | Vendor edits (add service/staff, live-hidden toggle) | Browser-only. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | Photos | CSS placeholder tiles. |
-| Availability (slots, disabled times) | **Hardcoded arrays** (`SLOTS`, `DISABLED_SLOTS` in `data/services.ts`), not from `working_hours`. |
+| Availability (slots, disabled times) | **Hardcoded arrays** (`SLOTS`, `DISABLED_SLOTS` in `data/services.ts`), not from `working_hours`. The *dates* are real (today onwards); the *times* are invented. |
 
 ---
 
@@ -313,8 +315,23 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 - **`role` is displayed but never enforced.** Nothing checks it before opening the vendor portal.
 - The profile screen's other rows ("Saved salons 6", "3 cards") are **still fiction**.
 
+**Booking gaps:**
+- **The two inserts are not one transaction.** supabase-js speaks REST, which cannot open one, so
+  `createBooking` writes the booking, then its items, and deletes the booking again if the items
+  fail. The compensating delete can itself fail. A Postgres function taking both in one call is the
+  real fix.
+- **Times are still invented.** The *dates* are real now, but `SLOTS`/`DISABLED_SLOTS` are
+  hardcoded, so the app can offer a slot that is already taken. The database rejects it and the app
+  says "That time was just taken" — correct, but it should not have been offered.
+- **"Reschedule" does not reschedule.** It re-enters the booking flow and creates a *second*
+  booking; the first is untouched. There is no cancel at all.
+- **"Any professional" is still outside the no-double-booking constraint** — `staff_id` is null,
+  so Postgres has nobody to compare against.
+- **Nothing is paid.** `payment_method` is recorded but `paid_at` stays null, because no money
+  moves. Do not treat a booking as paid.
+
 **Structural gaps:**
-- Bookings, the waitlist and vendor edits do not survive a refresh.
+- The waitlist and vendor edits do not survive a refresh.
 - Availability is invented, not computed from `working_hours` and existing bookings.
 - "Any professional" bookings are outside the no-double-booking constraint.
 - No storage bucket exists for photo upload.
@@ -325,11 +342,13 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 
 ## 11. Suggested next steps
 
-1. **Persist bookings** — write to `bookings` + `booking_items` (**snapshot prices!**), read "My
-   bookings" back. **This is the recommended next task**, and the first that genuinely needs
-   `auth.uid()`. Every booking policy keys on it, and the plumbing is now in place.
-2. **Real availability** — replace `SLOTS` / `DISABLED_SLOTS` with a query over `working_hours`,
-   service durations and existing bookings.
+1. **Real availability** — replace `SLOTS` / `DISABLED_SLOTS` with a query over `working_hours`,
+   service durations and existing bookings. **This is the recommended next task**: bookings are now
+   real, so the app can offer a time that is already taken and only find out on submit, when the
+   double-booking constraint rejects it. The app handles that honestly ("That time was just taken")
+   but it should not be reachable in the first place.
+2. **Cancel and reschedule against the database.** "Reschedule" still only re-enters the booking
+   flow — it creates a second booking rather than moving the first, and there is no way to cancel.
 3. **Gate the vendor portal on `role`**, once it reads per-owner data.
 4. Vendor CRUD (A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
 5. Payments, compliance, Capacitor wrap — see `ROADMAP.md` Part B. **Start the commercial

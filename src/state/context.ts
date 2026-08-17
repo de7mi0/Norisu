@@ -1,7 +1,7 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
-import type { Salon, Service, StaffMember } from '../types';
+import type { Booking, Salon, Service, StaffMember } from '../types';
 import type { BotTopicKey } from './replies';
 import type { SessionValue } from './useSession';
 
@@ -14,12 +14,17 @@ import type { SessionValue } from './useSession';
  */
 export type CatalogSource = 'demo' | 'loading' | 'live' | 'error';
 
-/** The prototype's calendar starts on 31 July 2026. */
-const CALENDAR_START = { year: 2026, month: 6, day: 31 } as const;
-
-/** The bookable date `offset` days after the start of the calendar. */
+/**
+ * The bookable date `offset` days from today, at midnight local time.
+ *
+ * This used to be a fixed 31 July 2026, which was harmless while bookings only
+ * lived in the browser. Now that they are written to the database with real
+ * timestamps, a frozen calendar would file every new appointment weeks in the
+ * past and put it straight into the "past" tab.
+ */
 export function dateAtOffset(offset: number): Date {
-  const date = new Date(CALENDAR_START.year, CALENDAR_START.month, CALENDAR_START.day);
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() + offset);
   return date;
 }
@@ -61,13 +66,25 @@ export interface AppContextValue {
   submitPasscode: () => void;
   signOut: () => void;
 
+  /** The two tabs of "My bookings", already split and sorted. */
+  upcomingBookings: Booking[];
+  pastBookings: Booking[];
+  /**
+   * True when bookings are being written to the database. False means there is
+   * no backend or nobody signed in, and they live only in this browser.
+   */
+  bookingsPersisted: boolean;
+  bookingsLoading: boolean;
+  /** Reference of the booking just made, for the confirmation screen. */
+  lastReference: string;
+
   /** Shows a transient toast; a second call replaces the first. */
   flash: (message: string) => void;
   sendChat: () => void;
   sendBot: () => void;
   pickBotTopic: (key: BotTopicKey) => void;
   joinWaitlist: () => void;
-  confirmBooking: () => void;
+  confirmBooking: () => void | Promise<void>;
   openConversation: (target: 'chat' | 'bot') => void;
 }
 

@@ -25,7 +25,6 @@ export const ar: Dictionary = {
   pickTime: 'اختر الوقت',
 
   selectDateTime: 'اختر التاريخ والوقت',
-  month: 'يوليو 2026',
   availableSlots: 'الأوقات المتاحة',
   reschedulingNote: 'إعادة الجدولة — اختر وقتاً جديداً',
 
@@ -167,4 +166,16 @@ export const ar: Dictionary = {
   authOffline: 'تعذّر الوصول إلى الخادم. تحقّق من اتصالك وحاول مجدداً.',
   authFailed: 'لم تنجح المحاولة. حاول مرة أخرى.',
   authNoBackend: 'تسجيل الدخول يحتاج خادماً، وهذه النسخة بلا إعدادات خادم — التطبيق يعمل ببيانات تجريبية.',
+
+  bookSignInTitle: 'حجوزاتك غير محفوظة',
+  bookSignInSub: 'سجّل الدخول وستجدها بانتظارك في أي وقت تعود فيه.',
+  bookLoading: 'جارٍ تحميل حجوزاتك…',
+  bookNoneUpcoming: 'لا مواعيد قادمة',
+  bookNoneUpcomingSub: 'عند الحجز، سيظهر الموعد هنا.',
+  bookNonePast: 'لا شيء هنا بعد',
+  bookNonePastSub: 'تنتقل المواعيد إلى هنا بعد مرور وقتها.',
+  bookFindSalon: 'ابحث عن صالون',
+
+  authWhyBooking: 'حجزك جاهز — سجّل الدخول لحفظه في حسابك.',
+
 };

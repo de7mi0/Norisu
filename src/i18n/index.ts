@@ -86,3 +86,15 @@ export function localizeUnits(value: string, lang: Lang): string {
     .replace(/\btoday\b/g, 'اليوم')
     .replace('yrs', 'سنة');
 }
+
+/**
+ * "August 2026" / "أغسطس 2026" for the calendar heading. Derived from the date
+ * being shown rather than written into the dictionaries, which had it frozen at
+ * "July 2026" from the prototype.
+ */
+export function monthLabel(date: Date, lang: Lang): string {
+  return date.toLocaleDateString(lang === 'ar' ? 'ar-SA-u-ca-gregory' : 'en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+}

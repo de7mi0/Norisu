@@ -55,8 +55,17 @@ export interface Service {
   name: string;
   ar: string;
   dur: string;
+  /** Whole riyals, for display. Rounded — never write this back to the database. */
   price: number;
   discount: number;
+  /**
+   * The exact stored price in halalas, and the exact duration. Carried
+   * untouched from the row so a booking snapshots what the salon actually
+   * charges, not the rounded figure the screens show. Absent on demo data,
+   * where there is no backend to book against anyway.
+   */
+  priceHalalas?: number;
+  durationMinutes?: number;
 }
 
 export interface StaffMember {
@@ -119,6 +128,14 @@ export interface Booking {
   staff: string;
   staffAr: string;
   status: 'CONFIRMED' | 'COMPLETED';
+
+  /** Set on bookings read back from the database; absent on demo rows. */
+  id?: string;
+  reference?: string;
+  /** ISO instant, used to sort and to split upcoming from past. */
+  startsAt?: string;
+  salonId?: string;
+  totalHalalas?: number;
 }
 
 export interface VendorStat {

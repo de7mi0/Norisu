@@ -29,6 +29,9 @@ function mapService(row: ServiceRow): Service {
     dur: `${row.duration_minutes} min`,
     price: halalasToRiyals(row.price_halalas),
     discount: row.discount_percent,
+    // Kept exact alongside the rounded display price, for booking snapshots.
+    priceHalalas: row.price_halalas,
+    durationMinutes: row.duration_minutes,
   };
 }
 

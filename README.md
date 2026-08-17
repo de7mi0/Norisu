@@ -49,12 +49,15 @@ too:** a six-digit code goes to your e-mail (SMS once a provider is configured),
 survives a reload, and the profile screen shows the account it belongs to. Saloni has no
 passwords at all.
 
+**Bookings are real too.** Making one saves it to your account with the prices as they
+were on the day, and it is still there when you come back. This is the one place the app
+asks you to sign in: an appointment has to belong to somebody.
+
 **Still simulated:** payment is never actually taken and no card details are ever asked
-for or collected; the salon chat and the assistant reply from a built-in script; and
-bookings, the waitlist and the vendor edits live only in the browser, so **refreshing the
-page resets them**. Those are the next things to connect — which is also why nothing is
-locked behind signing in yet: there is not yet anything on screen that differs from one
-account to the next.
+for or collected — a booking records *how* you chose to pay but is never marked paid. The
+salon chat and the assistant reply from a built-in script. Which times appear as available
+is still invented rather than read from each salon's real opening hours, and the waitlist
+and vendor edits still live only in the browser.
 
 If the database can't be reached, the app falls back to bundled sample data after a few
 seconds and says so at the top of the home screen, rather than showing an empty list.
@@ -120,8 +123,8 @@ stays simulated and runs entirely in the browser:
   wallet, or credential is ever collected or transmitted.
 - **Chat and the assistant reply from a local script** (`src/state/replies.ts`). Nothing
   is sent anywhere.
-- **Bookings, the waitlist and vendor edits are in-memory**, so they reset on reload. The
-  catalogue and the session are not — those are real.
+- **The waitlist and vendor edits are in-memory**, so they reset on reload. The catalogue,
+  the session and bookings are not — those are real.
 
 The seams are deliberate: the data modules and the reducer's actions are where a real API
 would be introduced, without touching the screens.

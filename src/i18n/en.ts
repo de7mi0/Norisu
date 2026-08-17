@@ -23,7 +23,6 @@ export const en = {
   pickTime: 'Pick a time',
 
   selectDateTime: 'Select date & time',
-  month: 'July 2026',
   availableSlots: 'Available slots',
   reschedulingNote: 'Rescheduling — choose a new time',
 
@@ -168,6 +167,18 @@ export const en = {
   authOffline: "Couldn't reach the server. Check your connection and try again.",
   authFailed: "That didn't work. Please try again.",
   authNoBackend: 'Sign-in needs a backend, and this build has none configured — the app is running on sample data.',
+
+  bookSignInTitle: 'Your bookings are not being saved',
+  bookSignInSub: 'Sign in and they will be here whenever you come back.',
+  bookLoading: 'Loading your bookings…',
+  bookNoneUpcoming: 'No upcoming appointments',
+  bookNoneUpcomingSub: 'When you book, it will appear here.',
+  bookNonePast: 'Nothing here yet',
+  bookNonePastSub: 'Appointments move here once the time has passed.',
+  bookFindSalon: 'Find a salon',
+
+  authWhyBooking: 'Your booking is ready — sign in to save it to your account.',
+
 };
 
 /** Every dictionary carries the same keys; values are plain strings. */

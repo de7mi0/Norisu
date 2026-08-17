@@ -56,6 +56,27 @@ export interface StaffRow {
   sort_order: number;
 }
 
+export interface BookingRow {
+  id: string;
+  reference: string;
+  salon_id: string;
+  staff_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
+  total_halalas: number;
+}
+
+/** The price snapshot. Deliberately a copy, never a lookup — see data/bookings.ts. */
+export interface BookingItemRow {
+  name_en: string;
+  name_ar: string;
+  duration_minutes: number;
+  unit_price_halalas: number;
+  discount_percent: number;
+  quantity: number;
+}
+
 export interface SalonRatingRow {
   salon_id: string;
   rating: number | null;

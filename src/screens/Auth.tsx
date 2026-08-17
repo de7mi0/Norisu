@@ -144,6 +144,23 @@ export function Auth() {
         }}
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '22px 24px 28px' }}
       >
+        {/* Says why the form appeared, when it interrupted something. */}
+        {state.authReason === 'booking' && !onCodeStep ? (
+          <p
+            style={{
+              font: `600 12.5px/1.6 ${font.sans}`,
+              color: '#8a6d14',
+              background: color.cream,
+              border: `1px solid ${color.creamLine}`,
+              borderRadius: 12,
+              padding: '11px 13px',
+              margin: '0 0 16px',
+            }}
+          >
+            {t.authWhyBooking}
+          </p>
+        ) : null}
+
         <p
           id={hintId}
           style={{

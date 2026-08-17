@@ -5,6 +5,7 @@ import {
   SLOTS,
   WAITLIST_RELEASED_SLOT_INDEX,
 } from '../../data/services';
+import { monthLabel } from '../../i18n';
 import { dateAtOffset, useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -44,7 +45,9 @@ export function TimePicker() {
       ) : null}
 
       <div style={{ padding: '22px 24px 0' }}>
-        <div style={{ font: `600 14px ${font.sans}`, marginBottom: 12 }}>{t.month}</div>
+        <div style={{ font: `600 14px ${font.sans}`, marginBottom: 12 }}>
+          {monthLabel(dateAtOffset(state.dateIdx), state.lang)}
+        </div>
         <div className="scr hscroll" style={{ display: 'flex', gap: 9, overflowX: 'auto' }}>
           {DATE_OFFSETS.map((offset) => {
             const date = dateAtOffset(offset);

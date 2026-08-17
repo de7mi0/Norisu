@@ -475,4 +475,118 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 17. The booking write the app actually issues, as the customer making it.
+--     Names every column src/data/bookings.ts sends, so renaming one here fails
+--     the tests rather than the app in someone's browser.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  new_id uuid;
+  readback record;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"22222222-2222-2222-2222-222222222222"}',
+    true
+  );
+  set local role authenticated;
+
+  insert into bookings (
+    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, discount_halalas, vat_halalas, total_halalas, vat_rate,
+    payment_method, paid_at
+  ) values (
+    'SL-APPTEST1', '22222222-2222-2222-2222-222222222222',
+    'aaaaaaaa-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001',
+    '2027-03-01 14:30+03', '2027-03-01 15:15+03', 'confirmed',
+    15000, 3000, 1800, 13800, 0.150,
+    -- Simulated checkout: a method is recorded, but no money moved.
+    'applepay', null
+  ) returning id into new_id;
+
+  insert into booking_items (
+    booking_id, service_id, name_en, name_ar, duration_minutes,
+    unit_price_halalas, discount_percent, quantity
+  ) values (
+    new_id, 'cccccccc-0000-0000-0000-000000000001',
+    'Signature Haircut', 'قص شعر', 45, 15000, 20, 1
+  );
+
+  -- Read it back exactly as loadMyBookings() does, joins included.
+  select b.reference, b.total_halalas, b.status, i.name_ar, i.unit_price_halalas,
+         s.name_en as salon_name, st.name_en as staff_name
+    into readback
+  from bookings b
+  join booking_items i on i.booking_id = b.id
+  join salons s on s.id = b.salon_id
+  left join staff st on st.id = b.staff_id
+  where b.id = new_id;
+
+  if readback.reference <> 'SL-APPTEST1' or readback.total_halalas <> 13800 then
+    raise exception 'FAIL 17a: booking read back as % / %',
+      readback.reference, readback.total_halalas;
+  end if;
+  -- Arabic must survive the round trip byte for byte.
+  if readback.name_ar <> 'قص شعر' then
+    raise exception 'FAIL 17b: Arabic service name came back as %', readback.name_ar;
+  end if;
+  if readback.salon_name is null or readback.staff_name is null then
+    raise exception 'FAIL 17c: the joins the app relies on returned nothing';
+  end if;
+
+  raise notice 'PASS 17: the app''s booking write and read-back work end to end';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 18. The price snapshot outlives a price change, and a booking cannot be
+--     filed under somebody else's name.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  charged integer;
+begin
+  -- The salon raises its price after the booking above was taken.
+  update services set price_halalas = 25000
+  where id = 'cccccccc-0000-0000-0000-000000000001';
+
+  select i.unit_price_halalas into charged
+  from booking_items i
+  join bookings b on b.id = i.booking_id
+  where b.reference = 'SL-APPTEST1';
+
+  if charged <> 15000 then
+    raise exception 'FAIL 18a: past booking now says %, expected 15000', charged;
+  end if;
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"22222222-2222-2222-2222-222222222222"}',
+    true
+  );
+  set local role authenticated;
+
+  begin
+    insert into bookings (
+      reference, customer_id, salon_id, starts_at, ends_at, status,
+      subtotal_halalas, total_halalas
+    ) values (
+      'SL-FORGERY', '11111111-1111-1111-1111-111111111111',
+      'aaaaaaaa-0000-0000-0000-000000000001',
+      '2027-04-01 10:00+03', '2027-04-01 10:45+03', 'confirmed', 15000, 17250
+    );
+    raise exception 'FAIL 18b: booked an appointment in another customer''s name';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'PASS 18: prices are snapshotted and bookings cannot be forged';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

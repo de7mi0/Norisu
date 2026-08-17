@@ -115,6 +115,10 @@ product) rather than assembling four services. The swap-in points already exist 
 codebase: the modules under `src/data/` and the actions in `src/state/appReducer.ts`.
 
 ### Phase 1 — Real business logic
+- ~~Bookings that persist~~ — **built.** Written to `bookings` + `booking_items` with prices
+  snapshotted, read back into "My bookings", and gated on sign-in. Still to do here: cancel and
+  reschedule against the database (today "Reschedule" creates a second booking), and moving the
+  two inserts into one Postgres function so they cannot half-succeed.
 - **A genuine availability engine.** The `SLOTS` and `DISABLED_SLOTS` arrays in
   `src/data/services.ts` are hardcoded fiction. Real availability needs working hours,
   per-staff schedules, service durations and buffer time.

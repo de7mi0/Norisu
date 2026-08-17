@@ -1,5 +1,4 @@
 import type {
-  Booking,
   ChatMessage,
   CustomerScreen,
   Lang,
@@ -9,7 +8,6 @@ import type {
   VendorService,
   VendorStaff,
 } from '../types';
-import { INITIAL_BOOKINGS } from '../data/reviews';
 import { BOT_GREETING, MAX_FIELD_LENGTH, MAX_MESSAGE_LENGTH, SALON_GREETING } from './replies';
 import { defaultChannel, normalizeCode, type AuthChannel, type AuthFailure } from '../lib/auth';
 import { tile } from '../theme';
@@ -72,7 +70,6 @@ export interface AppState {
   activeCat: string;
   saved: Record<string, boolean>;
   bookTab: 'upcoming' | 'past';
-  bookings: Booking[];
   reschedule: boolean;
 
   /** Screen to return to when leaving chat or the assistant. */
@@ -103,6 +100,11 @@ export interface AppState {
 
   /** The sign-in sheet, which floats over whichever screen is showing. */
   authOpen: boolean;
+  /**
+   * Why the sheet opened. 'booking' means the customer was interrupted at
+   * checkout and needs telling why, rather than being shown a bare form.
+   */
+  authReason: 'booking' | null;
   authForm: AuthForm;
 
   toast: string;
@@ -122,7 +124,6 @@ export const initialState: AppState = {
   activeCat: 'All',
   saved: {},
   bookTab: 'upcoming',
-  bookings: INITIAL_BOOKINGS,
   reschedule: false,
 
   retScreen: 'home',
@@ -148,6 +149,7 @@ export const initialState: AppState = {
   staffForm: { name: '', role: '' },
 
   authOpen: false,
+  authReason: null,
   authForm: emptyAuthForm,
 
   toast: '',
@@ -175,7 +177,7 @@ export type Action =
   | { type: 'pickDate'; dateIdx: number }
   | { type: 'pickSlot'; slotIdx: number }
   | { type: 'pickPayment'; payId: string }
-  | { type: 'confirmBooking'; booking: Booking }
+  | { type: 'bookingConfirmed' }
   | { type: 'setBookTab'; tab: 'upcoming' | 'past' }
   | { type: 'startReschedule'; salonId: string }
   | { type: 'openConversation'; target: 'chat' | 'bot'; from: CustomerScreen }
@@ -201,7 +203,7 @@ export type Action =
   | { type: 'setStaffForm'; field: keyof StaffForm; value: string }
   | { type: 'saveStaff' }
   | { type: 'goOnboarding'; from: 'chooser' | 'v_more' }
-  | { type: 'openAuth' }
+  | { type: 'openAuth'; reason?: 'booking' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
   | { type: 'setAuthIdentifier'; value: string }
@@ -292,10 +294,11 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'pickPayment':
       return { ...state, payId: action.payId };
 
-    case 'confirmBooking':
+    case 'bookingConfirmed':
+      // The booking itself lives with Supabase, not here — this only moves the
+      // customer on and clears the waitlist state the booking resolves.
       return {
         ...state,
-        bookings: [action.booking, ...state.bookings],
         screen: 'confirm',
         reschedule: false,
         seatOpen: false,
@@ -432,10 +435,10 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'openAuth':
       // A fresh form each time: a half-typed number from a dismissed attempt
       // is never what the next one wants.
-      return { ...state, authOpen: true, authForm: emptyAuthForm };
+      return { ...state, authOpen: true, authReason: action.reason ?? null, authForm: emptyAuthForm };
 
     case 'closeAuth':
-      return { ...state, authOpen: false, authForm: emptyAuthForm };
+      return { ...state, authOpen: false, authReason: null, authForm: emptyAuthForm };
 
     case 'setAuthChannel':
       // Changing channel invalidates the identifier — a number is not an e-mail.
@@ -492,7 +495,7 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'authSucceeded':
       // The sheet floats over whatever screen opened it, so closing it is all
       // there is to do — the customer carries on where they left off.
-      return { ...state, authOpen: false, authForm: emptyAuthForm };
+      return { ...state, authOpen: false, authReason: null, authForm: emptyAuthForm };
 
     case 'setToast':
       return { ...state, toast: action.message };

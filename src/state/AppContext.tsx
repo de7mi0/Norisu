@@ -12,6 +12,13 @@ import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } fr
 import { BOT_TOPICS, REPLY_DELAY, SALON_AUTO_REPLY, botReplyFor, type BotTopicKey } from './replies';
 import { useSession } from './useSession';
 import { demoCatalog, loadCatalog, type Catalog } from '../data/repository';
+import {
+  createBooking,
+  loadMyBookings,
+  splitByTime,
+  type BookingFailure,
+} from '../data/bookings';
+import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import { SLOTS, VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
 import { isSupabaseConfigured } from '../lib/supabase';
@@ -150,6 +157,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const { profile, setProfileLocale, signOut: endSession } = session;
 
+  // Bookings are remote state, like the catalogue and the session, so they live
+  // here rather than in the reducer. Without a backend or a signed-in customer
+  // there is nowhere to persist them, and the app falls back to the browser-only
+  // behaviour it had before — still usable, still honest about it.
+  const persistBookings = isSupabaseConfigured && session.status === 'signedIn';
+  const [savedBookings, setSavedBookings] = useState<Booking[]>([]);
+  const [localBookings, setLocalBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [lastReference, setLastReference] = useState('');
+
+  const userId = session.user?.id ?? '';
+
+  const refreshBookings = useCallback(async () => {
+    if (!isSupabaseConfigured || !userId) return;
+    setBookingsLoading(true);
+    const rows = await loadMyBookings();
+    setSavedBookings(rows);
+    setBookingsLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setSavedBookings([]);
+      return;
+    }
+    void refreshBookings();
+  }, [refreshBookings, userId]);
+
+  const { upcomingBookings, pastBookings } = useMemo(() => {
+    if (!persistBookings) {
+      // No account behind them, so there is no real clock to sort against —
+      // the prototype's two fixed sample lists stand in.
+      return { upcomingBookings: localBookings, pastBookings: PAST_BOOKINGS };
+    }
+    const { upcoming, past } = splitByTime(savedBookings);
+    return { upcomingBookings: upcoming, pastBookings: past };
+  }, [localBookings, persistBookings, savedBookings]);
+
   // A signed-in customer's language belongs to their account, not to this
   // browser, so it follows them to a new phone. The ref remembers what has
   // already been reconciled for this account — without it the write-back would
@@ -260,7 +305,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, REPLY_DELAY.seatOpens);
   }, [flash, isArabic, later]);
 
-  const confirmBooking = useCallback(() => {
+  const bookingFailureText = useCallback(
+    (failure: BookingFailure): string => {
+      switch (failure) {
+        case 'slotTaken':
+          return isArabic
+            ? 'حُجز هذا الوقت للتو. اختر وقتاً آخر.'
+            : 'That time was just taken. Please pick another.';
+        case 'noServices':
+          return isArabic ? 'اختر خدمة أولاً.' : 'Choose a service first.';
+        case 'noSlot':
+          return isArabic ? 'اختر وقتاً أولاً.' : 'Pick a time first.';
+        default:
+          return isArabic
+            ? 'تعذّر حفظ الحجز. تحقّق من اتصالك وحاول مجدداً.'
+            : "Couldn't save your booking. Check your connection and try again.";
+      }
+    },
+    [isArabic],
+  );
+
+  const confirmBooking = useCallback(async () => {
+    // The first thing in the app that is genuinely per-account: a booking has to
+    // belong to somebody. This is the sign-in gate the auth work deferred until
+    // there was real data behind it.
+    if (isSupabaseConfigured && !userId) {
+      dispatch({ type: 'openAuth', reason: 'booking' });
+      return;
+    }
+
+    if (persistBookings) {
+      const result = await createBooking(
+        {
+          salonId: salon.id,
+          salonName: salon.name,
+          salonNameAr: salon.ar,
+          salonTile: salon.tile,
+          // The "any professional" option is a UI affordance, not a staff row,
+          // so it goes to the database as null.
+          staffId: staffMember && staffMember.id !== 'any' ? staffMember.id : null,
+          staffName: staffMember?.name ?? ANY_PROFESSIONAL.en,
+          staffNameAr: staffMember?.arName ?? ANY_PROFESSIONAL.ar,
+          services: selectedServices,
+          date: dateAtOffset(state.dateIdx),
+          time: slotSummary,
+          paymentMethod: state.payId,
+        },
+        userId,
+      );
+
+      if ('error' in result) {
+        flash(bookingFailureText(result.error));
+        return;
+      }
+      setLastReference(result.reference);
+      await refreshBookings();
+      dispatch({ type: 'bookingConfirmed' });
+      return;
+    }
+
+    // No backend configured: the prototype's in-memory behaviour, unchanged.
     const booking: Booking = {
       tile: salon.tile,
       salon: salon.name,
@@ -272,8 +376,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       staffAr: staffMember?.arName ?? ANY_PROFESSIONAL.ar,
       status: 'CONFIRMED',
     };
-    dispatch({ type: 'confirmBooking', booking });
-  }, [dateSummary, salon, selectedServices, slotSummary, staffMember]);
+    setLocalBookings((current) => [booking, ...current]);
+    setLastReference('');
+    dispatch({ type: 'bookingConfirmed' });
+  }, [
+    bookingFailureText,
+    dateSummary,
+    flash,
+    persistBookings,
+    refreshBookings,
+    salon,
+    selectedServices,
+    slotSummary,
+    staffMember,
+    state.dateIdx,
+    state.payId,
+    userId,
+  ]);
 
   const openConversation = useCallback(
     (target: 'chat' | 'bot') => {
@@ -308,6 +427,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       requestPasscode,
       submitPasscode,
       signOut,
+      upcomingBookings,
+      pastBookings,
+      bookingsPersisted: persistBookings,
+      bookingsLoading,
+      lastReference,
       flash,
       sendChat,
       sendBot,
@@ -339,6 +463,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut,
       slotSummary,
       submitPasscode,
+      upcomingBookings,
+      pastBookings,
+      persistBookings,
+      bookingsLoading,
+      lastReference,
       staffName,
       state,
       t,

@@ -4,13 +4,26 @@ import { color, font } from '../../theme';
 
 /** Booking confirmed: reference number, amount paid, and where to go next. */
 export function Confirmation() {
-  const { t, state, dispatch, isArabic, salon, money, totals, staffName, dateSummary, slotSummary } =
-    useApp();
+  const {
+    t,
+    state,
+    dispatch,
+    isArabic,
+    salon,
+    money,
+    totals,
+    staffName,
+    dateSummary,
+    slotSummary,
+    lastReference,
+  } = useApp();
 
   const method = PAY_METHODS.find((candidate) => candidate.id === state.payId);
   const payName = method ? (isArabic ? method.nameAr : method.name) : '';
   const salonName = isArabic ? salon.ar : salon.name;
-  const bookingRef = 4820 + state.bookings.length;
+  // The real reference the database issued. Without a backend there is no
+  // booking to reference, so the prototype's placeholder stands in.
+  const bookingRef = lastReference || 'SL-DEMO';
 
   // Staff names such as "Layla A." already end in a period.
   const staffPhrase = staffName.replace(/\.$/, '');
@@ -97,7 +110,9 @@ export function Confirmation() {
           }}
         >
           <span>{t.bookingRef}</span>
-          <span style={{ color: color.ink, fontWeight: 700 }}>#SL-{bookingRef}</span>
+          <span className="ltr-run" style={{ color: color.ink, fontWeight: 700 }}>
+            {bookingRef}
+          </span>
         </div>
         <div
           style={{
