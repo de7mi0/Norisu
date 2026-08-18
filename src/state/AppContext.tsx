@@ -21,7 +21,13 @@ import {
   type BookingFailure,
 } from '../data/bookings';
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
-import { SLOTS, VAT_RATE, priceNow } from '../data/services';
+import {
+  demoAvailability,
+  loadAvailability,
+  totalMinutes,
+  type Availability,
+} from '../data/availability';
+import { VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { CODE_LENGTH, normalizeIdentifier, sendPasscode, verifyPasscode } from '../lib/auth';
@@ -145,7 +151,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.dateIdx],
   );
 
-  const slotSummary = state.slotIdx != null ? SLOTS[state.slotIdx] : '—';
+  const slotSummary = state.slotTime ?? '—';
 
   const flash = useCallback((message: string) => {
     dispatch({ type: 'setToast', message });
@@ -196,6 +202,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { upcoming, past } = splitByTime(savedBookings);
     return { upcomingBookings: upcoming, pastBookings: past };
   }, [localBookings, persistBookings, savedBookings]);
+
+  // Availability is remote state, like the catalogue and the session, so it
+  // lives here rather than in the reducer. The reducer only holds the *choice*
+  // the customer made.
+  const [availability, setAvailability] = useState<Availability>(() =>
+    isSupabaseConfigured ? { slots: [], source: 'loading' } : demoAvailability(),
+  );
+
+  // Moving an appointment keeps its original length, which no longer matches
+  // whatever is in the cart, so the duration comes from the booking itself.
+  const rescheduleMinutes = useMemo(() => {
+    if (!state.reschedule || !state.rescheduleId) return 0;
+    const target = [...upcomingBookings, ...pastBookings].find(
+      (booking) => booking.id === state.rescheduleId,
+    );
+    if (!target?.startsAt || !target.endsAt) return 0;
+    return Math.round(
+      (new Date(target.endsAt).getTime() - new Date(target.startsAt).getTime()) / 60000,
+    );
+  }, [pastBookings, state.reschedule, state.rescheduleId, upcomingBookings]);
+
+  const bookingMinutes = state.reschedule
+    ? rescheduleMinutes
+    : totalMinutes(selectedServices);
+
+  // "any" is a UI affordance, not a staff row; the database reads null as
+  // "any professional" and counts the salon's capacity instead.
+  const chosenStaffId = state.staffId && state.staffId !== 'any' ? state.staffId : null;
+
+  useEffect(() => {
+    // Only the time picker needs this, and only live rows can be asked about:
+    // the demo catalogue's ids are not real salons.
+    if (state.screen !== 'time') return;
+    if (!isSupabaseConfigured || catalogSource !== 'live') {
+      setAvailability(demoAvailability(state.dateIdx));
+      return;
+    }
+
+    let cancelled = false;
+    setAvailability({ slots: [], source: 'loading' });
+    void loadAvailability({
+      salonId: salon.id,
+      day: dateAtOffset(state.dateIdx),
+      services: state.reschedule ? [] : selectedServices,
+      durationMinutes: bookingMinutes,
+      staffId: chosenStaffId,
+      excludeBookingId: state.rescheduleId,
+    }).then((result) => {
+      if (cancelled) return;
+      // A failed live lookup falls back to sample times; keep the scripted full
+      // day consistent with the demo path above.
+      setAvailability(
+        result.source === 'error'
+          ? { ...demoAvailability(state.dateIdx), source: 'error' }
+          : result,
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bookingMinutes,
+    catalogSource,
+    chosenStaffId,
+    salon.id,
+    selectedServices,
+    state.dateIdx,
+    state.reschedule,
+    state.rescheduleId,
+    state.screen,
+  ]);
+
+  // A time chosen before the list reloaded may no longer be on it — the
+  // customer changed staff member, or somebody else took it. Dropping it here
+  // stops an unbookable choice being carried into checkout.
+  useEffect(() => {
+    if (state.slotTime == null || availability.source === 'loading') return;
+    const stillFree = availability.slots.some(
+      (slot) => slot.time === state.slotTime && slot.free,
+    );
+    if (!stillFree) dispatch({ type: 'clearSlot' });
+  }, [availability, state.slotTime]);
 
   // A signed-in customer's language belongs to their account, not to this
   // browser, so it follows them to a new phone. The ref remembers what has
@@ -483,6 +572,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       staffName,
       dateSummary,
       slotSummary,
+      availability,
       session,
       requestPasscode,
       submitPasscode,
@@ -524,6 +614,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       session,
       signOut,
       slotSummary,
+      availability,
       submitPasscode,
       upcomingBookings,
       pastBookings,

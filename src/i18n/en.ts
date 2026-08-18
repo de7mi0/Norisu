@@ -24,6 +24,9 @@ export const en = {
 
   selectDateTime: 'Select date & time',
   availableSlots: 'Available slots',
+  checkingTimes: 'Checking what is free…',
+  closedThisDay: 'The salon is closed on this day.',
+  sampleTimesNotice: 'Showing sample times — live availability is unavailable right now.',
   reschedulingNote: 'Rescheduling — choose a new time',
 
   reviewPay: 'Review & pay',

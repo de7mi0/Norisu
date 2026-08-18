@@ -1,8 +1,8 @@
 # Saloni — roadmap
 
 Where the product goes from here. Today Saloni is a **front-end prototype**: it looks and
-behaves like the real thing, but all data lives in memory and payment, chat, availability
-and notifications are simulated. Nothing persists past a page refresh.
+behaves like the real thing. The catalogue, sign-in, bookings and availability are now real and
+survive a refresh; payment, chat, the waitlist, photos and notifications are still simulated.
 
 Two decisions are settled and shape everything below:
 
@@ -120,11 +120,18 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   rather than creating a second one, and cancelling frees the slot while keeping the record.
   Still to do here: moving the two inserts into one Postgres function so they cannot
   half-succeed, and a cancellation policy (how late is too late to cancel free of charge).
-- **A genuine availability engine.** The `SLOTS` and `DISABLED_SLOTS` arrays in
-  `src/data/services.ts` are hardcoded fiction. Real availability needs working hours,
-  per-staff schedules, service durations and buffer time.
-- **Double-booking must be prevented by a database constraint**, not by the UI. Two people
-  will tap the same slot at the same moment; the UI cannot stop that.
+- ~~A genuine availability engine~~ — **built.** `available_slots()` (migration 0003) computes
+  offered times from `working_hours`, the chosen services' length and the bookings already made,
+  per staff member or across the salon's capacity for "any professional". It is `security
+  definer` because row-level security rightly hides other customers' bookings from the browser.
+  The salon's own `slot_step_minutes` sets the spacing. Still to do here: **buffer//turnaround
+  time between appointments**, per-staff schedules beyond the `working_hours.staff_id` rows the
+  function already honours, and owner-facing screens to edit any of it.
+- ~~Double-booking must be prevented by a database constraint~~ — **built** for named staff (the
+  GiST exclusion constraint). **Still open for "any professional"**: `staff_id` is null, so
+  Postgres has nobody to compare against. Availability capacity-checks it when offering times,
+  but two people racing the last chair can still both be written. Assigning a staff member at
+  booking time is the fix.
 - Booking lifecycle: ~~confirm, cancel, reschedule~~ built; **no-show** and a **cancellation
   policy** (notice period, fees) still to do.
 - The vendor CRUD from backlog items 1 and 2.

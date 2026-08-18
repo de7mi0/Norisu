@@ -25,7 +25,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 55 TypeScript files, ~8,800 lines. ~740 lines of schema SQL, ~1,650 including tests and seed.
+**Scale:** 56 TypeScript files, ~9,150 lines. ~960 lines of schema SQL, ~2,230 including tests and seed.
 
 ---
 
@@ -74,6 +74,7 @@ src/
   data/
     repository.ts           ★ loads the catalogue from Supabase, maps rows → app types
     bookings.ts             ★ writes and reads bookings; the price snapshot lives here
+    availability.ts         ★ asks the database which times are actually free
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -94,11 +95,12 @@ src/
 supabase/
   migrations/0001_schema.sql              14 tables, constraints, rating view
   migrations/0002_row_level_security.sql  30 policies + grants
+  migrations/0003_availability.sql        available_slots() + salons.slot_step_minutes
   setup.sql                   GENERATED — the two migrations concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   20 assertions
+  tests/01_policy_tests.sql   30 assertions
   README.md                   Supabase setup walkthrough, written for a non-developer
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -158,6 +160,13 @@ notice on the home screen and keeps the app fully usable on sample data.
 - A salon with no reviews shows **"New"**, not a score. `Salon.rating` is `number | null`.
 - **Distance is empty** — the app does not ask for location yet, so it is omitted rather than invented.
 - The salon-level discount badge and "from" price are **derived** from that salon's live services.
+
+**Availability takes the same shape but a different route.** `data/availability.ts` calls the
+`available_slots()` Postgres function rather than selecting rows, because row-level security
+deliberately hides other customers' bookings — the browser cannot see what is taken, so the
+database answers free/busy on its behalf. Its `source` is `'loading' | 'live' | 'demo' | 'error' |
+'closed'`, and `'closed'` (the salon does not open that day) is deliberately distinct from a day
+where every slot came back taken, because the screen says different things.
 
 **Watch out:** `supabase-js` retries a failed request **four times internally**, and `.abortSignal()`
 does not stop it. An unreachable database once sat silent for 19 seconds. `loadCatalog` now races
@@ -222,7 +231,7 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view. 30 RLS policies. 20 assertions.
+plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 30 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -243,12 +252,16 @@ plus a `salon_ratings` view. 30 RLS policies. 20 assertions.
 - IDs use `gen_random_uuid()`. `btree_gist` is the **only** required extension — `uuid-ossp` was
   deliberately removed because Supabase installs it where the column default may not resolve.
 
-**Known schema gap:** the double-booking constraint **cannot cover `staff_id IS NULL`** ("any
-professional") — there is nobody to compare against. Needs either assignment at booking time or a
-separate capacity check. Recorded on the constraint itself.
+**Known schema gap, now partly closed:** the double-booking constraint still **cannot cover
+`staff_id IS NULL`** ("any professional") — there is nobody to compare against. `available_slots()`
+(0003) performs the separate capacity check the constraint's own comment asks for: it counts
+eligible staff who are free and subtracts the bookings that are themselves unassigned, so a full
+salon stops offering the time *and* stops offering the last person by name. That is enforcement at
+**offer** time, not at write time — two people racing the same last chair through "any
+professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-20 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+30 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -289,7 +302,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | Photos | CSS placeholder tiles. |
-| Availability (slots, disabled times) | **Hardcoded arrays** (`SLOTS`, `DISABLED_SLOTS` in `data/services.ts`), not from `working_hours`. The *dates* are real (today onwards); the *times* are invented. |
+| **Availability** | **Real.** Times come from `working_hours`, the chosen services' length and the bookings already made, via `available_slots()`. Taken times are shown greyed rather than hidden. Falls back to the sample grid with no backend. |
 
 ---
 
@@ -327,18 +340,22 @@ constraint ignores cancelled rows, so the slot frees immediately.
   `createBooking` writes the booking, then its items, and deletes the booking again if the items
   fail. The compensating delete can itself fail. A Postgres function taking both in one call is the
   real fix.
-- **Times are still invented.** The *dates* are real now, but `SLOTS`/`DISABLED_SLOTS` are
-  hardcoded, so the app can offer a slot that is already taken. The database rejects it and the app
-  says "That time was just taken" — correct, but it should not have been offered.
-- **"Any professional" is still outside the no-double-booking constraint** — `staff_id` is null,
-  so Postgres has nobody to compare against.
+- **Times are real now.** `available_slots()` computes them from `working_hours`, the services'
+  length and existing bookings, for new bookings and reschedules alike. The database is still the
+  final authority: a slot can be taken between being offered and being confirmed, and the app still
+  says "That time was just taken" — but it is now a genuine race, not the everyday case.
+- **"Any professional" is still outside the no-double-booking constraint** at write time, though
+  it is now capacity-checked when times are offered. See §7.
 - **Nothing is paid.** `payment_method` is recorded but `paid_at` stays null, because no money
   moves. Do not treat a booking as paid.
 
 **Structural gaps:**
 - The waitlist and vendor edits do not survive a refresh.
-- Availability is invented, not computed from `working_hours` and existing bookings.
-- "Any professional" bookings are outside the no-double-booking constraint.
+- "Any professional" bookings are outside the no-double-booking constraint at write time.
+- **Owners cannot yet edit their hours or `slot_step_minutes` in the app.** Both are real,
+  per-salon database columns the booking screen already obeys, but the vendor portal still reads
+  demo data and does not know which salon the signed-in user owns, so there is nothing to hang the
+  control on. It belongs with per-owner vendor data.
 - No storage bucket exists for photo upload.
 - Open signup: anyone visiting the public demo can create an account. Accepted for now — a
   signed-in visitor sees exactly what a guest sees.
@@ -347,13 +364,12 @@ constraint ignores cancelled rows, so the slot frees immediately.
 
 ## 11. Suggested next steps
 
-1. **Real availability** — replace `SLOTS` / `DISABLED_SLOTS` with a query over `working_hours`,
-   service durations and existing bookings. **This is the recommended next task**: bookings are now
-   real, so the app can offer a time that is already taken and only find out on submit, when the
-   double-booking constraint rejects it. The app handles that honestly ("That time was just taken")
-   but it should not be reachable in the first place. It applies to rescheduling too.
-2. **Gate the vendor portal on `role`**, and give it per-owner data — it currently shows the same
-   demo dashboard to everyone, signed in or not.
+1. **Per-owner vendor data, gated on `role`** — the portal shows the same demo dashboard to
+   everyone, signed in or not. **This is the recommended next task**, and it now unblocks two
+   things at once: the owner-facing controls for opening hours and `slot_step_minutes` have real
+   columns behind them already and only need a screen that knows which salon the user owns.
+2. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
+   covers it at write time rather than only at offer time (§7).
 3. Vendor CRUD (A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
 4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the

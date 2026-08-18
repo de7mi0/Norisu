@@ -82,3 +82,11 @@ export interface SalonRatingRow {
   rating: number | null;
   review_count: number | null;
 }
+
+/** One row of available_slots() — see supabase/migrations/0003_availability.sql. */
+export interface AvailableSlotRow {
+  slot_at: string;
+  is_free: boolean;
+  /** How many staff are still free; 0 when the slot is gone. */
+  staff_free: number;
+}

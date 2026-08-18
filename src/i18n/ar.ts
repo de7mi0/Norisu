@@ -25,7 +25,10 @@ export const ar: Dictionary = {
   pickTime: 'اختر الوقت',
 
   selectDateTime: 'اختر التاريخ والوقت',
-  availableSlots: 'الأوقات المتاحة',
+  availableSlots: 'المواعيد المتاحة',
+  checkingTimes: '…جارٍ التحقق من الأوقات المتاحة',
+  closedThisDay: 'الصالون مغلق في هذا اليوم.',
+  sampleTimesNotice: 'هذه أوقات تجريبية — تعذّر جلب المواعيد الفعلية الآن.',
   reschedulingNote: 'إعادة الجدولة — اختر وقتاً جديداً',
 
   reviewPay: 'المراجعة والدفع',

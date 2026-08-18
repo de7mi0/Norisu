@@ -1,4 +1,5 @@
 import { createContext, useContext, type Dispatch } from 'react';
+import type { Availability } from '../data/availability';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
 import type { Booking, Salon, Service, StaffMember } from '../types';
@@ -57,6 +58,8 @@ export interface AppContextValue {
   staffName: string;
   dateSummary: string;
   slotSummary: string;
+  /** The times the salon can actually take, for the chosen day and staff. */
+  availability: Availability;
 
   /** Who is signed in, and the profile row that goes with them. */
   session: SessionValue;

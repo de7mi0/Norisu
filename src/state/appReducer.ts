@@ -65,7 +65,13 @@ export interface AppState {
   selected: Record<string, boolean>;
   staffId: string | null;
   dateIdx: number;
-  slotIdx: number | null;
+  /**
+   * The chosen time as the customer reads it, "14:30". Held as the time
+   * itself rather than a position in a list, because the list of offered times
+   * now changes with the day, the staff member and the services chosen — an
+   * index into it would quietly come to mean a different time.
+   */
+  slotTime: string | null;
   payId: string;
   activeCat: string;
   saved: Record<string, boolean>;
@@ -127,7 +133,7 @@ export const initialState: AppState = {
   selected: {},
   staffId: null,
   dateIdx: 1,
-  slotIdx: null,
+  slotTime: null,
   payId: 'applepay',
   activeCat: 'All',
   saved: {},
@@ -185,7 +191,8 @@ export type Action =
   | { type: 'toggleSaved'; salonId: string }
   | { type: 'pickStaff'; staffId: string }
   | { type: 'pickDate'; dateIdx: number }
-  | { type: 'pickSlot'; slotIdx: number }
+  | { type: 'pickSlot'; time: string }
+  | { type: 'clearSlot' }
   | { type: 'pickPayment'; payId: string }
   | { type: 'bookingConfirmed' }
   | { type: 'setBookTab'; tab: 'upcoming' | 'past' }
@@ -279,7 +286,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         screen: 'salon',
         selected: {},
         staffId: null,
-        slotIdx: null,
+        slotTime: null,
         reschedule: false,
         rescheduleId: null,
       };
@@ -303,7 +310,12 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, dateIdx: action.dateIdx };
 
     case 'pickSlot':
-      return { ...state, slotIdx: action.slotIdx };
+      return { ...state, slotTime: action.time };
+
+    // The offered times reloaded and no longer include what was chosen, so the
+    // selection is dropped rather than carried unbookable into checkout.
+    case 'clearSlot':
+      return state.slotTime == null ? state : { ...state, slotTime: null };
 
     case 'pickPayment':
       return { ...state, payId: action.payId };
@@ -331,7 +343,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         screen: 'time',
         reschedule: true,
         rescheduleId: action.bookingId,
-        slotIdx: null,
+        slotTime: null,
         cancelingId: null,
       };
 
@@ -381,7 +393,7 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, seatBannerDismissed: true };
 
     case 'bookFromWaitlist':
-      return { ...state, salonId: 'maison', screen: 'time', dateIdx: 4, slotIdx: null };
+      return { ...state, salonId: 'maison', screen: 'time', dateIdx: 4, slotTime: null };
 
     case 'toggleWaitlistAcceptance':
       return { ...state, waitlistOn: !state.waitlistOn };
