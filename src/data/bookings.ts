@@ -12,6 +12,7 @@
 import { supabase } from '../lib/supabase';
 import type { BookingItemRow, BookingRow } from '../lib/database.types';
 import type { Booking, Service } from '../types';
+import { instantLabel } from '../i18n';
 import { VAT_RATE } from './services';
 import { tile } from '../theme';
 
@@ -244,22 +245,7 @@ interface JoinedBooking extends BookingRow {
 
 const TILES = [tile.taupeMid, tile.sandMid, tile.blush, tile.stone];
 
-/** Formats an instant back into the "Sat, Aug 2 · 4:00 PM" the cards show. */
-function whenLabel(iso: string): string {
-  const at = new Date(iso);
-  const day = at.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'Asia/Riyadh',
-  });
-  const time = at.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'Asia/Riyadh',
-  });
-  return `${day} · ${time}`;
-}
+
 
 const ANY_PROFESSIONAL = { en: 'Any professional', ar: 'أي مختص' };
 
@@ -277,7 +263,10 @@ function mapBooking(row: JoinedBooking, index: number): Booking {
     // Straight from the snapshot, never looked up again.
     services: items.map((item) => item.name_en).join(' · '),
     servicesAr: items.map((item) => item.name_ar).join(' · '),
-    when: whenLabel(row.starts_at),
+    // Both languages are written now rather than formatted at render, so a
+    // booking card matches the paired *_en / *_ar shape everything else uses.
+    when: instantLabel(row.starts_at, 'en'),
+    whenAr: instantLabel(row.starts_at, 'ar'),
     staff: row.staff?.name_en ?? ANY_PROFESSIONAL.en,
     staffAr: row.staff?.name_ar ?? ANY_PROFESSIONAL.ar,
     status:

@@ -31,7 +31,7 @@ import { VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { CODE_LENGTH, normalizeIdentifier, sendPasscode, verifyPasscode } from '../lib/auth';
-import { dictionaryFor, formatMoney } from '../i18n';
+import { dayLabel, dictionaryFor, formatMoney } from '../i18n';
 import type { Booking, CustomerScreen, Lang } from '../types';
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -142,13 +142,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       : ANY_PROFESSIONAL.en;
 
   const dateSummary = useMemo(
-    () =>
-      dateAtOffset(state.dateIdx).toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      }),
-    [state.dateIdx],
+    () => dayLabel(dateAtOffset(state.dateIdx), state.lang),
+    [state.dateIdx, state.lang],
   );
 
   const slotSummary = state.slotTime ?? '—';
@@ -462,7 +457,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       salonAr: salon.ar,
       services: selectedServices.map((service) => service.name).join(' · ') || 'Appointment',
       servicesAr: selectedServices.map((service) => service.ar).join(' · ') || 'موعد',
-      when: `${dateSummary} · ${slotSummary}`,
+      when: `${dayLabel(dateAtOffset(state.dateIdx), 'en')} · ${slotSummary}`,
+      whenAr: `${dayLabel(dateAtOffset(state.dateIdx), 'ar')} · ${slotSummary}`,
       staff: staffMember?.name ?? ANY_PROFESSIONAL.en,
       staffAr: staffMember?.arName ?? ANY_PROFESSIONAL.ar,
       status: 'CONFIRMED',
@@ -472,7 +468,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'bookingConfirmed' });
   }, [
     bookingFailureText,
-    dateSummary,
     flash,
     persistBookings,
     refreshBookings,

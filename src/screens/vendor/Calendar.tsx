@@ -1,5 +1,6 @@
 import { Screen } from '../../components/Screen';
 import { VENDOR_APPOINTMENTS, VENDOR_DAYS } from '../../data/vendor';
+import { weekdayFromCode } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -9,8 +10,11 @@ export function Calendar() {
 
   const day = VENDOR_DAYS[state.vDay];
   const month = isArabic ? 'يوليو' : 'Jul';
-  const weekday = isArabic ? '' : `${day.dow.charAt(0)}${day.dow.slice(1).toLowerCase()}, `;
-  const dayLabel = `${weekday}${month} ${day.num}`;
+  const weekday = weekdayFromCode(day.dow, state.lang, 'long');
+  // Arabic puts the day before the month: "الخميس، 31 يوليو".
+  const dayLabel = isArabic
+    ? `${weekday}، ${day.num} ${month}`
+    : `${weekday}, ${month} ${day.num}`;
 
   return (
     <Screen bottomInset={88}>
@@ -62,7 +66,7 @@ export function Calendar() {
               }}
             >
               <span style={{ display: 'block', font: `500 9.5px ${font.sans}`, opacity: 0.7 }}>
-                {vendorDay.dow}
+                {weekdayFromCode(vendorDay.dow, state.lang)}
               </span>
               <span style={{ display: 'block', font: `700 16px ${font.sans}`, marginTop: 3 }}>
                 {vendorDay.num}

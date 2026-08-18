@@ -125,6 +125,7 @@ export interface Booking {
   services: string;
   servicesAr: string;
   when: string;
+  whenAr: string;
   staff: string;
   staffAr: string;
   status: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';

@@ -1,6 +1,6 @@
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
 import { WAITLIST_RELEASED_SLOT_INDEX } from '../../data/services';
-import { monthLabel } from '../../i18n';
+import { monthLabel, weekdayLabel } from '../../i18n';
 import { dateAtOffset, useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -81,7 +81,7 @@ export function TimePicker() {
                 }}
               >
                 <span style={{ display: 'block', font: `500 10.5px ${font.sans}`, opacity: 0.7 }}>
-                  {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                  {weekdayLabel(date, state.lang)}
                 </span>
                 <span style={{ display: 'block', font: `700 18px ${font.sans}`, marginTop: 3 }}>
                   {date.getDate()}

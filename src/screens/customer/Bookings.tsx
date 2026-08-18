@@ -196,7 +196,8 @@ export function Bookings() {
                   {isArabic ? booking.servicesAr : booking.services}
                 </div>
                 <div style={{ font: `600 11.5px ${font.sans}`, color: color.ink }}>
-                  {booking.when} · {isArabic ? booking.staffAr : booking.staff}
+                  {isArabic ? booking.whenAr : booking.when} ·{' '}
+                  {isArabic ? booking.staffAr : booking.staff}
                 </div>
               </div>
             </div>

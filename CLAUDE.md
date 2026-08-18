@@ -129,6 +129,16 @@ the build. Direction flips via `dir` on the phone frame and on `<html>`. Helpers
 handle money (`SAR 150` / `150 ر.س`), tag and category translation, and unit localisation inside
 seeded strings.
 
+**Dates go through `i18n/index.ts`, never `toLocaleDateString` at the call site.** `monthLabel`,
+`weekdayLabel`, `dayLabel` and `instantLabel` all resolve the locale from `lang`; `weekdayFromCode`
+covers the seeded vendor week, whose days are stored as `"MON"` rather than as dates. Two details
+are load-bearing: **`-ca-gregory`**, because Saudi locales otherwise default to the Hijri calendar
+while every stored date is Gregorian, and **`-nu-latn`**, because the rest of the app writes Latin
+digits (prices, appointment times, the day numbers in the strip) and Arabic locales would otherwise
+render dates alone in Arabic-Indic digits, putting two numbering systems on one screen. Hardcoding
+`'en-US'` anywhere is the bug this replaced — it left English weekday names sitting inside Arabic
+sentences.
+
 **Bidi gotcha — already fixed, do not regress.** Latin-and-digit runs like `-20%` and `0.8 km`
 reorder inside Arabic text. They are wrapped in `.ltr-run` (`direction: ltr; unicode-bidi: isolate`).
 **Any new mixed-script string needs the same.**
