@@ -145,7 +145,7 @@ export function Auth() {
         style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '22px 24px 28px' }}
       >
         {/* Says why the form appeared, when it interrupted something. */}
-        {state.authReason === 'booking' && !onCodeStep ? (
+        {state.authReason && !onCodeStep ? (
           <p
             style={{
               font: `600 12.5px/1.6 ${font.sans}`,
@@ -157,7 +157,7 @@ export function Auth() {
               margin: '0 0 16px',
             }}
           >
-            {t.authWhyBooking}
+            {state.authReason === 'vendor' ? t.authWhyVendor : t.authWhyBooking}
           </p>
         ) : null}
 

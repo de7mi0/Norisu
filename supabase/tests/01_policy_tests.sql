@@ -1047,4 +1047,219 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Owner-managed settings (the vendor portal's hours and booking interval).
+-- These are written by the app as the signed-in owner, so the policies — not
+-- the screen — are what stop one salon editing another's.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 31. An owner changes their own booking interval; the schema rejects a value
+--     the booking screen could not step by.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  step  smallint;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  update salons set slot_step_minutes = 15 where id = salon;
+
+  select slot_step_minutes into step from salons where id = salon;
+  if step <> 15 then
+    raise exception 'FAIL 31a: the owner''s interval did not save, got %', step;
+  end if;
+
+  begin
+    update salons set slot_step_minutes = 7 where id = salon;
+    raise exception 'FAIL 31b: an interval outside the allowed set was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  update salons set slot_step_minutes = 30 where id = salon;
+end
+$$;
+reset role;
+
+do $$
+begin
+  raise notice 'PASS 31: an owner sets their own booking interval, within the allowed steps';
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 32. A different vendor cannot change that salon's interval. The update is
+--     silently filtered rather than refused, which is how RLS narrows an
+--     UPDATE — so the assertion is that the value did not move.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  step  smallint;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"44444444-4444-4444-4444-444444444444"}',
+    true
+  );
+  set local role authenticated;
+
+  update salons set slot_step_minutes = 60 where id = salon;
+
+  reset role;
+  select slot_step_minutes into step from salons where id = salon;
+  if step <> 30 then
+    raise exception 'FAIL 32: another vendor changed a salon''s interval, now %', step;
+  end if;
+
+  raise notice 'PASS 32: one salon cannot change another salon''s booking interval';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 33. An owner edits their own opening hours, and closing a day removes the
+--     row — which is exactly what available_slots() reads as "not open".
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  noura    uuid := 'dddddddd-0000-0000-0000-000000000002';
+  day      date := current_date + 7;
+  dow      smallint := extract(dow from current_date + 7)::smallint;
+  earliest time;
+  offered  bigint;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  -- Open later than the seeded 10:00.
+  delete from working_hours
+    where salon_id = salon and day_of_week = dow and staff_id is null;
+  insert into working_hours (salon_id, staff_id, day_of_week, opens_at, closes_at)
+    values (salon, null, dow, time '13:00', time '20:00');
+
+  reset role;
+  select min((slot_at at time zone 'Asia/Riyadh')::time) into earliest
+  from available_slots(salon, day, 45, noura);
+
+  if earliest is distinct from time '13:00' then
+    raise exception 'FAIL 33a: booking screen opened at %, expected the owner''s 13:00', earliest;
+  end if;
+
+  -- Now close the day entirely.
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+  delete from working_hours
+    where salon_id = salon and day_of_week = dow and staff_id is null;
+
+  reset role;
+  select count(*) into offered from available_slots(salon, day, 45, noura);
+  if offered <> 0 then
+    raise exception 'FAIL 33b: a closed day still offered % times', offered;
+  end if;
+
+  -- Put the seeded hours back for anything that runs after this.
+  insert into working_hours (salon_id, staff_id, day_of_week, opens_at, closes_at)
+    values (salon, null, dow, time '10:00', time '23:00');
+
+  raise notice 'PASS 33: an owner''s hours drive the booking screen, closures included';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 34. A vendor cannot write opening hours onto a salon they do not own —
+--     the portal would otherwise be one mistaken salon id from editing
+--     somebody else's week.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  other uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"44444444-4444-4444-4444-444444444444"}',
+    true
+  );
+  set local role authenticated;
+
+  begin
+    insert into working_hours (salon_id, staff_id, day_of_week, opens_at, closes_at)
+      values (other, null, 3, time '08:00', time '09:00');
+    raise exception 'FAIL 34: a vendor wrote opening hours onto another salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'PASS 34: opening hours can only be written by the salon''s owner';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 35. The vendor portal's own read: an owner finds their salon by owner_id and
+--     sees it even before it is published, along with their services and team.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine     uuid;
+  services bigint;
+  team     bigint;
+begin
+  -- Unpublish it: an owner still setting up must be able to manage their salon.
+  update salons set is_published = false
+  where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select id into mine from salons
+  where owner_id = '33333333-3333-3333-3333-333333333333'
+  order by created_at limit 1;
+
+  if mine is distinct from 'aaaaaaaa-0000-0000-0000-000000000001' then
+    raise exception 'FAIL 35a: the owner could not find their own unpublished salon';
+  end if;
+
+  select count(*) into services from services where salon_id = mine and not is_archived;
+  select count(*) into team     from staff    where salon_id = mine and not is_archived;
+
+  if services = 0 or team = 0 then
+    raise exception 'FAIL 35b: owner read % services and % staff on their own salon', services, team;
+  end if;
+
+  reset role;
+  update salons set is_published = true
+  where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+  raise notice 'PASS 35: an owner reads their own salon, services and team before publishing';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

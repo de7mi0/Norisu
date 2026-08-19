@@ -1,3 +1,4 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { VENDOR_NAME } from '../../data/vendor';
 import { useApp } from '../../state/context';
@@ -6,11 +7,21 @@ import type { VendorScreen } from '../../types';
 
 /** Vendor settings hub. */
 export function More() {
-  const { t, state, dispatch, isArabic, chevron } = useApp();
+  const { t, state, dispatch, isArabic, chevron, owner } = useApp();
 
   const go = (screen: VendorScreen) => () => dispatch({ type: 'go', screen });
 
   const rows = [
+    {
+      // Real per-salon settings, so the value shown is the real one.
+      label: t.hoursTitle,
+      value: owner.salon
+        ? `${owner.salon.slotStepMinutes} ${t.minutesShort}`
+        : isArabic
+          ? 'تجريبي'
+          : 'Sample',
+      onSelect: go('v_hours'),
+    },
     {
       label: isArabic ? 'معرض الصور' : 'Photo gallery',
       value: isArabic ? '5 صور' : '5 photos',
@@ -18,7 +29,11 @@ export function More() {
     },
     {
       label: isArabic ? 'إدارة الفريق' : 'Staff management',
-      value: isArabic ? '3 أعضاء' : '3 members',
+      value: owner.salon
+        ? `${owner.salon.staff.length}`
+        : isArabic
+          ? '3 أعضاء'
+          : '3 members',
       onSelect: go('v_staff'),
     },
     {
@@ -56,9 +71,13 @@ export function More() {
           }}
         />
         <div>
-          <h1 style={{ font: `600 22px ${font.serif}`, margin: 0 }}>{VENDOR_NAME}</h1>
+          <h1 style={{ font: `600 22px ${font.serif}`, margin: 0 }}>
+            {owner.salon ? (isArabic ? owner.salon.nameAr : owner.salon.name) : VENDOR_NAME}
+          </h1>
           <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft }}>{t.verified}</div>
         </div>
+
+      <SampleDataNotice />
       </div>
 
       <div style={{ padding: '24px 24px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>

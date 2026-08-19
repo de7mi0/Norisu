@@ -26,6 +26,19 @@ export const ar: Dictionary = {
 
   selectDateTime: 'اختر التاريخ والوقت',
   availableSlots: 'المواعيد المتاحة',
+  hoursTitle: 'الساعات والحجز',
+  hoursNeedSalon:
+    'هذه الإعدادات تخص صالوناً. سجّل الدخول بالحساب المالك لصالون لتغييرها.',
+  bookingInterval: 'الفاصل بين المواعيد',
+  bookingIntervalHelp: 'المدة بين الأوقات المعروضة على العملاء.',
+  minutesShort: 'دقيقة',
+  openingHours: 'ساعات العمل',
+  openingHoursHelp: 'لا تُعرض على العملاء إلا الأوقات ضمن هذه الساعات.',
+  opensAt: 'يفتح',
+  closesAt: 'يغلق',
+  dayOpen: 'مفتوح',
+  dayClosed: 'مغلق',
+  hoursAffectBooking: 'تسري التغييرات على شاشة الحجز فوراً. المواعيد المحجوزة مسبقاً لا تُنقل.',
   checkingTimes: '…جارٍ التحقق من الأوقات المتاحة',
   closedThisDay: 'الصالون مغلق في هذا اليوم.',
   sampleTimesNotice: 'هذه أوقات تجريبية — تعذّر جلب المواعيد الفعلية الآن.',
@@ -181,6 +194,8 @@ export const ar: Dictionary = {
 
   authWhyBooking: 'حجزك جاهز — سجّل الدخول لحفظه في حسابك.',
 
+  authWhyVendor:
+    'سجّل الدخول بالحساب المالك للصالون لإدارة ساعاته وخدماته وفريقه.',
   bookCancel: 'إلغاء',
   bookCancelAsk: 'إلغاء هذا الموعد؟ لا يمكن التراجع عن ذلك.',
   bookCancelKeep: 'الإبقاء عليه',

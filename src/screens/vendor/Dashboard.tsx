@@ -1,3 +1,4 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { VENDOR_APPOINTMENTS, VENDOR_NAME, VENDOR_STATS } from '../../data/vendor';
 import { useApp } from '../../state/context';
@@ -5,7 +6,10 @@ import { color, font } from '../../theme';
 
 /** Vendor home: today's key numbers and schedule. */
 export function Dashboard() {
-  const { t, dispatch, isArabic } = useApp();
+  const { t, dispatch, isArabic, owner } = useApp();
+
+  // The owner's real salon when we know it, the sample one otherwise.
+  const salonName = owner.salon ? (isArabic ? owner.salon.nameAr : owner.salon.name) : VENDOR_NAME;
 
   return (
     <Screen bottomInset={88}>
@@ -20,7 +24,7 @@ export function Dashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ font: `500 12px ${font.sans}`, color: '#cfc7b4' }}>{t.goodMorning}</div>
-            <div style={{ font: `600 24px ${font.serif}`, marginTop: 2 }}>{VENDOR_NAME}</div>
+            <div style={{ font: `600 24px ${font.serif}`, marginTop: 2 }}>{salonName}</div>
           </div>
           <div
             aria-hidden="true"
@@ -63,6 +67,8 @@ export function Dashboard() {
           ))}
         </div>
       </div>
+
+      <SampleDataNotice section="dashboard" />
 
       <div
         style={{

@@ -118,7 +118,7 @@ export interface AppState {
    * Why the sheet opened. 'booking' means the customer was interrupted at
    * checkout and needs telling why, rather than being shown a bare form.
    */
-  authReason: 'booking' | null;
+  authReason: 'booking' | 'vendor' | null;
   authForm: AuthForm;
 
   toast: string;
@@ -223,7 +223,7 @@ export type Action =
   | { type: 'setStaffForm'; field: keyof StaffForm; value: string }
   | { type: 'saveStaff' }
   | { type: 'goOnboarding'; from: 'chooser' | 'v_more' }
-  | { type: 'openAuth'; reason?: 'booking' }
+  | { type: 'openAuth'; reason?: 'booking' | 'vendor' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
   | { type: 'setAuthIdentifier'; value: string }

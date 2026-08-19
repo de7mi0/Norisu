@@ -24,6 +24,7 @@ export type VendorScreen =
   | 'v_staff'
   | 'v_reviews'
   | 'v_more'
+  | 'v_hours'
   | 'v_waitlist';
 
 export type Screen = CustomerScreen | VendorScreen;

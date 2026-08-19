@@ -28,6 +28,10 @@ export interface SalonRow {
   area_ar: string;
   phone: string | null;
   is_published: boolean;
+  /** Only read on the owner's own row, which RLS lets them see unpublished. */
+  is_verified?: boolean;
+  /** Spacing between the times the booking screen offers. Added in 0003. */
+  slot_step_minutes?: number;
 }
 
 export interface ServiceRow {
@@ -89,4 +93,13 @@ export interface AvailableSlotRow {
   is_free: boolean;
   /** How many staff are still free; 0 when the slot is gone. */
   staff_free: number;
+}
+
+/** Opening hours. staff_id null means the salon's own hours. */
+export interface WorkingHoursRow {
+  staff_id: string | null;
+  day_of_week: number;
+  /** Postgres `time`, serialised as "10:00:00". */
+  opens_at: string;
+  closes_at: string;
 }

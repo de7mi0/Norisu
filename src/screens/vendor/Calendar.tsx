@@ -1,3 +1,4 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { VENDOR_APPOINTMENTS, VENDOR_DAYS } from '../../data/vendor';
 import { weekdayFromCode } from '../../i18n';
@@ -75,6 +76,8 @@ export function Calendar() {
           );
         })}
       </div>
+
+      <SampleDataNotice section="schedule" />
 
       <div style={{ padding: '20px 24px 0', font: `600 14px ${font.sans}`, color: color.ink }}>
         {dayLabel}

@@ -1,3 +1,4 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { SheetField, SheetModal } from '../../components/SheetModal';
 import { priceNow } from '../../data/services';
@@ -14,9 +15,14 @@ import { color, font } from '../../theme';
  * bookings must keep the price they were made at. See ROADMAP.md.
  */
 export function Services() {
-  const { t, state, dispatch, isArabic, money } = useApp();
+  const { t, state, dispatch, isArabic, money, owner } = useApp();
 
-  const services = [...VENDOR_SERVICES, ...state.extraServices];
+  // An owner sees their own catalogue; anybody else sees the sample one. The
+  // per-service booking counts stay blank on real rows rather than borrowing
+  // the sample's invented ones — counting them needs an aggregate query.
+  const services = owner.salon
+    ? [...owner.salon.services.map((service) => ({ ...service, bookings: '' })), ...state.extraServices]
+    : [...VENDOR_SERVICES, ...state.extraServices];
 
   return (
     <>
@@ -27,6 +33,8 @@ export function Services() {
             الخدمات والأسعار
           </div>
         </div>
+
+        <SampleDataNotice />
 
         <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {services.map((service) => {

@@ -1,5 +1,6 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Availability } from '../data/availability';
+import type { DayHours, OwnerState } from '../data/owner';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
 import type { Booking, Salon, Service, StaffMember } from '../types';
@@ -60,6 +61,13 @@ export interface AppContextValue {
   slotSummary: string;
   /** The times the salon can actually take, for the chosen day and staff. */
   availability: Availability;
+
+  /** The salon the signed-in user owns, if any. Drives the vendor portal. */
+  owner: OwnerState;
+  /** Changes the spacing between the times the booking screen offers. */
+  setSlotStep: (minutes: number) => Promise<void>;
+  /** Replaces one weekday's opening hours, or closes that day. */
+  setDayHours: (day: DayHours) => Promise<void>;
 
   /** Who is signed in, and the profile row that goes with them. */
   session: SessionValue;

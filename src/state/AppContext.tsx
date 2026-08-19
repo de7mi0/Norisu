@@ -20,6 +20,14 @@ import {
   splitByTime,
   type BookingFailure,
 } from '../data/bookings';
+import {
+  loadMySalon,
+  saveDayHours,
+  saveSlotStep,
+  type DayHours,
+  type OwnerState,
+  type OwnerWriteFailure,
+} from '../data/owner';
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import {
   demoAvailability,
@@ -280,6 +288,96 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
     if (!stillFree) dispatch({ type: 'clearSlot' });
   }, [availability, state.slotTime]);
+
+  // Which salon the signed-in user owns, if any. Remote state, so it lives here
+  // rather than in the reducer — same split as the catalogue and the session.
+  // Until this resolves the vendor portal shows sample data and says so.
+  const [owner, setOwner] = useState<OwnerState>({
+    status: isSupabaseConfigured ? 'loading' : 'unavailable',
+    salon: null,
+  });
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setOwner({ status: 'unavailable', salon: null });
+      return;
+    }
+    if (session.status === 'loading') return;
+    if (!userId) {
+      setOwner({ status: 'signedOut', salon: null });
+      return;
+    }
+
+    let cancelled = false;
+    setOwner({ status: 'loading', salon: null });
+    void loadMySalon(userId).then((result) => {
+      if (!cancelled) setOwner(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session.status, userId]);
+
+  const refreshOwner = useCallback(async () => {
+    if (!isSupabaseConfigured || !userId) return;
+    setOwner(await loadMySalon(userId));
+  }, [userId]);
+
+  const ownerFailureText = useCallback(
+    (failure: OwnerWriteFailure): string => {
+      const messages: Record<OwnerWriteFailure, { en: string; ar: string }> = {
+        notConfigured: {
+          en: 'Not saved — no database is connected.',
+          ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.',
+        },
+        notOwner: {
+          en: 'Only the salon’s owner can change this.',
+          ar: 'مالك الصالون وحده يمكنه تغيير هذا.',
+        },
+        invalid: {
+          en: 'Those times don’t work — closing must come after opening.',
+          ar: 'الأوقات غير صحيحة — يجب أن يكون الإغلاق بعد الافتتاح.',
+        },
+        network: {
+          en: 'Could not save. Check your connection and try again.',
+          ar: 'تعذّر الحفظ. تحقق من الاتصال وحاول مرة أخرى.',
+        },
+      };
+      return isArabic ? messages[failure].ar : messages[failure].en;
+    },
+    [isArabic],
+  );
+
+  /** Changes how far apart the booking screen's offered times sit. */
+  const setSlotStep = useCallback(
+    async (minutes: number) => {
+      if (!owner.salon) return;
+      const failure = await saveSlotStep(owner.salon.id, minutes);
+      if (failure) {
+        flash(ownerFailureText(failure));
+        return;
+      }
+      await refreshOwner();
+      flash(isArabic ? 'تم حفظ المواعيد ✓' : 'Booking interval saved ✓');
+    },
+    [flash, isArabic, owner.salon, ownerFailureText, refreshOwner],
+  );
+
+  /** Replaces one weekday's opening hours, or closes the day entirely. */
+  const setDayHours = useCallback(
+    async (day: DayHours) => {
+      if (!owner.salon) return;
+      const failure = await saveDayHours(owner.salon.id, day);
+      if (failure) {
+        flash(ownerFailureText(failure));
+        return;
+      }
+      await refreshOwner();
+      flash(isArabic ? 'تم حفظ ساعات العمل ✓' : 'Opening hours saved ✓');
+    },
+    [flash, isArabic, owner.salon, ownerFailureText, refreshOwner],
+  );
 
   // A signed-in customer's language belongs to their account, not to this
   // browser, so it follows them to a new phone. The ref remembers what has
@@ -568,6 +666,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dateSummary,
       slotSummary,
       availability,
+      owner,
+      setSlotStep,
+      setDayHours,
       session,
       requestPasscode,
       submitPasscode,
@@ -610,6 +711,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut,
       slotSummary,
       availability,
+      owner,
+      setSlotStep,
+      setDayHours,
       submitPasscode,
       upcomingBookings,
       pastBookings,

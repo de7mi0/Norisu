@@ -1,15 +1,36 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { SheetField, SheetModal } from '../../components/SheetModal';
 import { VENDOR_STAFF } from '../../data/vendor';
 import { localizeUnits } from '../../i18n';
 import { useApp } from '../../state/context';
-import { color, font } from '../../theme';
+import { color, font, tile } from '../../theme';
+
+const STAFF_TILES = [tile.sandFine, tile.taupeFine, tile.blushFine];
 
 /** Vendor team list with an add-member sheet. */
 export function Staff() {
-  const { t, state, dispatch, isArabic, backIcon } = useApp();
+  const { t, state, dispatch, isArabic, backIcon, owner } = useApp();
 
-  const team = [...VENDOR_STAFF, ...state.extraStaff];
+  // An owner sees their real team. Per-person ratings and today's counts are
+  // not modelled yet, so they are left out rather than borrowed from the
+  // sample data — a made-up 4.9 next to a real name is worse than no number.
+  const team = owner.salon
+    ? [
+        ...owner.salon.staff.map((person, index) => ({
+          id: person.id,
+          name: person.name,
+          arName: person.nameAr,
+          role: person.role,
+          arRole: person.roleAr,
+          rating: '' as const,
+          todayCount: '',
+          initials: person.initials,
+          tile: STAFF_TILES[index % STAFF_TILES.length],
+        })),
+        ...state.extraStaff,
+      ]
+    : [...VENDOR_STAFF, ...state.extraStaff];
 
   return (
     <>
@@ -20,6 +41,8 @@ export function Staff() {
           backLabel={isArabic ? 'رجوع' : 'Back'}
           title={t.staff}
         />
+
+        <SampleDataNotice />
 
         <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {team.map((person) => (
@@ -62,11 +85,15 @@ export function Staff() {
                 >
                   {isArabic ? person.arRole : person.role}
                 </div>
-                <div
-                  style={{ font: `600 11px ${font.sans}`, color: color.goldDeep, marginTop: 4 }}
-                >
-                  ★ {person.rating} · {localizeUnits(person.todayCount, state.lang)}
-                </div>
+                {person.rating || person.todayCount ? (
+                  <div
+                    style={{ font: `600 11px ${font.sans}`, color: color.goldDeep, marginTop: 4 }}
+                  >
+                    {person.rating ? `★ ${person.rating}` : null}
+                    {person.rating && person.todayCount ? ' · ' : null}
+                    {person.todayCount ? localizeUnits(person.todayCount, state.lang) : null}
+                  </div>
+                ) : null}
               </div>
               {/* TODO(roadmap A1): not yet a control — editing a team member is unbuilt. */}
               <div style={{ font: `600 12px ${font.sans}`, color: color.goldLink }}>{t.edit}</div>

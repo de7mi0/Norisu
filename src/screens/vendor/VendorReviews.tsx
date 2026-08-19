@@ -1,3 +1,4 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { VENDOR_REVIEWS } from '../../data/vendor';
 import { useApp } from '../../state/context';
@@ -15,6 +16,8 @@ export function VendorReviews() {
         backLabel={isArabic ? 'رجوع' : 'Back'}
         title={t.reviewsTitle}
       />
+
+      <SampleDataNotice section="reviews" />
 
       <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {VENDOR_REVIEWS.map((review) => {

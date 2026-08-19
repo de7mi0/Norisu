@@ -134,6 +134,12 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   booking time is the fix.
 - Booking lifecycle: ~~confirm, cancel, reschedule~~ built; **no-show** and a **cancellation
   policy** (notice period, fees) still to do.
+- ~~Per-owner vendor data~~ — **partly built.** `src/data/owner.ts` resolves the salon the
+  signed-in user owns; the opening-hours and booking-interval editor writes `working_hours` and
+  `salons.slot_step_minutes`, and the services and team lists are the owner's own. Still sample,
+  and labelled as such on screen: the dashboard figures, the day calendar, reviews and the
+  waitlist. The calendar is the natural next one — `bookings_select` already lets an owner read
+  their salon's bookings.
 - The vendor CRUD from backlog items 1 and 2.
 
 ### Phase 2 — Payments (start the paperwork now)

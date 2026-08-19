@@ -24,6 +24,19 @@ export const en = {
 
   selectDateTime: 'Select date & time',
   availableSlots: 'Available slots',
+  hoursTitle: 'Hours & booking',
+  hoursNeedSalon:
+    'These settings belong to a salon. Sign in with the account that owns one to change them.',
+  bookingInterval: 'Booking interval',
+  bookingIntervalHelp: 'How far apart the times offered to customers sit.',
+  minutesShort: 'min',
+  openingHours: 'Opening hours',
+  openingHoursHelp: 'Customers are only offered times inside these hours.',
+  opensAt: 'Opens',
+  closesAt: 'Closes',
+  dayOpen: 'Open',
+  dayClosed: 'Closed',
+  hoursAffectBooking: 'Changes apply to the booking screen straight away. Appointments already made are not moved.',
   checkingTimes: 'Checking what is free…',
   closedThisDay: 'The salon is closed on this day.',
   sampleTimesNotice: 'Showing sample times — live availability is unavailable right now.',
@@ -182,6 +195,8 @@ export const en = {
 
   authWhyBooking: 'Your booking is ready — sign in to save it to your account.',
 
+  authWhyVendor:
+    'Sign in with the account that owns the salon to manage its hours, services and team.',
   bookCancel: 'Cancel',
   bookCancelAsk: 'Cancel this appointment? This cannot be undone.',
   bookCancelKeep: 'Keep it',

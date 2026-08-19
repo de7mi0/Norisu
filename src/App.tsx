@@ -34,6 +34,7 @@ import { TimePicker } from './screens/customer/TimePicker';
 import { Calendar } from './screens/vendor/Calendar';
 import { Dashboard } from './screens/vendor/Dashboard';
 import { Gallery } from './screens/vendor/Gallery';
+import { Hours } from './screens/vendor/Hours';
 import { More } from './screens/vendor/More';
 import { Onboarding } from './screens/vendor/Onboarding';
 import { Services } from './screens/vendor/Services';
@@ -62,6 +63,7 @@ const VENDOR_SCREENS: Record<VendorScreen, () => React.ReactElement> = {
   v_services: Services,
   v_gallery: Gallery,
   v_staff: Staff,
+  v_hours: Hours,
   v_reviews: VendorReviews,
   v_more: More,
   v_waitlist: Waitlist,

@@ -1,3 +1,4 @@
+import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { VENDOR_WAITLIST } from '../../data/vendor';
 import { useApp } from '../../state/context';
@@ -17,6 +18,8 @@ export function Waitlist() {
         backLabel={isArabic ? 'رجوع' : 'Back'}
         title={t.waitlistTitle}
       />
+
+      <SampleDataNotice section="waitlist" />
 
       <div
         style={{
