@@ -25,6 +25,15 @@ export const en = {
   selectDateTime: 'Select date & time',
   availableSlots: 'Available slots',
   hoursTitle: 'Hours & booking',
+  editService: 'Edit service',
+  saving: 'Saving…',
+  removeService: 'Remove from my menu',
+  removeServiceNote:
+    'It stops being offered to customers. Appointments already booked keep the price and name they were made at.',
+  editStaff: 'Edit team member',
+  removeStaff: 'Remove from my team',
+  removeStaffNote: 'They stop being bookable. Past appointments still show who did the work.',
+  addStaffMember: 'Add team member',
   alreadyRegistered: 'This account already has a salon. Its details are managed from the portal.',
   verificationNote:
     'Register now and set up your hours, services and team straight away. Your salon appears to customers once we have checked your commercial registration.',

@@ -1,6 +1,12 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Availability } from '../data/availability';
-import type { DayHours, OwnerState, SalonDraft } from '../data/owner';
+import type {
+  DayHours,
+  OwnerState,
+  SalonDraft,
+  ServiceDraft,
+  StaffDraft,
+} from '../data/owner';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
 import type { Booking, Salon, Service, StaffMember } from '../types';
@@ -70,6 +76,16 @@ export interface AppContextValue {
   setDayHours: (day: DayHours) => Promise<void>;
   /** Registers a salon for the signed-in user. True once it exists. */
   registerSalon: (draft: SalonDraft) => Promise<boolean>;
+  /** Adds a service, or updates the one named. */
+  saveService: (draft: ServiceDraft, serviceId?: string) => Promise<boolean>;
+  /** Archives a service. Never deletes: bookings reference it. */
+  removeService: (serviceId: string) => Promise<boolean>;
+  /** The Live / Hidden switch. */
+  toggleServiceLive: (serviceId: string, isActive: boolean) => Promise<boolean>;
+  /** Adds a team member, or updates the one named. */
+  saveStaff: (draft: StaffDraft, staffId?: string) => Promise<boolean>;
+  /** Archives a team member. */
+  removeStaff: (staffId: string) => Promise<boolean>;
 
   /** Who is signed in, and the profile row that goes with them. */
   session: SessionValue;

@@ -40,8 +40,14 @@ export interface OwnerSalon {
    * catalogue because that one only fetches *published* salons — an owner
    * still setting up would otherwise see an empty list of their own services.
    */
-  services: Service[];
+  services: OwnerService[];
   staff: OwnerStaff[];
+}
+
+/** The owner's view of a service: the customer's shape plus the Live switch. */
+export interface OwnerService extends Service {
+  /** False when hidden from customers. Archived rows are not loaded at all. */
+  isActive: boolean;
 }
 
 export interface OwnerStaff {
@@ -98,8 +104,9 @@ function weekFrom(rows: WorkingHoursRow[]): DayHours[] {
 }
 
 /** Same conversions the customer-side catalogue makes: halalas → riyals, minutes → label. */
-function mapOwnerService(row: ServiceRow): Service {
+function mapOwnerService(row: ServiceRow): OwnerService {
   return {
+    isActive: row.is_active ?? true,
     id: row.id,
     name: row.name_en,
     ar: row.name_ar,
@@ -166,7 +173,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
     const [servicesResult, staffResult] = await Promise.all([
       supabase
         .from('services')
-        .select('id, name_en, name_ar, duration_minutes, price_halalas, discount_percent')
+        .select('id, name_en, name_ar, duration_minutes, price_halalas, discount_percent, is_active')
         .eq('salon_id', row.id)
         .eq('is_archived', false)
         .order('sort_order', { ascending: true }),
@@ -366,4 +373,188 @@ export async function createSalon(
   await supabase.from('working_hours').insert(defaultWeek(row.id));
 
   return { salonId: row.id };
+}
+
+/* ---------------------------------------------------------------------------
+ * The salon's own catalogue: services and team.
+ *
+ * A salon that has just registered has neither, so until now a real sign-up
+ * could set its hours and then stop — the menu customers book from still had
+ * to be typed into the database by hand.
+ *
+ * Nothing here is `security definer`. `services_write` and `staff_write` are
+ * already scoped to `is_salon_owner(salon_id)`, so the policies refuse a write
+ * aimed at somebody else's salon whatever the app sends.
+ * ------------------------------------------------------------------------- */
+
+export interface ServiceDraft {
+  nameEn: string;
+  nameAr: string;
+  /** Whole riyals as the owner types them; stored as halalas. */
+  price: number;
+  durationMinutes: number;
+  discountPercent: number;
+}
+
+export interface StaffDraft {
+  nameEn: string;
+  nameAr: string;
+  roleEn: string;
+  roleAr: string;
+}
+
+export type CatalogFailure =
+  | 'notConfigured'
+  | 'missingName'
+  | 'badDuration'
+  | 'badPrice'
+  | 'badDiscount'
+  | 'notOwner'
+  | 'network';
+
+/** Maps Postgres' complaint back to the field the owner can actually fix. */
+function writeFailure(error: { code?: string; message?: string } | null): CatalogFailure {
+  if (!error) return 'network';
+  if (error.code === '42501') return 'notOwner';
+  if (error.code === '23514') {
+    // The three check constraints on services, told apart by their names.
+    if (/duration/i.test(error.message ?? '')) return 'badDuration';
+    if (/discount/i.test(error.message ?? '')) return 'badDiscount';
+    return 'badPrice';
+  }
+  return 'network';
+}
+
+function validateService(draft: ServiceDraft): CatalogFailure | null {
+  if (!draft.nameEn.trim() || !draft.nameAr.trim()) return 'missingName';
+  // Mirrors the schema's own bounds, so the owner is told before the round trip.
+  if (!Number.isFinite(draft.durationMinutes) || draft.durationMinutes < 5 || draft.durationMinutes > 600) {
+    return 'badDuration';
+  }
+  if (!Number.isFinite(draft.price) || draft.price < 0) return 'badPrice';
+  if (!Number.isFinite(draft.discountPercent) || draft.discountPercent < 0 || draft.discountPercent > 100) {
+    return 'badDiscount';
+  }
+  return null;
+}
+
+function serviceRow(salonId: string, draft: ServiceDraft) {
+  return {
+    salon_id: salonId,
+    name_en: draft.nameEn.trim(),
+    name_ar: draft.nameAr.trim(),
+    duration_minutes: Math.round(draft.durationMinutes),
+    // Money is integer halalas throughout. Never floats.
+    price_halalas: Math.round(draft.price * 100),
+    discount_percent: Math.round(draft.discountPercent),
+  };
+}
+
+export async function addService(
+  salonId: string,
+  draft: ServiceDraft,
+): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const invalid = validateService(draft);
+  if (invalid) return invalid;
+
+  const { error } = await supabase.from('services').insert(serviceRow(salonId, draft));
+  return error ? writeFailure(error) : null;
+}
+
+export async function updateService(
+  salonId: string,
+  serviceId: string,
+  draft: ServiceDraft,
+): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const invalid = validateService(draft);
+  if (invalid) return invalid;
+
+  const { salon_id: _ignored, ...fields } = serviceRow(salonId, draft);
+  const { error } = await supabase
+    .from('services')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', serviceId);
+  return error ? writeFailure(error) : null;
+}
+
+/**
+ * Archives rather than deletes. Bookings reference services, and a past booking
+ * must keep meaning what it meant — the schema says so on the column itself.
+ */
+export async function archiveService(serviceId: string): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase
+    .from('services')
+    .update({ is_archived: true, is_active: false })
+    .eq('id', serviceId);
+  return error ? writeFailure(error) : null;
+}
+
+/** The Live / Hidden switch: hides a service from customers without losing it. */
+export async function setServiceActive(
+  serviceId: string,
+  isActive: boolean,
+): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase
+    .from('services')
+    .update({ is_active: isActive })
+    .eq('id', serviceId);
+  return error ? writeFailure(error) : null;
+}
+
+/** Two letters from the name, which is what the avatar circles show. */
+function initialsFrom(nameEn: string, nameAr: string): string {
+  const source = nameEn.trim() || nameAr.trim();
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '—';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0]}${words[1][0]}`.toUpperCase();
+}
+
+function staffRow(salonId: string, draft: StaffDraft) {
+  return {
+    salon_id: salonId,
+    name_en: draft.nameEn.trim(),
+    name_ar: draft.nameAr.trim(),
+    role_en: draft.roleEn.trim(),
+    role_ar: draft.roleAr.trim(),
+    initials: initialsFrom(draft.nameEn, draft.nameAr),
+  };
+}
+
+export async function addStaff(salonId: string, draft: StaffDraft): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  if (!draft.nameEn.trim() || !draft.nameAr.trim()) return 'missingName';
+
+  const { error } = await supabase.from('staff').insert(staffRow(salonId, draft));
+  return error ? writeFailure(error) : null;
+}
+
+export async function updateStaff(
+  salonId: string,
+  staffId: string,
+  draft: StaffDraft,
+): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  if (!draft.nameEn.trim() || !draft.nameAr.trim()) return 'missingName';
+
+  const { salon_id: _ignored, ...fields } = staffRow(salonId, draft);
+  const { error } = await supabase
+    .from('staff')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', staffId);
+  return error ? writeFailure(error) : null;
+}
+
+/** Archived, not deleted: bookings name the staff member who did the work. */
+export async function archiveStaff(staffId: string): Promise<CatalogFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase
+    .from('staff')
+    .update({ is_archived: true, is_active: false })
+    .eq('id', staffId);
+  return error ? writeFailure(error) : null;
 }

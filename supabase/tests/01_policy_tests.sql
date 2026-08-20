@@ -1384,4 +1384,213 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- The owner's own catalogue. A salon that has just registered has no services
+-- and no team, so these are the writes that make a real sign-up complete.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 39. An owner builds their menu and team, and the schema holds them to the
+--     same bounds the form does.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  svc   uuid;
+  team  uuid;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  insert into services (salon_id, name_en, name_ar, duration_minutes, price_halalas)
+  values (salon, 'Beard Trim', 'تهذيب لحية', 20, 6000)
+  returning id into svc;
+
+  insert into staff (salon_id, name_en, name_ar, role_en, role_ar, initials)
+  values (salon, 'Omar K.', 'عمر ك.', 'Barber', 'حلاق', 'OK')
+  returning id into team;
+
+  if svc is null or team is null then
+    raise exception 'FAIL 39a: an owner could not add a service or a team member';
+  end if;
+
+  -- A ten-second service and a 200% discount are refused by Postgres, not by
+  -- the form alone.
+  begin
+    insert into services (salon_id, name_en, name_ar, duration_minutes, price_halalas)
+    values (salon, 'Too short', 'قصير جداً', 1, 1000);
+    raise exception 'FAIL 39b: a service shorter than the schema allows was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into services (salon_id, name_en, name_ar, duration_minutes, price_halalas, discount_percent)
+    values (salon, 'Silly discount', 'خصم غريب', 30, 1000, 200);
+    raise exception 'FAIL 39c: a discount over 100%% was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  raise notice 'PASS 39: an owner builds their own menu and team, within the schema''s bounds';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 40. Removing a service archives it. This is the guarantee that matters: a
+--     booking made at yesterday's price must still read correctly after the
+--     salon takes the service off its menu.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  svc      uuid;
+  booking  uuid;
+  archived boolean;
+  snapshot text;
+  price    integer;
+  offered  bigint;
+begin
+  select id into svc from services where salon_id = salon and name_en = 'Beard Trim';
+
+  -- A customer books it at today's price.
+  insert into bookings (
+    id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    gen_random_uuid(), 'SL-ARCHIVE1', '11111111-1111-1111-1111-111111111111',
+    salon, null,
+    ((current_date + 9) + time '15:00') at time zone 'Asia/Riyadh',
+    ((current_date + 9) + time '15:20') at time zone 'Asia/Riyadh',
+    'confirmed', 6000, 6900
+  ) returning id into booking;
+
+  insert into booking_items (
+    booking_id, service_id, name_en, name_ar, duration_minutes, unit_price_halalas
+  ) values (booking, svc, 'Beard Trim', 'تهذيب لحية', 20, 6000);
+
+  -- The owner takes it off the menu.
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+  update services set is_archived = true, is_active = false where id = svc;
+  reset role;
+
+  select is_archived into archived from services where id = svc;
+  if not archived then
+    raise exception 'FAIL 40a: removing a service did not archive it';
+  end if;
+
+  -- The row survives, so the booking still points at something.
+  if not exists (select 1 from services where id = svc) then
+    raise exception 'FAIL 40b: the service row was destroyed, orphaning a booking';
+  end if;
+
+  select name_en, unit_price_halalas into snapshot, price
+  from booking_items where booking_id = booking;
+
+  if snapshot <> 'Beard Trim' or price <> 6000 then
+    raise exception 'FAIL 40c: the booking lost its snapshot, got % at %', snapshot, price;
+  end if;
+
+  -- And customers are no longer offered it.
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  select count(*) into offered from services where id = svc;
+  if offered <> 0 then
+    raise exception 'FAIL 40d: an archived service was still offered to customers';
+  end if;
+
+  raise notice 'PASS 40: removing a service archives it, and past bookings keep their prices';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 41. The Live / Hidden switch takes a service out of the customer catalogue
+--     without archiving it, and the owner still sees it either way.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  svc     uuid := 'cccccccc-0000-0000-0000-000000000001';
+  public_count bigint;
+  owner_count  bigint;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+  update services set is_active = false where id = svc;
+
+  select count(*) into owner_count from services where id = svc;
+  if owner_count <> 1 then
+    raise exception 'FAIL 41a: an owner lost sight of their own hidden service';
+  end if;
+
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  select count(*) into public_count from services where id = svc;
+  if public_count <> 0 then
+    raise exception 'FAIL 41b: a hidden service was still shown to customers';
+  end if;
+
+  reset role;
+  update services set is_active = true where id = svc;
+
+  raise notice 'PASS 41: hiding a service removes it from the catalogue, not from the salon';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 42. One salon cannot add a service or a team member to another's.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  other uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"44444444-4444-4444-4444-444444444444"}',
+    true
+  );
+  set local role authenticated;
+
+  begin
+    insert into services (salon_id, name_en, name_ar, duration_minutes, price_halalas)
+    values (other, 'Sneaked in', 'مُدرج', 30, 1000);
+    raise exception 'FAIL 42a: a vendor added a service to another salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into staff (salon_id, name_en, name_ar, initials)
+    values (other, 'Sneaked in', 'مُدرج', 'SI');
+    raise exception 'FAIL 42b: a vendor added a team member to another salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'PASS 42: a salon''s menu and team can only be changed by its owner';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

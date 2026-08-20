@@ -146,7 +146,10 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   and labelled as such on screen: the dashboard figures, the day calendar, reviews and the
   waitlist. The calendar is the natural next one — `bookings_select` already lets an owner read
   their salon's bookings.
-- The vendor CRUD from backlog items 1 and 2.
+- ~~Vendor CRUD for services and team (backlog item 1)~~ — **built.** An owner adds, edits, hides
+  and removes their own services and staff. Removing archives rather than deletes, because
+  bookings reference the row and a past booking must keep meaning what it meant. What is still
+  unbuilt: editing the business profile itself (name, CR, district), and photo upload.
 
 ### Phase 2 — Payments (start the paperwork now)
 - A **legal entity with a commercial registration (CR) and a business bank account** is a

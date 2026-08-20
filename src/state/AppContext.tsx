@@ -21,15 +21,25 @@ import {
   type BookingFailure,
 } from '../data/bookings';
 import {
+  addService,
+  addStaff,
+  archiveService,
+  archiveStaff,
   createSalon,
   loadMySalon,
+  setServiceActive,
+  updateService,
+  updateStaff,
   saveDayHours,
   saveSlotStep,
   type DayHours,
   type OwnerState,
+  type CatalogFailure,
   type OwnerWriteFailure,
   type RegisterFailure,
   type SalonDraft,
+  type ServiceDraft,
+  type StaffDraft,
 } from '../data/owner';
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import {
@@ -439,6 +449,122 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [flash, isArabic, refreshOwner, userId],
   );
 
+  const catalogFailureText = useCallback(
+    (failure: CatalogFailure): string => {
+      const messages: Record<CatalogFailure, { en: string; ar: string }> = {
+        notConfigured: {
+          en: 'Not saved — no database is connected.',
+          ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.',
+        },
+        missingName: {
+          en: 'A name in both English and Arabic is needed.',
+          ar: 'الاسم مطلوب بالعربية والإنجليزية.',
+        },
+        badDuration: {
+          en: 'How long does it take? Anything from 5 minutes to 10 hours.',
+          ar: 'كم تستغرق؟ من 5 دقائق حتى 10 ساعات.',
+        },
+        badPrice: {
+          en: 'The price needs to be a number, and not below zero.',
+          ar: 'يجب أن يكون السعر رقماً غير سالب.',
+        },
+        badDiscount: {
+          en: 'A discount runs from 0 to 100 per cent.',
+          ar: 'الخصم بين 0 و100 بالمئة.',
+        },
+        notOwner: {
+          en: 'Only the salon’s owner can change this.',
+          ar: 'مالك الصالون وحده يمكنه تغيير هذا.',
+        },
+        network: {
+          en: 'Could not save. Check your connection and try again.',
+          ar: 'تعذّر الحفظ. تحقق من الاتصال وحاول مرة أخرى.',
+        },
+      };
+      return isArabic ? messages[failure].ar : messages[failure].en;
+    },
+    [isArabic],
+  );
+
+  /** Runs one catalogue write, then reloads so the screen shows what was saved. */
+  const catalogWrite = useCallback(
+    async (
+      run: () => Promise<CatalogFailure | null>,
+      done: { en: string; ar: string },
+    ): Promise<boolean> => {
+      const failure = await run();
+      if (failure) {
+        flash(catalogFailureText(failure));
+        return false;
+      }
+      await refreshOwner();
+      flash(isArabic ? done.ar : done.en);
+      return true;
+    },
+    [catalogFailureText, flash, isArabic, refreshOwner],
+  );
+
+  const saveService = useCallback(
+    (draft: ServiceDraft, serviceId?: string) => {
+      const salonId = owner.salon?.id;
+      if (!salonId) return Promise.resolve(false);
+      return catalogWrite(
+        () =>
+          serviceId
+            ? updateService(salonId, serviceId, draft)
+            : addService(salonId, draft),
+        serviceId
+          ? { en: 'Service updated ✓', ar: 'تم تحديث الخدمة ✓' }
+          : { en: 'Service added ✓', ar: 'تمت إضافة الخدمة ✓' },
+      );
+    },
+    [catalogWrite, owner.salon?.id],
+  );
+
+  /** Archived, never deleted — bookings reference the service they were made at. */
+  const removeService = useCallback(
+    (serviceId: string) =>
+      catalogWrite(() => archiveService(serviceId), {
+        en: 'Service removed from your menu ✓',
+        ar: 'تمت إزالة الخدمة من قائمتك ✓',
+      }),
+    [catalogWrite],
+  );
+
+  const toggleServiceLive = useCallback(
+    (serviceId: string, isActive: boolean) =>
+      catalogWrite(
+        () => setServiceActive(serviceId, isActive),
+        isActive
+          ? { en: 'Service is live ✓', ar: 'الخدمة مباشرة ✓' }
+          : { en: 'Service hidden from customers ✓', ar: 'تم إخفاء الخدمة عن العملاء ✓' },
+      ),
+    [catalogWrite],
+  );
+
+  const saveStaff = useCallback(
+    (draft: StaffDraft, staffId?: string) => {
+      const salonId = owner.salon?.id;
+      if (!salonId) return Promise.resolve(false);
+      return catalogWrite(
+        () => (staffId ? updateStaff(salonId, staffId, draft) : addStaff(salonId, draft)),
+        staffId
+          ? { en: 'Team member updated ✓', ar: 'تم تحديث بيانات العضو ✓' }
+          : { en: 'Team member added ✓', ar: 'تمت إضافة عضو للفريق ✓' },
+      );
+    },
+    [catalogWrite, owner.salon?.id],
+  );
+
+  const removeStaff = useCallback(
+    (staffId: string) =>
+      catalogWrite(() => archiveStaff(staffId), {
+        en: 'Team member removed ✓',
+        ar: 'تمت إزالة العضو ✓',
+      }),
+    [catalogWrite],
+  );
+
   // A signed-in customer's language belongs to their account, not to this
   // browser, so it follows them to a new phone. The ref remembers what has
   // already been reconciled for this account — without it the write-back would
@@ -730,6 +856,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSlotStep,
       setDayHours,
       registerSalon,
+      saveService,
+      removeService,
+      toggleServiceLive,
+      saveStaff,
+      removeStaff,
       session,
       requestPasscode,
       submitPasscode,
@@ -776,6 +907,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSlotStep,
       setDayHours,
       registerSalon,
+      saveService,
+      removeService,
+      toggleServiceLive,
+      saveStaff,
+      removeStaff,
       submitPasscode,
       upcomingBookings,
       pastBookings,

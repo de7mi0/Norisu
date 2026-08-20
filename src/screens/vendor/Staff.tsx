@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { SheetField, SheetModal } from '../../components/SheetModal';
@@ -5,12 +6,51 @@ import { VENDOR_STAFF } from '../../data/vendor';
 import { localizeUnits } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font, tile } from '../../theme';
+import type { OwnerStaff, StaffDraft } from '../../data/owner';
 
 const STAFF_TILES = [tile.sandFine, tile.taupeFine, tile.blushFine];
 
-/** Vendor team list with an add-member sheet. */
+const EMPTY_DRAFT: StaffDraft = { nameEn: '', nameAr: '', roleEn: '', roleAr: '' };
+
+/**
+ * Vendor team list.
+ *
+ * For an owner this is the real team a customer picks from: adding, editing and
+ * removing write to `staff`. Removing archives, because bookings name the
+ * person who did the work.
+ */
 export function Staff() {
-  const { t, state, dispatch, isArabic, backIcon, owner } = useApp();
+  const { t, state, dispatch, isArabic, backIcon, owner, saveStaff, removeStaff } = useApp();
+
+  const [editing, setEditing] = useState<OwnerStaff | 'new' | null>(null);
+  const [draft, setDraft] = useState<StaffDraft>(EMPTY_DRAFT);
+  const [busy, setBusy] = useState(false);
+
+  const openEdit = (person: OwnerStaff) => {
+    setDraft({
+      nameEn: person.name,
+      nameAr: person.nameAr,
+      roleEn: person.role,
+      roleAr: person.roleAr,
+    });
+    setEditing(person);
+  };
+
+  const commit = async () => {
+    if (busy) return;
+    setBusy(true);
+    const saved = await saveStaff(draft, editing === 'new' ? undefined : editing?.id);
+    setBusy(false);
+    if (saved) setEditing(null);
+  };
+
+  const commitRemove = async () => {
+    if (busy || editing === 'new' || !editing) return;
+    setBusy(true);
+    const removed = await removeStaff(editing.id);
+    setBusy(false);
+    if (removed) setEditing(null);
+  };
 
   // An owner sees their real team. Per-person ratings and today's counts are
   // not modelled yet, so they are left out rather than borrowed from the
@@ -95,14 +135,35 @@ export function Staff() {
                   </div>
                 ) : null}
               </div>
-              {/* TODO(roadmap A1): not yet a control — editing a team member is unbuilt. */}
-              <div style={{ font: `600 12px ${font.sans}`, color: color.goldLink }}>{t.edit}</div>
+              {owner.salon ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const own = owner.salon?.staff.find((member) => member.id === person.id);
+                    if (own) openEdit(own);
+                  }}
+                  className="press"
+                  style={{ font: `600 12px ${font.sans}`, color: color.goldLink }}
+                >
+                  {t.edit}
+                </button>
+              ) : (
+                // Sample rows have nothing behind them to edit.
+                <div style={{ font: `600 12px ${font.sans}`, color: color.mutedFaint }}>{t.edit}</div>
+              )}
             </div>
           ))}
 
           <button
             type="button"
-            onClick={() => dispatch({ type: 'openStaffModal' })}
+            onClick={() => {
+              if (!owner.salon) {
+                dispatch({ type: 'openStaffModal' });
+                return;
+              }
+              setDraft(EMPTY_DRAFT);
+              setEditing('new');
+            }}
             className="press"
             style={{
               border: `1.5px dashed ${color.lineDashed}`,
@@ -117,6 +178,78 @@ export function Staff() {
           </button>
         </div>
       </Screen>
+
+      {editing ? (
+        <SheetModal
+          title={editing === 'new' ? t.addStaffMember : t.editStaff}
+          cancelLabel={t.cancel}
+          saveLabel={busy ? t.saving : t.save}
+          onCancel={() => setEditing(null)}
+          onSave={() => void commit()}
+        >
+          <SheetField
+            label={isArabic ? 'الاسم (بالإنجليزية)' : 'Name (English)'}
+            value={draft.nameEn}
+            onChange={(value) => setDraft((d) => ({ ...d, nameEn: value }))}
+            placeholder="Layla A."
+            style={{ marginBottom: 10 }}
+          />
+          <SheetField
+            label={isArabic ? 'الاسم (بالعربية)' : 'Name (Arabic)'}
+            value={draft.nameAr}
+            onChange={(value) => setDraft((d) => ({ ...d, nameAr: value }))}
+            placeholder="ليلى ع."
+            style={{ marginBottom: 10 }}
+          />
+          <SheetField
+            label={isArabic ? 'الدور (بالإنجليزية)' : 'Role (English)'}
+            value={draft.roleEn}
+            onChange={(value) => setDraft((d) => ({ ...d, roleEn: value }))}
+            placeholder="Stylist"
+            style={{ marginBottom: 10 }}
+          />
+          <SheetField
+            label={isArabic ? 'الدور (بالعربية)' : 'Role (Arabic)'}
+            value={draft.roleAr}
+            onChange={(value) => setDraft((d) => ({ ...d, roleAr: value }))}
+            placeholder="مصففة"
+            style={{ marginBottom: 16 }}
+          />
+
+          {editing !== 'new' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void commitRemove()}
+                disabled={busy}
+                className="press"
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  background: 'transparent',
+                  border: `1.5px solid ${color.lineFaint}`,
+                  borderRadius: 13,
+                  padding: 13,
+                  font: `600 12.5px ${font.sans}`,
+                  color: '#b4443a',
+                  marginBottom: 4,
+                }}
+              >
+                {t.removeStaff}
+              </button>
+              <p
+                style={{
+                  font: `500 10.5px/1.5 ${font.sans}`,
+                  color: color.mutedFaint,
+                  margin: '0 0 4px',
+                }}
+              >
+                {t.removeStaffNote}
+              </p>
+            </>
+          ) : null}
+        </SheetModal>
+      ) : null}
 
       {state.staffModal ? (
         <SheetModal

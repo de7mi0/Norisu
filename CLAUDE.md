@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 59 TypeScript files, ~10,400 lines. ~960 lines of schema SQL, ~2,560 including tests and seed.
+**Scale:** 59 TypeScript files, ~11,100 lines. ~960 lines of schema SQL, ~2,770 including tests and seed.
 
 ---
 
@@ -106,7 +106,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   38 assertions
+  tests/01_policy_tests.sql   42 assertions
   README.md                   Supabase setup walkthrough + how to approve a registered salon
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -255,7 +255,7 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 38 assertions.
+plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 42 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -285,7 +285,7 @@ salon stops offering the time *and* stops offering the last person by name. That
 professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-38 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+42 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -324,7 +324,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
-| Vendor services / staff **lists** | **Real for an owner** (read-only). Adding, editing and the live-hidden toggle are still browser-only. |
+| **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
 | Vendor dashboard figures, calendar, reviews, waitlist | Browser-only, and **labelled as sample on screen** so an owner cannot read them as their own. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
@@ -335,12 +335,10 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 
 ## 10. Pending issues and known gaps
 
-**Five `TODO(roadmap …)` markers in the code**, each cross-referenced to `ROADMAP.md`:
+**Three `TODO(roadmap …)` markers in the code**, each cross-referenced to `ROADMAP.md`:
 
 | File | Item | Gap |
 | --- | --- | --- |
-| `screens/vendor/Services.tsx` | A1 | Services can be added but **not edited or deleted** |
-| `screens/vendor/Staff.tsx` | A1 | The "Edit" label is a `<div>`, **not a control** |
 | `screens/vendor/Gallery.tsx` | A2 | The Upload button has **no handler at all** |
 | `screens/vendor/Waitlist.tsx` | A3 | "Notify" only toasts the owner's own screen |
 | `state/AppContext.tsx` | A3 | The waitlist seat release is a simulated timer |
@@ -386,6 +384,9 @@ constraint ignores cancelled rows, so the slot frees immediately.
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
   constraint stops the order being skipped, but there is no admin screen and no notification telling
   the owner they went live.
+- **A salon's menu is its own, but nothing else about it is editable in the app** — the business
+  profile screen (name, CR, district) is still the registration form, so a typo there has to be
+  fixed in the Supabase dashboard.
 - **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
   and a second would silently never be shown. The schema permits more.
 - **The vendor portal is only partly per-owner.** `data/owner.ts` finds the salon the signed-in
@@ -406,17 +407,14 @@ constraint ignores cancelled rows, so the slot frees immediately.
    still sample, each labelled as such. **This is the recommended next task**, and the day calendar
    is the most valuable and most straightforward piece: a salon owner can already read their own
    bookings under `bookings_select`, so it needs a query, not a new policy.
-2. **Let an owner add services and staff.** They can register and set hours, but the catalogue a
-   customer books from still has to be seeded by hand in the dashboard — which makes a real
-   sign-up incomplete. Closely related to vendor CRUD (A1).
-3. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
+2. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
    covers it at write time rather than only at offer time (§7).
-4. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
-5. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+3. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
+4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-6. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
+5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
 
 ---
 
