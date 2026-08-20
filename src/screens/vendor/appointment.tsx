@@ -48,10 +48,23 @@ export function AppointmentRow({
         {appointment.customerName ? (
           <span style={{ font: `600 14px ${font.sans}` }}>{appointment.customerName}</span>
         ) : (
-          <span style={{ font: `600 13px ${font.sans}`, color: color.inkSoft }}>
-            {t.bookingRef}{' '}
-            {/* A Latin reference inside an Arabic line reorders without this. */}
-            <span className="ltr-run">{appointment.reference}</span>
+          /*
+            No name given, so the booking reference stands in for one. It is
+            shown bare: prefixing it with "Booking ref" pushed the status chip
+            off the card in Arabic, and a salon owner reading "SL-M8T1Z4" where
+            a name belongs needs no label to know what it is. Isolated and kept
+            on one line — an LTR run that wraps lays its halves out separately
+            and the reference comes back scrambled.
+          */
+          <span
+            className="ltr-run"
+            style={{
+              font: `600 13px ${font.mono}`,
+              color: color.inkSoft,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {appointment.reference}
           </span>
         )}
         <span
@@ -63,6 +76,8 @@ export function AppointmentRow({
             borderRadius: 8,
             height: 'fit-content',
             whiteSpace: 'nowrap',
+            // Never squeezed out by a long name or reference beside it.
+            flex: 'none',
           }}
         >
           {statusLabel(appointment.status, t)}

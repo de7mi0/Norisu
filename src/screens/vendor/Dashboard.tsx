@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { VENDOR_APPOINTMENTS, VENDOR_NAME, VENDOR_STATS } from '../../data/vendor';
@@ -7,12 +8,16 @@ import { useApp } from '../../state/context';
 import { bookingStatus, color, font } from '../../theme';
 import { AppointmentRow } from './appointment';
 
-/** One tile. `value` is already formatted; `sub` is the line beneath it. */
+/**
+ * One tile. `value` is already formatted; `sub` is the line beneath it, and is
+ * a node rather than a string because a signed number sitting inside an Arabic
+ * sentence has to be isolated or the sign jumps to the wrong end of it.
+ */
 interface Tile {
   key: string;
   label: string;
   value: string;
-  sub: string;
+  sub: ReactNode;
   accent: string;
 }
 
@@ -35,9 +40,19 @@ function liveTiles(stats: SalonStats, t: Dictionary, isArabic: boolean): Tile[] 
       label: t.statBookings,
       value: String(stats.bookingsToday),
       sub:
-        delta === 0
-          ? t.statBookingsSame
-          : `${delta > 0 ? '+' : '−'}${Math.abs(delta)} ${t.statBookingsUp}`,
+        delta === 0 ? (
+          t.statBookingsSame
+        ) : (
+          <>
+            {/* "+2" / "−2" reorders inside Arabic without this — the sign
+                otherwise lands on the far side of the digit. */}
+            <span className="ltr-run">
+              {delta > 0 ? '+' : '−'}
+              {Math.abs(delta)}
+            </span>{' '}
+            {t.statBookingsUp}
+          </>
+        ),
       accent: '#f5c542',
     },
     {
@@ -53,9 +68,13 @@ function liveTiles(stats: SalonStats, t: Dictionary, isArabic: boolean): Tile[] 
       // "New" rather than 0.0 — the same answer the customer's salon card gives.
       value: stats.rating == null ? t.statNew : stats.rating.toFixed(1),
       sub:
-        stats.rating == null
-          ? t.statRatingNone
-          : `${stats.reviewCount} ${t.statRatingCount}`,
+        stats.rating == null ? (
+          t.statRatingNone
+        ) : (
+          <>
+            <span className="ltr-run">{stats.reviewCount}</span> {t.statRatingCount}
+          </>
+        ),
       accent: '#f5c542',
     },
     {

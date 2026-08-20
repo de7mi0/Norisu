@@ -339,6 +339,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [session.status, userId]);
 
+  /**
+   * Stores the name the customer gave, and closes the sheet only once it is
+   * written — a name that appeared on screen and then vanished on the next
+   * profile read would be worse than the sheet staying open.
+   */
+  const saveMyName = useCallback(
+    async (fullName: string): Promise<boolean> => {
+      const saved = await session.setProfileName(fullName);
+      if (!saved) {
+        flash(t.nameNotSaved);
+        return false;
+      }
+      dispatch({ type: 'closeNameSheet' });
+      flash(t.nameSaved);
+      return true;
+    },
+    [flash, session, t],
+  );
+
   const refreshOwner = useCallback(async () => {
     if (!isSupabaseConfigured || !userId) return;
     setOwner(await loadMySalon(userId));
@@ -960,6 +979,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       vendorDay,
       vendorReviews,
+      saveMyName,
       setSlotStep,
       setDayHours,
       registerSalon,
@@ -1014,6 +1034,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       vendorDay,
       vendorReviews,
+      saveMyName,
       setSlotStep,
       setDayHours,
       registerSalon,

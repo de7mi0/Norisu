@@ -52,9 +52,11 @@ export const RATING_BARS: RatingBar[] = [
 ];
 
 export const PROFILE_ROWS: ProfileRow[] = [
-  { label: 'Personal details', arLabel: 'البيانات الشخصية', value: 'Nora', arValue: 'نورة' },
-  { label: 'Saved salons', arLabel: 'الصالونات المحفوظة', value: '6', arValue: '6' },
-  { label: 'Payment methods', arLabel: 'طرق الدفع', value: '3 cards', arValue: '3 بطاقات' },
+  // Personal details is real: the row shows and edits profiles.full_name.
+  { label: 'Personal details', arLabel: 'البيانات الشخصية', value: '', arValue: '' },
+  // "Saved salons 6" and "Payment methods 3 cards" used to sit here. Neither
+  // feature exists — nothing is saved and no card is ever collected — and an
+  // invented count next to a real name reads as though both were real.
   { label: 'Notifications', arLabel: 'الإشعارات', value: 'On', arValue: 'مفعّلة' },
   { label: 'Language', arLabel: 'اللغة', value: 'English', arValue: 'العربية' },
   { label: 'Help & support', arLabel: 'المساعدة والدعم', value: '', arValue: '' },

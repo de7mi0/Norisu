@@ -4,6 +4,7 @@ import {
   fetchProfile,
   onAuthChange,
   saveProfileLocale,
+  saveProfileName,
   signOut as signOutRequest,
   userFromSession,
   type AuthUser,
@@ -28,6 +29,11 @@ export interface SessionValue {
   signOut: () => Promise<void>;
   /** Writes the language choice to the profile so it follows the account. */
   setProfileLocale: (locale: Lang) => void;
+  /**
+   * Writes the name the customer gave. True once it is stored — the caller
+   * closes its form on true and leaves it open, with the value intact, on false.
+   */
+  setProfileName: (fullName: string) => Promise<boolean>;
 }
 
 /**
@@ -98,5 +104,18 @@ export function useSession(): SessionValue {
     [profile],
   );
 
-  return { status, user, profile, signOut, setProfileLocale };
+  const setProfileName = useCallback(
+    async (fullName: string): Promise<boolean> => {
+      if (!profile) return false;
+      const failure = await saveProfileName(profile.id, fullName);
+      if (failure) return false;
+      // Only after the write: showing the new name and then losing it on the
+      // next profile read would be worse than the form staying open.
+      setProfile({ ...profile, fullName: fullName.trim() });
+      return true;
+    },
+    [profile],
+  );
+
+  return { status, user, profile, signOut, setProfileLocale, setProfileName };
 }

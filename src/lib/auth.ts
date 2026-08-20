@@ -220,6 +220,34 @@ export async function saveProfileLocale(userId: string, locale: Lang): Promise<v
   await supabase.from('profiles').update({ locale }).eq('id', userId);
 }
 
+/**
+ * The longest name the app will store. Long enough for a full Arabic name with
+ * patronymics, short enough that a paste of something else cannot fill a
+ * salon's calendar with a wall of text.
+ */
+export const NAME_MAX_LENGTH = 60;
+
+/**
+ * Persists the name the customer chose to give.
+ *
+ * `profiles.full_name` had never been written by anything: every account signed
+ * in with a blank name, so the vendor calendar had nobody to put against an
+ * appointment. profiles_update_own already permits this — it is the user's own
+ * row — so no policy work was needed, only somewhere to type it.
+ */
+export async function saveProfileName(
+  userId: string,
+  fullName: string,
+): Promise<AuthFailure | null> {
+  if (!supabase) return { code: 'notConfigured' };
+  const trimmed = fullName.trim().slice(0, NAME_MAX_LENGTH);
+  const { error } = await supabase
+    .from('profiles')
+    .update({ full_name: trimmed })
+    .eq('id', userId);
+  return error ? { code: 'network', detail: error.message } : null;
+}
+
 /** Registers for sign-in and sign-out, including those from another tab. */
 export function onAuthChange(handler: (session: Session | null) => void): () => void {
   if (!supabase) return () => {};

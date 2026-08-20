@@ -79,6 +79,11 @@ export interface AppContextValue {
   vendorDay: VendorDay;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
+  /**
+   * Stores the signed-in customer's name on their profile. True once written;
+   * the sheet stays open on false so nothing is typed twice.
+   */
+  saveMyName: (fullName: string) => Promise<boolean>;
   /** Changes the spacing between the times the booking screen offers. */
   setSlotStep: (minutes: number) => Promise<void>;
   /** Replaces one weekday's opening hours, or closes that day. */

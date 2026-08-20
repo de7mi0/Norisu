@@ -1,3 +1,4 @@
+import { NameSheet } from '../../components/NameSheet';
 import { Screen } from '../../components/Screen';
 import { PROFILE_ROWS } from '../../data/reviews';
 import { useApp } from '../../state/context';
@@ -13,6 +14,10 @@ const ROLE_KEYS = {
 /** Customer account screen, including the language switch and vendor hand-off. */
 export function Profile() {
   const { t, dispatch, isArabic, chevron, session, signOut } = useApp();
+
+  // What is actually stored, as opposed to what the header falls back to
+  // showing. A blank name is why the salon's calendar sees a reference.
+  const storedName = session.profile?.fullName.trim() ?? '';
 
   const signedIn = session.status === 'signedIn';
   // Before auth this screen showed a made-up persona. A guest is now told they
@@ -85,7 +90,7 @@ export function Profile() {
           const isDetails = row.label === 'Personal details';
           const value = isDetails
             ? signedIn
-              ? name
+              ? storedName || t.notGiven
               : '—'
             : isArabic
               ? row.arValue
@@ -99,6 +104,8 @@ export function Profile() {
                   dispatch({ type: 'setLang', lang: isArabic ? 'en' : 'ar' });
                 } else if (isHelp) {
                   dispatch({ type: 'openConversation', target: 'bot', from: 'profile' });
+                } else if (isDetails && signedIn) {
+                  dispatch({ type: 'openNameSheet', current: storedName });
                 }
               }}
               style={{
@@ -165,6 +172,8 @@ export function Profile() {
       >
         {t.switchVendor}
       </button>
+
+      <NameSheet />
     </Screen>
   );
 }

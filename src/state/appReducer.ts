@@ -9,7 +9,13 @@ import type {
   VendorStaff,
 } from '../types';
 import { BOT_GREETING, MAX_FIELD_LENGTH, MAX_MESSAGE_LENGTH, SALON_GREETING } from './replies';
-import { defaultChannel, normalizeCode, type AuthChannel, type AuthFailure } from '../lib/auth';
+import {
+  defaultChannel,
+  normalizeCode,
+  NAME_MAX_LENGTH,
+  type AuthChannel,
+  type AuthFailure,
+} from '../lib/auth';
 import { tile } from '../theme';
 
 export interface ServiceForm {
@@ -102,6 +108,10 @@ export interface AppState {
   /** Hides the released-seat banner while leaving the slot bookable. */
   seatBannerDismissed: boolean;
 
+  /** The "your name" sheet. UI state only — the value itself lives on the profile. */
+  nameModal: boolean;
+  nameForm: string;
+
   vDay: number;
   /** Vendor services switched off (hidden from customers), keyed by service id. */
   vOff: Record<string, boolean>;
@@ -161,6 +171,8 @@ export const initialState: AppState = {
   vOff: {},
   extraServices: [],
   extraStaff: [],
+  nameModal: false,
+  nameForm: '',
   svcModal: false,
   svcForm: { name: '', price: '', dur: '' },
   staffModal: false,
@@ -214,6 +226,9 @@ export type Action =
   | { type: 'dismissSeatBanner' }
   | { type: 'bookFromWaitlist' }
   | { type: 'toggleWaitlistAcceptance' }
+  | { type: 'openNameSheet'; current: string }
+  | { type: 'setNameForm'; value: string }
+  | { type: 'closeNameSheet' }
   | { type: 'pickVendorDay'; index: number }
   | { type: 'toggleVendorService'; serviceId: string }
   | { type: 'openServiceModal' }
@@ -400,6 +415,15 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'toggleWaitlistAcceptance':
       return { ...state, waitlistOn: !state.waitlistOn };
 
+    case 'openNameSheet':
+      // Prefilled with whatever is stored, so this edits rather than retypes.
+      return { ...state, nameModal: true, nameForm: action.current };
+    case 'setNameForm':
+      // Capped here as well as on write: the input cannot grow past what the
+      // column will keep, so nothing is silently truncated after saving.
+      return { ...state, nameForm: action.value.slice(0, NAME_MAX_LENGTH) };
+    case 'closeNameSheet':
+      return { ...state, nameModal: false, nameForm: '' };
     case 'pickVendorDay':
       return { ...state, vDay: action.index };
 

@@ -1,3 +1,4 @@
+import { NameSheet } from '../../components/NameSheet';
 import { PAY_METHODS } from '../../data/payments';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
@@ -16,6 +17,7 @@ export function Confirmation() {
     dateSummary,
     slotSummary,
     lastReference,
+    session,
   } = useApp();
 
   const method = PAY_METHODS.find((candidate) => candidate.id === state.payId);
@@ -24,6 +26,10 @@ export function Confirmation() {
   // The real reference the database issued. Without a backend there is no
   // booking to reference, so the prototype's placeholder stands in.
   const bookingRef = lastReference || 'SL-DEMO';
+
+  // Asked for only when there is somewhere real to put it and nothing there
+  // yet: a signed-in account whose profile carries no name.
+  const needsName = session.status === 'signedIn' && !session.profile?.fullName.trim();
 
   // Staff names such as "Layla A." already end in a period.
   const staffPhrase = staffName.replace(/\.$/, '');
@@ -155,6 +161,47 @@ export function Confirmation() {
       >
         {t.backHome}
       </button>
+
+      {/*
+        The only moment asking for a name is obviously worth it: the booking
+        exists, the salon will be looking at it, and the customer can see why.
+        Deliberately after the booking rather than before — nothing is gated on
+        it, and interrupting a checkout for an optional field would be worse
+        than a calendar row showing a reference.
+      */}
+      {needsName ? (
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'openNameSheet', current: '' })}
+          className="press"
+          style={{
+            marginTop: 18,
+            width: '100%',
+            textAlign: 'start',
+            background: color.surface,
+            border: `1px solid ${color.lineWarm}`,
+            borderRadius: 14,
+            padding: '12px 14px',
+            animation: 'rise .5s .4s both',
+          }}
+        >
+          <span style={{ display: 'block', font: `700 12.5px ${font.sans}`, color: color.ink }}>
+            {t.nameSheetAdd}
+          </span>
+          <span
+            style={{
+              display: 'block',
+              font: `500 11px/1.45 ${font.sans}`,
+              color: color.mutedSoft,
+              marginTop: 3,
+            }}
+          >
+            {t.nameSheetPrompt}
+          </span>
+        </button>
+      ) : null}
+
+      <NameSheet />
     </div>
   );
 }

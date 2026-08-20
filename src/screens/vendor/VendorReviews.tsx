@@ -186,7 +186,7 @@ function LiveReview({ review, lang }: { review: SalonReview; lang: 'en' | 'ar' }
           </span>
           <span>
             <span style={{ display: 'block', font: `600 13px ${font.sans}` }}>
-              {review.customerName ?? t.bookingRef}
+              {review.customerName ?? t.anonymousCustomer}
             </span>
             <span
               style={{ display: 'block', font: `500 10px ${font.sans}`, color: color.mutedSoft }}
