@@ -65,3 +65,20 @@ export const frame = {
   height: 724,
   radius: 36,
 } as const;
+
+/**
+ * How each booking status looks on the vendor calendar.
+ *
+ * These were baked into the sample appointments in data/vendor.ts, one colour
+ * literal per row. Real bookings carry a status rather than a palette, so the
+ * mapping lives here — and every status in the schema's enum has an entry, so a
+ * status the salon has never seen still renders.
+ */
+export const bookingStatus = {
+  pending: { bg: '#eaf1fd', line: '#4a90d9', dot: '#4a90d9' },
+  confirmed: { bg: '#fdf6e2', line: '#f5c542', dot: '#f5c542' },
+  in_progress: { bg: '#e8fbf6', line: '#3fd6c1', dot: '#3fd6c1' },
+  completed: { bg: '#f1f7f1', line: '#3a8a3a', dot: '#3a8a3a' },
+  cancelled: { bg: '#fdecec', line: '#e05555', dot: '#e05555' },
+  no_show: { bg: '#f4f1ea', line: '#8a857a', dot: '#8a857a' },
+} as const;

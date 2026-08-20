@@ -98,6 +98,36 @@ export const en = {
   bookingsTitle: 'Bookings',
   add: '+ Add',
 
+  // The dashboard's four figures. "Booked today" is deliberately not "Revenue":
+  // nothing is paid yet — paid_at is always null — so calling it takings would
+  // be a fiction on the one screen that must not carry any.
+  statBookings: "Today's bookings",
+  statBookingsSame: 'Same as yesterday',
+  statBookingsUp: 'vs yesterday',
+  statBooked: 'Booked today',
+  statBookedSub: 'SAR · not yet paid',
+  statRating: 'Salon rating',
+  statRatingNone: 'No reviews yet',
+  statRatingCount: 'reviews',
+  statOccupancy: 'Occupancy',
+  statOccupancySub: 'Chairs in use',
+  statOccupancyClosed: 'Closed today',
+  statNew: 'New',
+
+  anyProfessional: 'Any professional',
+  noAppointments: 'Nothing booked for this day.',
+  loadingDay: 'Loading your day…',
+  dayUnavailable: 'Could not load this day. Check your connection.',
+  noReviewsYet: 'No reviews yet. They appear here as customers leave them.',
+  reviewHidden: 'Hidden from your salon page',
+
+  statusPending: 'Pending',
+  statusConfirmed: 'Confirmed',
+  statusInProgress: 'In chair',
+  statusCompleted: 'Completed',
+  statusCancelled: 'Cancelled',
+  statusNoShow: 'No show',
+
   servicesPricing: 'Services & pricing',
   addService: '+ Add a service',
   staff: 'Staff',

@@ -120,7 +120,11 @@ returns table (
   bookings_yesterday integer,
   booked_halalas     bigint,
   occupancy_percent  integer,
-  is_open            boolean
+  is_open            boolean,
+  -- Null until somebody reviews the salon. The dashboard says "New" rather
+  -- than 0.0, the same way the customer-facing card already does.
+  rating             numeric,
+  review_count       integer
 )
 language plpgsql
 stable
@@ -188,7 +192,13 @@ begin
         round(v_booked_minutes::numeric * 100 / (v_open_minutes * v_staff_count))
       )::integer
     end,
-    (v_open_minutes > 0);
+    (v_open_minutes > 0),
+    -- salon_ratings is a view over published reviews only, and has no row at
+    -- all for a salon nobody has reviewed. Read through it rather than
+    -- averaging here, so the owner's tile and the customer's card can never
+    -- disagree about the same salon.
+    (select sr.rating from salon_ratings sr where sr.salon_id = p_salon_id),
+    (select sr.review_count::integer from salon_ratings sr where sr.salon_id = p_salon_id);
 end;
 $$;
 

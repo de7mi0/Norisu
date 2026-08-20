@@ -155,7 +155,9 @@ export const initialState: AppState = {
   seatOpen: false,
   seatBannerDismissed: false,
 
-  vDay: 3,
+  // Today. The strip used to be four fixed dates in July 2026, where 3 was the
+  // last of them; it is now the week from today, so the owner opens on today.
+  vDay: 0,
   vOff: {},
   extraServices: [],
   extraStaff: [],

@@ -44,6 +44,12 @@ import {
 } from '../data/owner';
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import {
+  loadSalonReviews,
+  loadVendorDay,
+  type VendorDay,
+  type VendorReviews,
+} from '../data/vendorBookings';
+import {
   demoAvailability,
   loadAvailability,
   totalMinutes,
@@ -337,6 +343,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured || !userId) return;
     setOwner(await loadMySalon(userId));
   }, [userId]);
+
+  // The owner's diary. Remote state again, so it sits beside `owner` rather
+  // than in the reducer; the reducer holds only which day is selected.
+  const [vendorDay, setVendorDay] = useState<VendorDay>({
+    appointments: [],
+    stats: null,
+    source: 'demo',
+  });
+  const [vendorReviews, setVendorReviews] = useState<VendorReviews>({
+    reviews: [],
+    source: 'demo',
+  });
+
+  const ownedSalonId = owner.status === 'live' ? (owner.salon?.id ?? null) : null;
+
+  // The dashboard asks about today; the calendar asks about the day on the
+  // strip. Same question, same state — and only one of those screens is ever
+  // mounted, so there is nothing to keep in sync.
+  const vendorDayOffset =
+    state.screen === 'v_calendar' ? state.vDay : state.screen === 'v_dash' ? 0 : null;
+
+  useEffect(() => {
+    if (vendorDayOffset == null) return;
+    if (!ownedSalonId) {
+      // No salon of their own: the portal keeps showing the sample one and
+      // SampleDataNotice already says why.
+      setVendorDay({ appointments: [], stats: null, source: 'demo' });
+      return;
+    }
+
+    let cancelled = false;
+    setVendorDay({ appointments: [], stats: null, source: 'loading' });
+    void loadVendorDay(ownedSalonId, dateAtOffset(vendorDayOffset)).then((result) => {
+      if (!cancelled) setVendorDay(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ownedSalonId, vendorDayOffset]);
+
+  useEffect(() => {
+    if (state.screen !== 'v_reviews') return;
+    if (!ownedSalonId) {
+      setVendorReviews({ reviews: [], source: 'demo' });
+      return;
+    }
+
+    let cancelled = false;
+    setVendorReviews({ reviews: [], source: 'loading' });
+    void loadSalonReviews(ownedSalonId).then((result) => {
+      if (!cancelled) setVendorReviews(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ownedSalonId, state.screen]);
 
   const ownerFailureText = useCallback(
     (failure: OwnerWriteFailure): string => {
@@ -894,6 +958,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       slotSummary,
       availability,
       owner,
+      vendorDay,
+      vendorReviews,
       setSlotStep,
       setDayHours,
       registerSalon,
@@ -946,6 +1012,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       slotSummary,
       availability,
       owner,
+      vendorDay,
+      vendorReviews,
       setSlotStep,
       setDayHours,
       registerSalon,

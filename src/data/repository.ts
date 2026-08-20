@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { LOAD_TIMEOUT_MS, supabase } from '../lib/supabase';
 import type { SalonRatingRow, SalonRow, ServiceRow, StaffRow } from '../lib/database.types';
 import type { Salon, Service, StaffMember } from '../types';
 import { tile } from '../theme';
@@ -107,13 +107,6 @@ export function demoCatalog(): Catalog {
   }
   return { salons: SALONS, servicesBySalon, staffBySalon };
 }
-
-/**
- * How long to wait for the catalogue before giving up and showing demo data.
- * supabase-js retries a failed request several times of its own accord, which
- * can stretch an unreachable database into a long silent wait; this caps it.
- */
-const LOAD_TIMEOUT_MS = 6000;
 
 /**
  * Reads the published catalog. Anonymous visitors are allowed to see exactly

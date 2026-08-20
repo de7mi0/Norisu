@@ -20,3 +20,13 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
       auth: { persistSession: true, autoRefreshToken: true },
     })
   : null;
+
+/**
+ * How long to wait for any single read before giving up and falling back.
+ *
+ * supabase-js retries a failed request four times of its own accord and
+ * `.abortSignal()` does not always stop it, so an unreachable database can sit
+ * silent for far longer than any one request suggests — measured at 19 seconds
+ * once. Every module that reads from Supabase races its call against this.
+ */
+export const LOAD_TIMEOUT_MS = 6000;

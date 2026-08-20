@@ -1,5 +1,6 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Availability } from '../data/availability';
+import type { VendorDay, VendorReviews } from '../data/vendorBookings';
 import type {
   DayHours,
   OwnerState,
@@ -70,6 +71,14 @@ export interface AppContextValue {
 
   /** The salon the signed-in user owns, if any. Drives the vendor portal. */
   owner: OwnerState;
+  /**
+   * That salon's appointments and figures for the day on screen — today on the
+   * dashboard, the selected day on the calendar. `source` is `'demo'` when the
+   * viewer owns no salon, which is what keeps the portal browsable for demos.
+   */
+  vendorDay: VendorDay;
+  /** That salon's own reviews, unpublished ones included. */
+  vendorReviews: VendorReviews;
   /** Changes the spacing between the times the booking screen offers. */
   setSlotStep: (minutes: number) => Promise<void>;
   /** Replaces one weekday's opening hours, or closes that day. */

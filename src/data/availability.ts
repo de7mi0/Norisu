@@ -12,7 +12,7 @@
  * list — so the browser cannot see what is taken. `available_slots()` is
  * `security definer`: it reads every booking but answers only free or taken.
  */
-import { supabase } from '../lib/supabase';
+import { LOAD_TIMEOUT_MS, supabase } from '../lib/supabase';
 import type { AvailableSlotRow } from '../lib/database.types';
 import type { Service } from '../types';
 import { DISABLED_SLOTS, FULLY_BOOKED_DATE_INDEX, SLOTS } from './services';
@@ -52,12 +52,6 @@ export interface AvailabilityQuery {
   excludeBookingId?: string | null;
 }
 
-/**
- * Same reasoning as the catalogue's timeout: supabase-js retries internally and
- * an unreachable database can otherwise sit silent for a long time.
- */
-const LOAD_TIMEOUT_MS = 6000;
-
 /** Saudi Arabia does not observe daylight saving, so this is stable. */
 const RIYADH_TIME_ZONE = 'Asia/Riyadh';
 
@@ -69,12 +63,12 @@ const riyadhClock = new Intl.DateTimeFormat('en-GB', {
 });
 
 /** "2026-08-25T07:00:00Z" → "10:00", the time as the salon reads a clock. */
-function toRiyadhTime(iso: string): string {
+export function toRiyadhTime(iso: string): string {
   return riyadhClock.format(new Date(iso));
 }
 
 /** The calendar day in Riyadh, as the database's `date` parameter wants it. */
-function toRiyadhDate(day: Date): string {
+export function toRiyadhDate(day: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: RIYADH_TIME_ZONE,
     year: 'numeric',

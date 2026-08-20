@@ -105,3 +105,48 @@ export interface WorkingHoursRow {
   opens_at: string;
   closes_at: string;
 }
+
+/** One row of salon_day() — see supabase/migrations/0005_vendor_day.sql. */
+export interface SalonDayRow {
+  booking_id: string;
+  reference: string;
+  starts_at: string;
+  ends_at: string;
+  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
+  /** Null for "any professional" — no one is assigned yet. */
+  staff_name_en: string | null;
+  staff_name_ar: string | null;
+  /** Null when the customer has not given a name. Nothing else about them crosses. */
+  customer_name: string | null;
+  /** Snapshotted service names, in booking order. */
+  services_en: string[] | null;
+  services_ar: string[] | null;
+  total_halalas: number;
+}
+
+/** The single row of salon_stats(). */
+export interface SalonStatsRow {
+  bookings_today: number;
+  bookings_yesterday: number;
+  /** bigint, so PostgREST sends it as a string. Value agreed, not taken. */
+  booked_halalas: number | string;
+  /** Null when the salon does not open that day. */
+  occupancy_percent: number | null;
+  is_open: boolean;
+  /** Null until somebody reviews the salon; the tile then says "New". */
+  rating: number | string | null;
+  review_count: number | null;
+}
+
+/** One row of salon_reviews(). */
+export interface SalonReviewRow {
+  review_id: string;
+  /** numeric(2,1), so PostgREST sends it as a string. */
+  rating: number | string;
+  body: string;
+  reply: string;
+  replied_at: string | null;
+  is_published: boolean;
+  created_at: string;
+  customer_name: string | null;
+}

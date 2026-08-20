@@ -2070,4 +2070,71 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 52. The dashboard's rating tile agrees with the customer's salon card.
+--
+--     salon_ratings has no row at all for a salon nobody has reviewed, so the
+--     figure is null and the tile says "New" — never 0.0, which would read as
+--     a terrible salon rather than a new one.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  fresh uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  stats record;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  -- The only review on this salon is still unpublished, so the public view
+  -- excludes it and the owner's tile must agree.
+  select * into stats from salon_stats(salon, date '2026-09-10');
+  if stats.rating is not null or coalesce(stats.review_count, 0) <> 0 then
+    raise exception 'FAIL 52a: an unpublished review reached the rating (%, %)',
+      stats.rating, stats.review_count;
+  end if;
+
+  reset role;
+  update reviews set is_published = true where salon_id = salon;
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select * into stats from salon_stats(salon, date '2026-09-10');
+  if stats.rating <> 4.5 or stats.review_count <> 1 then
+    raise exception 'FAIL 52b: the published review is not on the tile (%, %)',
+      stats.rating, stats.review_count;
+  end if;
+
+  reset role;
+
+  -- And a salon nobody has reviewed reports nothing rather than zero.
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"44444444-4444-4444-4444-444444444444"}',
+    true
+  );
+  set local role authenticated;
+
+  select * into stats from salon_stats(fresh, date '2026-09-10');
+  if stats.rating is not null then
+    raise exception 'FAIL 52c: an unreviewed salon reported a rating of %',
+      stats.rating;
+  end if;
+
+  reset role;
+  raise notice 'PASS 52: the rating tile reads the same view the customer does';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;
