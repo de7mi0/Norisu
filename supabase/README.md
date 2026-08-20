@@ -1,14 +1,17 @@
 # Saloni — database
 
 The Postgres schema behind Saloni, built for Supabase. The app reads its
-catalogue from here and signs people in against it; bookings are still
-browser-only and are the next thing to move across.
+catalogue from here, signs people in against it, books appointments against it
+and shows a salon owner their own day out of it.
 
 ```
 supabase/
   migrations/
     0001_schema.sql              tables, constraints, the rating view
     0002_row_level_security.sql  who can read and write what
+    0003_availability.sql        which times a salon can actually take
+    0004_owner_cannot_self_verify.sql  an owner may not approve their own salon
+    0005_vendor_day.sql          the owner's own diary, figures and reviews
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -29,7 +32,14 @@ the app has a bug or someone calls the API directly:
 - **Customers see only their own bookings**, and cannot create one in someone
   else's name.
 - **Reviews must be earned** — only for a completed booking that is yours.
-- **A salon must be verified before it can be published.**
+- **A salon must be verified before it can be published**, and cannot verify
+  itself — approving a salon is a human decision, not something the owner can
+  make on their own row.
+- **A salon owner sees their own customers and nobody else's.** The vendor
+  calendar reads through functions that check ownership first; another salon
+  asking about your day gets an error, not a list.
+- **A customer's contact details stay theirs.** The salon is given the name they
+  chose to give and nothing more — never an e-mail address or a phone number.
 
 All of the above are covered by assertions in `tests/01_policy_tests.sql`.
 
@@ -299,6 +309,44 @@ grant usage on schema public to anon, authenticated, service_role;
 This deletes every table and all data in `public`. It leaves your account and
 the Supabase project itself alone.
 
+## Adding a later migration to a project you already set up
+
+`setup.sql` is for a fresh project. It creates everything from scratch, so
+re-pasting it into a database that already has tables stops at the first line
+with `type "user_role" already exists` — harmless, but it means nothing new gets
+applied either.
+
+When a new migration is added after your project is running, paste **just that
+file**. Nothing already in the database is touched, and no data is lost.
+
+Take `0005_vendor_day.sql` — the one that made the vendor dashboard, calendar
+and reviews show the owner's real salon instead of sample data:
+
+1. Open **[0005_vendor_day.sql on GitHub](https://github.com/de7mi0/Norisu/blob/claude/app-progress-review-a83m59/supabase/migrations/0005_vendor_day.sql)**.
+   (That link points at the branch the file was written on. Once the branch is
+   merged, the same file is on the default branch at the same path.)
+2. Click the **copy icon** at the top right of the file.
+3. In Supabase, **SQL Editor** → **"+ New query"**.
+4. Paste into the box and click **Run** (or Ctrl+Enter / Cmd+Enter).
+5. `Success. No rows returned` is what success looks like — see the note under
+   "If something goes wrong".
+
+If you get `function "salon_day" already exists`, it has been applied before and
+there is nothing to do.
+
+Migrations are numbered, and each one only ever needs applying once. If you are
+unsure which your project has, the quickest check is to run this in the SQL
+Editor — it lists the ones that leave a function behind:
+
+```sql
+select proname from pg_proc
+where pronamespace = 'public'::regnamespace
+order by proname;
+```
+
+`available_slots` means 0003 is in. `salon_day`, `salon_stats` and
+`salon_reviews` mean 0005 is in.
+
 ## Running the tests
 
 Against any local Postgres 16:
@@ -318,10 +366,11 @@ will run in production. That file is never applied to Supabase.
 - **Money is stored in halalas** as integers — `15000` is 150.00 SAR. Never use
   floats for money.
 - **"Any professional" bookings are not covered by the no-double-booking
-  constraint.** With `staff_id` null there is nobody to compare against, so the
-  database cannot catch an overlap. Either assign a staff member when the booking
-  is made, or add a separate capacity check. This is recorded on the constraint
-  itself.
+  constraint at the moment they are written.** With `staff_id` null there is
+  nobody to compare against. `available_slots()` (0003) does count the salon's
+  free chairs when it offers times, so a full salon stops offering them — but
+  two people racing the last chair can still both be accepted. Assigning a staff
+  member as the booking is made is the real fix.
 - **Storage buckets are not created here.** Photo upload (ROADMAP item A2) needs a
   bucket plus its own access policies.
 - **VAT is stored per booking** (`vat_rate`, default 0.150) rather than assumed,

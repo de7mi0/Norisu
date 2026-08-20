@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 59 TypeScript files, ~11,200 lines. ~1,020 lines of schema SQL, ~2,930 including tests and seed.
+**Scale:** 62 TypeScript files, ~12,300 lines. ~1,280 lines of schema SQL, ~3,640 including tests and seed.
 
 ---
 
@@ -81,6 +81,7 @@ src/
     bookings.ts             ★ writes and reads bookings; the price snapshot lives here
     availability.ts         ★ asks the database which times are actually free
     owner.ts                ★ the salon the signed-in user owns; hours + interval writes
+    vendorBookings.ts       ★ the owner's own day, figures and reviews
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -92,23 +93,25 @@ src/
     useSession.ts             who is signed in; listens to Supabase, does not drive it
     account.ts                display name / label / initials for the signed-in user
     replies.ts                scripted chat + assistant content, delays, input caps
-  components/                 PhoneFrame, Screen, TabBar, SheetModal, Conversation, Toast,
-                              LangToggle, icons
+  components/                 PhoneFrame, Screen, TabBar, SheetModal, NameSheet,
+                              SampleDataNotice, Conversation, Toast, LangToggle, icons
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
   screens/customer/           12 screens
-  screens/vendor/             10 screens (Hours & booking is the owner-editable one)
+  screens/vendor/             10 screens + appointment.tsx, the row the dashboard and
+                              calendar share so they identify a customer identically
   hooks/useDragScroll.ts      mouse-drag for horizontal rails
 supabase/
   migrations/0001_schema.sql              14 tables, constraints, rating view
   migrations/0002_row_level_security.sql  30 policies + grants
   migrations/0003_availability.sql        available_slots() + salons.slot_step_minutes
   migrations/0004_owner_cannot_self_verify.sql  column grants: an owner may not approve itself
-  setup.sql                   GENERATED — the two migrations concatenated, for one-paste setup
+  migrations/0005_vendor_day.sql  salon_day() / salon_stats() / salon_reviews()
+  setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   44 assertions
-  README.md                   Supabase setup walkthrough + how to approve a registered salon
+  tests/01_policy_tests.sql   52 assertions
+  README.md                   Supabase setup, approving a salon, applying a later migration
 ROADMAP.md                    backlog + the path to the app stores
 ```
 
@@ -132,7 +135,16 @@ read their own salon (published or not) and `salons_update_own` lets them write 
 salon's services and staff itself rather than reusing `loadCatalog()`, which only fetches
 *published* salons and would leave an owner still setting up staring at an empty list of their own
 services. The portal stays browsable signed out on purpose — it is how the demo is shown — so every
-still-simulated section carries a `SampleDataNotice`.
+still-simulated section carries a `SampleDataNotice`. Only the **waitlist** still needs one:
+`section="waitlist"` is the last of those markers left, and the whole-portal notice still appears
+for a visitor who owns no salon.
+
+**`data/vendorBookings.ts` is the other half**, and it *is* `security definer`, for a reason worth
+keeping straight: `bookings_select` already lets an owner read their salon's appointments, so the
+rows were never the problem. `profiles_select_own` is `id = auth.uid()`, so an owner can read no
+profile but their own — the browser can fetch the bookings and still not know whose they are.
+`salon_day()`, `salon_stats()` and `salon_reviews()` (0005) cross that boundary as narrowly as
+possible: the customer's display name and nothing else about them.
 
 **Remote state is the exception to the one-reducer rule.** The catalogue and the session are
 async and owned by Supabase, so they live in `useState`/`useSession` inside `AppContext` rather
@@ -193,9 +205,15 @@ database answers free/busy on its behalf. Its `source` is `'loading' | 'live' | 
 'closed'`, and `'closed'` (the salon does not open that day) is deliberately distinct from a day
 where every slot came back taken, because the screen says different things.
 
+**The vendor portal reads through functions, not tables.** `data/vendorBookings.ts` maps the three
+0005 functions to app types the same way, with the same `source` union minus `'closed'` — a closed
+day is a fact about the day (`stats.isOpen`), not a failure to load one. `'demo'` there means the
+viewer owns no salon, which is what keeps the portal browsable for a demo.
+
 **Watch out:** `supabase-js` retries a failed request **four times internally**, and `.abortSignal()`
-does not stop it. An unreachable database once sat silent for 19 seconds. `loadCatalog` now races
-the fetch against a 6s timeout (`LOAD_TIMEOUT_MS`), measured at 6.3s.
+does not stop it. An unreachable database once sat silent for 19 seconds. Every read races a 6s
+timeout — `LOAD_TIMEOUT_MS`, now defined once in `lib/supabase.ts` because it had been copied into
+two modules with the same comment. Measured at 6.3s.
 
 ---
 
@@ -232,6 +250,11 @@ Auth.tsx  ──dispatch──>  appReducer (authForm: the two steps)
   booking has to belong to somebody, so "Confirm & pay" opens the sign-in sheet with
   `reason: 'booking'`, which tells the customer why they were interrupted. Nothing is written
   before they sign in.
+- **`profiles.full_name` is written now**, by the "Personal details" row on the profile screen and
+  by a one-off prompt after a booking is confirmed — both through the shared `components/NameSheet`.
+  Giving a name stays optional; the salon sees the booking reference otherwise, because 0005 hands
+  it no e-mail or phone number to fall back on. Capped at `NAME_MAX_LENGTH` (60) on the input and
+  again on write.
 - **`profiles.locale`** is the one genuinely per-account behaviour today: the account's language
   wins on sign-in, and a later change is written back. Its reconciliation is a **single effect in
   `AppContext.tsx` guarded by a ref**. Split into two effects it races itself and overwrites the
@@ -256,7 +279,8 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 44 assertions.
+plus a `salon_ratings` view and four functions — `available_slots()` (0003) and `salon_day()`,
+`salon_stats()`, `salon_reviews()` (0005). 30 RLS policies. 52 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -271,6 +295,13 @@ plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS polici
    privilege on `is_verified` or `is_published`, which row-level security cannot express because a
    policy sees whole rows, not columns.
 7. **A signed-in user reads and updates only their own profile.**
+8. **A salon owner reads their own customers and nobody else's.** The 0005 functions are
+   `security definer`, so RLS does not filter them — the `is_salon_owner()` guard at the top of each
+   *is* the boundary, and a rival salon or a plain customer gets `42501`. They are granted to
+   `authenticated` only, unlike `available_slots()`, which anon needs because browsing is ungated.
+   Assertions 46 and 47.
+9. **A customer's contact details never reach the salon.** The functions return
+   `nullif(full_name, '')` and nothing else about the person — no e-mail, no phone.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -289,7 +320,7 @@ salon stops offering the time *and* stops offering the last person by name. That
 professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-44 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+52 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -330,7 +361,11 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
-| Vendor dashboard figures, calendar, reviews, waitlist | Browser-only, and **labelled as sample on screen** so an owner cannot read them as their own. |
+| **Vendor dashboard figures** | **Real.** Today's bookings, the value booked, occupancy and the rating, from `salon_stats()`. "Booked today" is **not revenue** — nothing is paid. |
+| **Vendor day calendar** | **Real.** The owner's own appointments for any day in the coming week, from `salon_day()`, cancellations included. |
+| **Vendor reviews** | **Real.** From `salon_reviews()`, unpublished rows included and marked. Replying is still not built. |
+| Vendor waitlist | Browser-only, and **the last section still labelled as sample on screen**. |
+| **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | Photos | CSS placeholder tiles. |
@@ -353,13 +388,14 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
   the flow was driven against stubbed HTTP endpoints. Only the unreachable-backend path was
   exercised for real. Live behaviour still needs confirming in a browser.
 - **Phone OTP has never sent anything** — no SMS provider has been configured.
-- **`profiles.full_name` is never set by the app.** New accounts sign in with a blank name and the
-  profile screen falls back to the e-mail or number. There is no "edit your details" screen.
+- **`profiles.full_name` is written now**, but only ever by the account itself, and only a name —
+  there is still no wider "edit your details" screen, and `profiles.phone` is never set.
 - **`role` is still not what gates anything.** Ownership does: the portal shows real data only for
   the salon whose `owner_id` matches the signed-in user, and the policies reject writes from anyone
   else (assertions 32 and 34). `profiles.role` remains decorative — a vendor with no salon row sees
   the sample portal, same as a customer.
-- The profile screen's other rows ("Saved salons 6", "3 cards") are **still fiction**.
+- The profile screen's invented rows ("Saved salons 6", "3 cards") are **gone**. "Notifications ·
+  On" remains and is still decorative — no notification is ever sent.
 
 **Booking lifecycle.** Create, move and cancel all go through `data/bookings.ts`.
 **Rescheduling is an UPDATE, not a new row** — the customer keeps their reference, the price
@@ -383,7 +419,7 @@ constraint ignores cancelled rows, so the slot frees immediately.
   moves. Do not treat a booking as paid.
 
 **Structural gaps:**
-- The waitlist and vendor edits do not survive a refresh.
+- The waitlist does not survive a refresh.
 - "Any professional" bookings are outside the no-double-booking constraint at write time.
 - **Verification is a manual step.** A registered salon stays invisible to customers until someone
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
@@ -391,11 +427,17 @@ constraint ignores cancelled rows, so the slot frees immediately.
   the owner they went live.
 - **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
   and a second would silently never be shown. The schema permits more.
-- **The vendor portal is only partly per-owner.** `data/owner.ts` finds the salon the signed-in
-  user owns, and the hours, booking interval, services list and team now come from it. The
-  dashboard figures, the calendar, reviews and the waitlist are still sample data — they need
-  aggregate and booking queries that do not exist yet. Every one of those sections **says so on
-  screen**, because an owner reading invented takings as their own is worse than an unlabelled demo.
+- **The vendor portal is per-owner apart from the waitlist.** Registration, hours, interval,
+  services, team, the dashboard figures, the day calendar and reviews are all the owner's own. The
+  **waitlist** is the last sample section, and still says so on screen — it needs
+  `waitlist_entries` to be written by the customer side first, which nothing does yet.
+- **The vendor calendar is read-only.** An owner cannot confirm, complete, cancel or reassign an
+  appointment from it, though `bookings_update` already permits all four. The "+ Add" pill is still
+  inert. Replying to a review is likewise unbuilt, though `reviews.reply` exists for it.
+- **Occupancy is capped at 100%.** It counts booked minutes against opening hours times active
+  staff, and "any professional" bookings are not assigned a chair at write time, so an oversold day
+  would otherwise exceed the salon's own hours. The cap hides that rather than fixing it.
+- **The dashboard is today only.** No week, no month, no trend beyond yesterday's count.
 - No storage bucket exists for photo upload.
 - Open signup: anyone visiting the public demo can create an account. Accepted for now — a
   signed-in visitor sees exactly what a guest sees.
@@ -404,19 +446,23 @@ constraint ignores cancelled rows, so the slot frees immediately.
 
 ## 11. Suggested next steps
 
-1. **Finish the vendor portal on real data** — registration, hours, interval, services and team are
-   now the owner's own; the dashboard's four figures, the day calendar, reviews and the waitlist are
-   still sample, each labelled as such. **This is the recommended next task**, and the day calendar
-   is the most valuable and most straightforward piece: a salon owner can already read their own
-   bookings under `bookings_select`, so it needs a query, not a new policy.
+1. **Let the owner act on an appointment, not just read it.** The calendar now shows the real day
+   but does nothing to it: confirm, complete, cancel and reassign are all permitted by
+   `bookings_update` already, so this is UI and a write, not a policy. **This is the recommended
+   next task** — a diary you cannot change is half a portal, and cancelling from the salon side is
+   what the waitlist will eventually hang off.
 2. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
-   covers it at write time rather than only at offer time (§7).
-3. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
-4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+   covers it at write time rather than only at offer time (§7). This is also what would make
+   occupancy honest rather than capped.
+3. **Persist the waitlist** — the last sample section in the portal, and the one the ROADMAP calls
+   the most interesting feature. `waitlist_entries` and its policies already exist; nothing writes
+   to them.
+4. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
+5. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
+6. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
 
 ---
 

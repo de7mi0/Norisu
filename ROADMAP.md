@@ -1,8 +1,9 @@
 # Saloni — roadmap
 
 Where the product goes from here. Today Saloni is a **front-end prototype**: it looks and
-behaves like the real thing. The catalogue, sign-in, bookings and availability are now real and
-survive a refresh; payment, chat, the waitlist, photos and notifications are still simulated.
+behaves like the real thing. The catalogue, sign-in, bookings, availability and the salon owner's
+own dashboard, calendar and reviews are real and survive a refresh; payment, chat, the waitlist,
+photos and notifications are still simulated.
 
 Two decisions are settled and shape everything below:
 
@@ -132,20 +133,45 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   Postgres has nobody to compare against. Availability capacity-checks it when offering times,
   but two people racing the last chair can still both be written. Assigning a staff member at
   booking time is the fix.
-- Booking lifecycle: ~~confirm, cancel, reschedule~~ built; **no-show** and a **cancellation
-  policy** (notice period, fees) still to do.
+- Booking lifecycle: ~~confirm, cancel, reschedule~~ built **from the customer's side**; the salon
+  cannot yet move a booking through its own statuses from the portal. **No-show** and a
+  **cancellation policy** (notice period, fees) still to do.
+- ~~Somewhere to put the customer's name~~ — **built.** `profiles.full_name` had existed since the
+  first migration with nothing ever writing to it, so every account was blank and the vendor
+  calendar had only booking references to show. The profile screen's "Personal details" row and a
+  one-off prompt after a booking both write it. It stays **optional**: the salon sees the reference
+  otherwise, which is the honest fallback rather than a degraded one. Still to do: a fuller "your
+  details" screen — `profiles.phone` is never set by the app.
 - ~~Salon self-registration~~ — **built.** The onboarding screen was a mockup: fixed placeholder
   text and a button that only navigated, so no salon could ever exist and the entire vendor side
   was unreachable. It now creates the salon owned by the signed-in user, unverified and
   unpublished, with a default week of opening hours so the booking screen works from minute one.
   Approval is a human step in the Supabase dashboard (`supabase/README.md`); still to do is an
   admin screen and telling an owner when they go live.
-- ~~Per-owner vendor data~~ — **partly built.** `src/data/owner.ts` resolves the salon the
-  signed-in user owns; the opening-hours and booking-interval editor writes `working_hours` and
-  `salons.slot_step_minutes`, and the services and team lists are the owner's own. Still sample,
-  and labelled as such on screen: the dashboard figures, the day calendar, reviews and the
-  waitlist. The calendar is the natural next one — `bookings_select` already lets an owner read
-  their salon's bookings.
+- ~~Per-owner vendor data~~ — **built, apart from the waitlist.** `src/data/owner.ts` resolves the
+  salon the signed-in user owns; the opening-hours and booking-interval editor writes
+  `working_hours` and `salons.slot_step_minutes`; the services and team lists are the owner's own;
+  and migration 0005's `salon_day()`, `salon_stats()` and `salon_reviews()` now supply the
+  dashboard figures, the day calendar and the reviews list. The **waitlist** is the last sample
+  section and still says so on screen — it cannot become real until the customer side writes
+  `waitlist_entries`, which nothing does yet.
+
+  `bookings_select` did already let an owner read their salon's bookings, so the appointments
+  needed no new privilege — but `profiles_select_own` hides every profile but the viewer's own, so
+  the browser could fetch the bookings and still not know whose they were. That is what 0005 is
+  for, and it is deliberately narrow: the customer's display name and nothing else. No e-mail, no
+  phone number.
+
+  Two figures are stated carefully rather than flattered. "Booked today" is what customers agreed
+  to, **not takings** — `paid_at` is still always null. Occupancy is null on a day the salon is
+  closed, and capped at 100% because unassigned bookings can oversell a day (see the
+  double-booking item above).
+
+  Still to do here: **the calendar is read-only.** An owner cannot confirm, complete, cancel or
+  reassign an appointment from it, though `bookings_update` already permits all four — that is UI
+  and a write, not a policy, and it is the recommended next task. Replying to a review is likewise
+  unbuilt, though `reviews.reply` exists for it. The dashboard covers today only: no week, no
+  month, no trend beyond yesterday's count.
 - ~~Vendor CRUD for services and team (backlog item 1)~~ — **built.** An owner adds, edits, hides
   and removes their own services and staff. Removing archives rather than deletes, because
   bookings reference the row and a past booking must keep meaning what it meant. What is still
