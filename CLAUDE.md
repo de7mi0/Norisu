@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 59 TypeScript files, ~11,100 lines. ~960 lines of schema SQL, ~2,770 including tests and seed.
+**Scale:** 59 TypeScript files, ~11,200 lines. ~1,020 lines of schema SQL, ~2,930 including tests and seed.
 
 ---
 
