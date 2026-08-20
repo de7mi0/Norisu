@@ -1696,4 +1696,378 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 45. An owner reads their own day, with the customer's name on it.
+--
+--     bookings_select already lets them read the appointments. The name is the
+--     part that needs salon_day(): profiles_select_own hides every profile but
+--     the viewer's own, so without this the calendar would show appointments
+--     belonging to nobody.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  row_count integer;
+  got record;
+begin
+  -- A named appointment and an unassigned one, on the same salon-day.
+  update profiles set full_name = 'Huda A.'
+    where id = '11111111-1111-1111-1111-111111111111';
+
+  delete from bookings where salon_id = salon;
+
+  insert into bookings (
+    id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    'eeeeeeee-0000-0000-0000-000000000045', 'SL-D001',
+    '11111111-1111-1111-1111-111111111111', salon,
+    'dddddddd-0000-0000-0000-000000000001',
+    '2026-09-10 10:00+03', '2026-09-10 10:45+03', 'confirmed', 12000, 13800
+  );
+
+  insert into booking_items (
+    booking_id, service_id, name_en, name_ar, duration_minutes, unit_price_halalas
+  ) values (
+    'eeeeeeee-0000-0000-0000-000000000045',
+    'cccccccc-0000-0000-0000-000000000001',
+    'Signature Haircut', 'قص شعر', 45, 15000
+  );
+
+  -- Customer B has never filled in a name, and asked for "any professional".
+  insert into bookings (
+    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    'SL-D002', '22222222-2222-2222-2222-222222222222', salon, null,
+    '2026-09-10 12:00+03', '2026-09-10 13:00+03', 'pending', 20000, 23000
+  );
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select count(*) into row_count
+    from salon_day(salon, date '2026-09-10');
+  if row_count <> 2 then
+    raise exception 'FAIL 45a: expected both appointments, got %', row_count;
+  end if;
+
+  select * into got
+    from salon_day(salon, date '2026-09-10')
+    where reference = 'SL-D001';
+
+  if got.customer_name is distinct from 'Huda A.' then
+    raise exception 'FAIL 45b: the customer name did not reach the owner (%)',
+      got.customer_name;
+  end if;
+  if got.staff_name_en is distinct from 'Layla A.' then
+    raise exception 'FAIL 45c: the staff name is wrong (%)', got.staff_name_en;
+  end if;
+  if got.services_en <> array['Signature Haircut'] then
+    raise exception 'FAIL 45d: the snapshotted service names are wrong (%)',
+      got.services_en;
+  end if;
+
+  -- A blank name comes back null rather than as an empty string, so the screen
+  -- can fall back to the reference instead of rendering a gap.
+  select * into got
+    from salon_day(salon, date '2026-09-10')
+    where reference = 'SL-D002';
+  if got.customer_name is not null then
+    raise exception 'FAIL 45e: a blank name should be null, got %', got.customer_name;
+  end if;
+  -- "Any professional": nobody is assigned, and no name is invented.
+  if got.staff_name_en is not null then
+    raise exception 'FAIL 45f: an unassigned booking named a staff member';
+  end if;
+  -- A booking with no items still returns a row, with an empty list.
+  if got.services_en <> '{}'::text[] then
+    raise exception 'FAIL 45g: expected no services, got %', got.services_en;
+  end if;
+
+  reset role;
+  raise notice 'PASS 45: an owner reads their own day, with the customer name on it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 46. Nobody else may call it.
+--
+--     security definer bypasses row-level security, so the guard inside the
+--     function is the whole boundary. If it were dropped, any signed-in
+--     account could read any salon's diary and its customers' names — this is
+--     the assertion that would catch it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+begin
+  -- The other salon's owner.
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"44444444-4444-4444-4444-444444444444"}',
+    true
+  );
+  set local role authenticated;
+
+  begin
+    perform * from salon_day(salon, date '2026-09-10');
+    raise exception 'FAIL 46a: a rival salon read this salon''s day';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    perform * from salon_stats(salon, date '2026-09-10');
+    raise exception 'FAIL 46b: a rival salon read this salon''s figures';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    perform * from salon_reviews(salon);
+    raise exception 'FAIL 46c: a rival salon read this salon''s reviews';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- And the customer whose booking it is — they may read their own booking,
+  -- but not the salon's diary of everyone else's.
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"11111111-1111-1111-1111-111111111111"}',
+    true
+  );
+  begin
+    perform * from salon_day(salon, date '2026-09-10');
+    raise exception 'FAIL 46d: a customer read the salon''s whole day';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+  raise notice 'PASS 46: the owner''s day, figures and reviews are for that owner alone';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 47. An anonymous visitor cannot call these at all.
+--
+--     available_slots() is granted to anon on purpose — browsing is ungated.
+--     These three are not, and the grant is the only thing separating them.
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  set local role anon;
+  begin
+    perform * from salon_day('aaaaaaaa-0000-0000-0000-000000000001', date '2026-09-10');
+    raise exception 'FAIL 47: an anonymous visitor read a salon''s day';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+  raise notice 'PASS 47: the vendor functions are closed to anonymous visitors';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 48. Cancelled bookings stay on the calendar but leave the figures.
+--
+--     A salon needs to see that somebody dropped out — that is why the row is
+--     kept at all — but a cancellation is not a booking taken, is not money
+--     agreed, and does not occupy a chair.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  stats record;
+  listed integer;
+begin
+  update bookings set status = 'cancelled', cancelled_at = now()
+    where reference = 'SL-D002';
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select count(*) into listed from salon_day(salon, date '2026-09-10');
+  if listed <> 2 then
+    raise exception 'FAIL 48a: the cancelled appointment vanished from the day';
+  end if;
+
+  select * into stats from salon_stats(salon, date '2026-09-10');
+  if stats.bookings_today <> 1 then
+    raise exception 'FAIL 48b: the cancelled booking was counted (%)',
+      stats.bookings_today;
+  end if;
+  if stats.booked_halalas <> 13800 then
+    raise exception 'FAIL 48c: the cancelled booking was still valued (%)',
+      stats.booked_halalas;
+  end if;
+
+  reset role;
+  raise notice 'PASS 48: a cancellation stays on the calendar and leaves the figures';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 49. Occupancy is null on a day the salon does not open.
+--
+--     Dividing by a zero-length day would otherwise report 0% — which reads
+--     as "open and empty" when the truth is "closed". The screen says
+--     different things, so the function must distinguish them.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  stats record;
+begin
+  delete from working_hours where salon_id = salon;
+  -- 2026-09-10 is a Thursday (dow 4). Ten open hours.
+  insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+  values (salon, 4, '10:00', '20:00');
+
+  -- Earlier assertions hired their own staff into this salon. Occupancy is a
+  -- fraction of the chairs available, so pin it to the one chair this check
+  -- reasons about rather than letting an unrelated fixture move the answer.
+  update staff set is_archived = true
+    where salon_id = salon
+      and id <> 'dddddddd-0000-0000-0000-000000000001';
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select * into stats from salon_stats(salon, date '2026-09-10');
+  if not stats.is_open then
+    raise exception 'FAIL 49a: the salon should be open on the Thursday';
+  end if;
+  -- 45 minutes booked out of 600 available = 8%.
+  if stats.occupancy_percent <> 8 then
+    raise exception 'FAIL 49b: occupancy should be 8%%, got %',
+      stats.occupancy_percent;
+  end if;
+
+  -- The Friday has no hours at all.
+  select * into stats from salon_stats(salon, date '2026-09-11');
+  if stats.is_open then
+    raise exception 'FAIL 49c: the salon should be closed on the Friday';
+  end if;
+  if stats.occupancy_percent is not null then
+    raise exception 'FAIL 49d: a closed day reported %%% occupancy',
+      stats.occupancy_percent;
+  end if;
+
+  reset role;
+  raise notice 'PASS 49: occupancy is a real fraction of the open day, or nothing';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 50. Yesterday's count is the comparison the dashboard shows.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  stats record;
+begin
+  insert into bookings (
+    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    'SL-D003', '22222222-2222-2222-2222-222222222222', salon,
+    'dddddddd-0000-0000-0000-000000000001',
+    '2026-09-09 10:00+03', '2026-09-09 11:00+03', 'confirmed', 20000, 23000
+  );
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select * into stats from salon_stats(salon, date '2026-09-10');
+  if stats.bookings_yesterday <> 1 then
+    raise exception 'FAIL 50: yesterday''s count is wrong (%)',
+      stats.bookings_yesterday;
+  end if;
+
+  reset role;
+  raise notice 'PASS 50: the dashboard compares against the day before';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 51. A salon reads its own reviews, unpublished ones included, with names.
+--
+--     Hiding a complaint from the business it is about helps nobody, so
+--     is_published is returned rather than filtered on.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  listed integer;
+  got record;
+begin
+  -- A review must belong to a completed booking of the reviewer's own.
+  update bookings set status = 'completed'
+    where reference = 'SL-D001';
+
+  insert into reviews (booking_id, salon_id, customer_id, rating, body, is_published)
+  values (
+    'eeeeeeee-0000-0000-0000-000000000045', salon,
+    '11111111-1111-1111-1111-111111111111', 4.5, 'Lovely cut.', false
+  );
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  select count(*) into listed from salon_reviews(salon);
+  if listed <> 1 then
+    raise exception 'FAIL 51a: expected the unpublished review, got % rows', listed;
+  end if;
+
+  select * into got from salon_reviews(salon);
+  if got.customer_name is distinct from 'Huda A.' then
+    raise exception 'FAIL 51b: the reviewer''s name did not reach the owner (%)',
+      got.customer_name;
+  end if;
+  if got.is_published then
+    raise exception 'FAIL 51c: the review should still be unpublished';
+  end if;
+
+  reset role;
+  raise notice 'PASS 51: a salon reads its own reviews, unpublished ones included';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;
