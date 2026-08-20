@@ -1024,6 +1024,7 @@ declare
   offered bigint;
   leaked  bigint;
 begin
+  perform set_config('request.jwt.claims', '', true);
   set local role anon;
 
   select count(*) into offered
@@ -1258,6 +1259,127 @@ begin
   where id = 'aaaaaaaa-0000-0000-0000-000000000001';
 
   raise notice 'PASS 35: an owner reads their own salon, services and team before publishing';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- Salon registration — the front door of the vendor side. Salons sign
+-- themselves up, so these are the guarantees around that.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 36. Anyone signed in can register a salon, and it belongs to them. It is
+--     created unverified and unpublished, so it is invisible to customers
+--     until its commercial registration has been checked.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  newbie    uuid := '55555555-5555-5555-5555-555555555555';
+  mine      uuid;
+  published boolean;
+  verified  boolean;
+  visible   bigint;
+begin
+  insert into auth.users (id, phone) values (newbie, '+966500000005');
+
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', newbie), true);
+  set local role authenticated;
+
+  insert into salons (owner_id, slug, name_en, name_ar, cr_number)
+  values (newbie, 'new-salon-test', 'New Salon', 'صالون جديد', '1010999999')
+  returning id into mine;
+
+  select is_published, is_verified into published, verified
+  from salons where id = mine;
+
+  if published or verified then
+    raise exception 'FAIL 36a: a newly registered salon was already live (published=%, verified=%)',
+      published, verified;
+  end if;
+
+  -- The owner can see it straight away, which is what the portal depends on.
+  if not exists (select 1 from salons where owner_id = newbie) then
+    raise exception 'FAIL 36b: the owner cannot see the salon they just registered';
+  end if;
+
+  reset role;
+  -- An anonymous visitor carries no JWT, so the claim must go too — otherwise
+  -- auth.uid() still names the owner and the policy rightly shows them their
+  -- own unpublished salon.
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  select count(*) into visible from salons where id = mine;
+  if visible <> 0 then
+    raise exception 'FAIL 36c: an unverified salon was visible to the public';
+  end if;
+
+  raise notice 'PASS 36: a salon registers itself, owned and hidden until verified';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 37. Registration cannot be used to create a salon in someone else's name —
+--     owner_id is checked against the signed-in user, not trusted from the app.
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"55555555-5555-5555-5555-555555555555"}',
+    true
+  );
+  set local role authenticated;
+
+  begin
+    insert into salons (owner_id, slug, name_en, name_ar)
+    values ('11111111-1111-1111-1111-111111111111', 'forged-salon', 'Forged', 'مزور');
+    raise exception 'FAIL 37: a salon was registered in another user''s name';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'PASS 37: a salon can only be registered for the account doing it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 38. Verifying then publishing is what puts a salon in front of customers,
+--     and the constraint refuses that order being skipped.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine    uuid;
+  visible bigint;
+begin
+  select id into mine from salons where slug = 'new-salon-test';
+
+  -- Publishing an unverified salon is refused outright.
+  begin
+    update salons set is_published = true where id = mine;
+    raise exception 'FAIL 38a: an unverified salon was published';
+  exception
+    when check_violation then null;
+  end;
+
+  -- Verification is an admin act; the owner cannot self-verify into the
+  -- catalogue. Done here as the table owner, which is what a human approving
+  -- in the Supabase dashboard is doing.
+  update salons set is_verified = true, is_published = true where id = mine;
+
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  select count(*) into visible from salons where id = mine;
+  if visible <> 1 then
+    raise exception 'FAIL 38b: a verified, published salon was still not visible to customers';
+  end if;
+
+  raise notice 'PASS 38: a salon reaches customers only after verification, then publishing';
 end
 $$;
 reset role;

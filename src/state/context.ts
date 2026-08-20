@@ -1,6 +1,6 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Availability } from '../data/availability';
-import type { DayHours, OwnerState } from '../data/owner';
+import type { DayHours, OwnerState, SalonDraft } from '../data/owner';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
 import type { Booking, Salon, Service, StaffMember } from '../types';
@@ -68,6 +68,8 @@ export interface AppContextValue {
   setSlotStep: (minutes: number) => Promise<void>;
   /** Replaces one weekday's opening hours, or closes that day. */
   setDayHours: (day: DayHours) => Promise<void>;
+  /** Registers a salon for the signed-in user. True once it exists. */
+  registerSalon: (draft: SalonDraft) => Promise<boolean>;
 
   /** Who is signed in, and the profile row that goes with them. */
   session: SessionValue;

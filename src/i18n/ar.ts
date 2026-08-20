@@ -27,6 +27,12 @@ export const ar: Dictionary = {
   selectDateTime: 'اختر التاريخ والوقت',
   availableSlots: 'المواعيد المتاحة',
   hoursTitle: 'الساعات والحجز',
+  alreadyRegistered: 'هذا الحساب يملك صالوناً بالفعل. تُدار تفاصيله من اللوحة.',
+  verificationNote:
+    'سجّل الآن وابدأ بضبط ساعاتك وخدماتك وفريقك فوراً. سيظهر صالونك للعملاء بعد التحقق من سجلك التجاري.',
+  registering: '…جارٍ التسجيل',
+  registerNeedsFields: 'الاسم ورقم السجل مطلوبان',
+  openDashboard: 'فتح اللوحة',
   hoursNeedSalon:
     'هذه الإعدادات تخص صالوناً. سجّل الدخول بالحساب المالك لصالون لتغييرها.',
   bookingInterval: 'الفاصل بين المواعيد',

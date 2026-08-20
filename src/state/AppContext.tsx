@@ -21,12 +21,15 @@ import {
   type BookingFailure,
 } from '../data/bookings';
 import {
+  createSalon,
   loadMySalon,
   saveDayHours,
   saveSlotStep,
   type DayHours,
   type OwnerState,
   type OwnerWriteFailure,
+  type RegisterFailure,
+  type SalonDraft,
 } from '../data/owner';
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import {
@@ -379,6 +382,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [flash, isArabic, owner.salon, ownerFailureText, refreshOwner],
   );
 
+  /**
+   * Registers the salon and opens its portal. Returns true on success so the
+   * form can clear itself; the failure is already on screen either way.
+   */
+  const registerSalon = useCallback(
+    async (draft: SalonDraft): Promise<boolean> => {
+      if (!userId) {
+        // A salon row must belong to somebody, so ask who first.
+        dispatch({ type: 'openAuth', reason: 'vendor' });
+        return false;
+      }
+
+      const result = await createSalon(userId, draft);
+      if ('error' in result) {
+        const messages: Record<RegisterFailure, { en: string; ar: string }> = {
+          notConfigured: {
+            en: 'Not saved — no database is connected.',
+            ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.',
+          },
+          notSignedIn: {
+            en: 'Sign in first, so the salon belongs to your account.',
+            ar: 'سجّل الدخول أولاً ليكون الصالون تابعاً لحسابك.',
+          },
+          missingName: {
+            en: 'The salon needs a name in both English and Arabic.',
+            ar: 'يحتاج الصالون إلى اسم بالعربية والإنجليزية.',
+          },
+          missingCr: {
+            en: 'Your commercial registration number is required.',
+            ar: 'رقم السجل التجاري مطلوب.',
+          },
+          alreadyOwns: {
+            en: 'This account already has a salon.',
+            ar: 'هذا الحساب يملك صالوناً بالفعل.',
+          },
+          network: {
+            en: 'Could not register the salon. Check your connection and try again.',
+            ar: 'تعذّر تسجيل الصالون. تحقق من الاتصال وحاول مرة أخرى.',
+          },
+        };
+        const message = messages[result.error];
+        flash(isArabic ? message.ar : message.en);
+        return false;
+      }
+
+      await refreshOwner();
+      dispatch({ type: 'go', screen: 'v_dash' });
+      flash(
+        isArabic
+          ? 'تم تسجيل صالونك ✓ سيظهر للعملاء بعد التحقق.'
+          : 'Salon registered ✓ It appears to customers once verified.',
+      );
+      return true;
+    },
+    [flash, isArabic, refreshOwner, userId],
+  );
+
   // A signed-in customer's language belongs to their account, not to this
   // browser, so it follows them to a new phone. The ref remembers what has
   // already been reconciled for this account — without it the write-back would
@@ -669,6 +729,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       setSlotStep,
       setDayHours,
+      registerSalon,
       session,
       requestPasscode,
       submitPasscode,
@@ -714,6 +775,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       setSlotStep,
       setDayHours,
+      registerSalon,
       submitPasscode,
       upcomingBookings,
       pastBookings,

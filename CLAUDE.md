@@ -18,6 +18,11 @@ Two apps inside one shell, chosen on a first screen:
 - **Customer** — find a salon, pick services, choose a specialist and a time, pay, manage bookings.
 - **Vendor** — the salon owner's side: dashboard, calendar, services, staff, gallery, reviews, waitlist.
 
+**Salons sign themselves up.** There is no back office typing them in, so registration is the front
+door of the whole vendor side: until a salon can create its own row, every owner account owns
+nothing and the portal has nobody to serve. A registered salon is **unverified and unpublished**
+until a human checks its commercial registration — `supabase/README.md` has the click-by-click.
+
 Fully bilingual English / Arabic with real right-to-left layout, not a translation layer bolted on.
 It began as a Claude Design prototype (`Saloni Prototype.dc.html`, **not in the repo**) and was
 built out as a real app. The implementation is the source of truth now.
@@ -25,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 59 TypeScript files, ~10,100 lines. ~960 lines of schema SQL, ~2,440 including tests and seed.
+**Scale:** 59 TypeScript files, ~10,400 lines. ~960 lines of schema SQL, ~2,560 including tests and seed.
 
 ---
 
@@ -101,8 +106,8 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   35 assertions
-  README.md                   Supabase setup walkthrough, written for a non-developer
+  tests/01_policy_tests.sql   38 assertions
+  README.md                   Supabase setup walkthrough + how to approve a registered salon
 ROADMAP.md                    backlog + the path to the app stores
 ```
 
@@ -250,7 +255,7 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 35 assertions.
+plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 38 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -280,7 +285,7 @@ salon stops offering the time *and* stops offering the last person by name. That
 professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-35 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+38 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -317,6 +322,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
 | Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
+| **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
 | Vendor services / staff **lists** | **Real for an owner** (read-only). Adding, editing and the live-hidden toggle are still browser-only. |
 | Vendor dashboard figures, calendar, reviews, waitlist | Browser-only, and **labelled as sample on screen** so an owner cannot read them as their own. |
@@ -376,6 +382,12 @@ constraint ignores cancelled rows, so the slot frees immediately.
 **Structural gaps:**
 - The waitlist and vendor edits do not survive a refresh.
 - "Any professional" bookings are outside the no-double-booking constraint at write time.
+- **Verification is a manual step.** A registered salon stays invisible to customers until someone
+  ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
+  constraint stops the order being skipped, but there is no admin screen and no notification telling
+  the owner they went live.
+- **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
+  and a second would silently never be shown. The schema permits more.
 - **The vendor portal is only partly per-owner.** `data/owner.ts` finds the salon the signed-in
   user owns, and the hours, booking interval, services list and team now come from it. The
   dashboard figures, the calendar, reviews and the waitlist are still sample data — they need
@@ -389,19 +401,22 @@ constraint ignores cancelled rows, so the slot frees immediately.
 
 ## 11. Suggested next steps
 
-1. **Finish the vendor portal on real data** — the foundation is in (`data/owner.ts`, the hours
-   and interval editor, real services and staff lists). **This is the recommended next task**: the
-   dashboard's four figures, the day calendar, reviews and the waitlist are still sample, each
-   labelled as such. The calendar is the most valuable and the most straightforward — a salon owner
-   can read their own bookings under `bookings_select`, so it needs a query, not a new policy.
-2. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
+1. **Finish the vendor portal on real data** — registration, hours, interval, services and team are
+   now the owner's own; the dashboard's four figures, the day calendar, reviews and the waitlist are
+   still sample, each labelled as such. **This is the recommended next task**, and the day calendar
+   is the most valuable and most straightforward piece: a salon owner can already read their own
+   bookings under `bookings_select`, so it needs a query, not a new policy.
+2. **Let an owner add services and staff.** They can register and set hours, but the catalogue a
+   customer books from still has to be seeded by hand in the dashboard — which makes a real
+   sign-up incomplete. Closely related to vendor CRUD (A1).
+3. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
    covers it at write time rather than only at offer time (§7).
-3. Vendor CRUD (A1), photo upload with EXIF stripping (A2), waitlist notifications (A3).
-4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+4. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
+5. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
+6. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
 
 ---
 

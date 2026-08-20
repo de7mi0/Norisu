@@ -262,3 +262,108 @@ export async function saveDayHours(
   if (error.code === '42501') return 'notOwner';
   return 'network';
 }
+
+/** What the registration form collects. Bilingual where customers will see it. */
+export interface SalonDraft {
+  nameEn: string;
+  nameAr: string;
+  categoryEn: string;
+  categoryAr: string;
+  areaEn: string;
+  areaAr: string;
+  city: string;
+  crNumber: string;
+  phone: string;
+}
+
+export type RegisterFailure =
+  | 'notConfigured'
+  | 'notSignedIn'
+  | 'missingName'
+  | 'missingCr'
+  | 'alreadyOwns'
+  | 'network';
+
+/**
+ * A url-safe handle from the salon's name, with a short random tail because
+ * `salons.slug` is unique and two "Rose & Oud"s are entirely likely.
+ */
+function slugFrom(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  const tail = Math.floor(Math.random() * 36 ** 4)
+    .toString(36)
+    .padStart(4, '0');
+  return `${base || 'salon'}-${tail}`;
+}
+
+/**
+ * A week the booking screen can already work with, so a new salon is not
+ * "closed every day" the moment it is created. The owner changes it in
+ * Hours & booking; Friday opens later, as most Saudi salons do.
+ */
+function defaultWeek(salonId: string) {
+  return Array.from({ length: 7 }, (_, dayOfWeek) => ({
+    salon_id: salonId,
+    staff_id: null,
+    day_of_week: dayOfWeek,
+    opens_at: dayOfWeek === 5 ? '14:00' : '10:00',
+    closes_at: '22:00',
+  }));
+}
+
+/**
+ * Registers a salon for the signed-in user.
+ *
+ * It is created **unverified and unpublished**: `published_salons_are_verified`
+ * forbids publishing before verification, so a new salon can set itself up —
+ * hours, services, team — while staying invisible to customers until its
+ * commercial registration has been checked. That check is a human one for now.
+ */
+export async function createSalon(
+  userId: string,
+  draft: SalonDraft,
+): Promise<{ salonId: string } | { error: RegisterFailure }> {
+  if (!supabase) return { error: 'notConfigured' };
+  if (!userId) return { error: 'notSignedIn' };
+  if (!draft.nameEn.trim() || !draft.nameAr.trim()) return { error: 'missingName' };
+  if (!draft.crNumber.trim()) return { error: 'missingCr' };
+
+  // One salon per owner today. The schema permits more, but every screen in the
+  // portal assumes one, so a second would silently never be shown.
+  const existing = await loadMySalon(userId);
+  if (existing.status === 'live') return { error: 'alreadyOwns' };
+
+  const { data, error } = await supabase
+    .from('salons')
+    .insert({
+      owner_id: userId,
+      slug: slugFrom(draft.nameEn),
+      name_en: draft.nameEn.trim(),
+      name_ar: draft.nameAr.trim(),
+      category_en: draft.categoryEn.trim(),
+      category_ar: draft.categoryAr.trim(),
+      area_en: draft.areaEn.trim(),
+      area_ar: draft.areaAr.trim(),
+      city: draft.city.trim() || 'Riyadh',
+      cr_number: draft.crNumber.trim(),
+      phone: draft.phone.trim() || null,
+      is_verified: false,
+      is_published: false,
+    })
+    .select('id')
+    .limit(1);
+
+  const row = (data ?? [])[0] as { id: string } | undefined;
+  if (error || !row) return { error: 'network' };
+
+  // Best effort: a salon with no hours still works, it just offers no times
+  // until the owner sets them, so a failure here is not worth undoing the
+  // registration over.
+  await supabase.from('working_hours').insert(defaultWeek(row.id));
+
+  return { salonId: row.id };
+}

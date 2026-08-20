@@ -233,6 +233,37 @@ matter what you do, and the row-level security in `0002` is what actually
 protects the data. The secret key **bypasses every one of those policies** —
 treat it like the database password, and never put it in the app or in git.
 
+## Approving a salon that has registered
+
+A salon owner registers themselves in the app (**I own a salon → Register your salon**). Their
+salon is created straight away, and they can set up their opening hours, services and team
+immediately — but **customers cannot see or book it until you approve it.** The database enforces
+that: a salon cannot be published unless it has been verified first.
+
+Approving is a two-part act, and the order matters.
+
+1. Open your project at **https://supabase.com/dashboard**.
+2. In the left sidebar click **Table Editor**.
+3. Choose the **salons** table from the list.
+4. Find the new row. `is_verified` and `is_published` will both be unticked, and `cr_number`
+   holds the commercial registration number they typed in.
+5. **Check that CR number is genuine** before going further — this is the whole point of the step.
+   You can look it up on the Ministry of Commerce site.
+6. Click the `is_verified` cell for that row and set it to **true**.
+7. Click the `is_published` cell and set it to **true**.
+8. Press **Save** if the editor asks.
+
+The salon appears in the customer app on their next load. No deploy is needed.
+
+**To take a salon back down,** untick `is_published`. Leave `is_verified` ticked — you have still
+checked them, and unticking both is what you do only if the verification itself was wrong. Their
+existing bookings are untouched either way; hiding a salon stops new bookings, it does not cancel
+old ones.
+
+**If you set `is_published` before `is_verified`,** the database refuses the change with a message
+about `published_salons_are_verified`. That is the constraint doing its job — tick `is_verified`
+first and try again.
+
 ## If something goes wrong
 
 The SQL Editor shows errors in red beneath the query. The likely ones:

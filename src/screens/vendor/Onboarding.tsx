@@ -1,11 +1,56 @@
+import { useState } from 'react';
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
-import { VENDOR_ONBOARD_FIELDS } from '../../data/vendor';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
+import type { SalonDraft } from '../../data/owner';
 
-/** Salon registration: location pin and business details. */
+/**
+ * Salon registration — the front door of the vendor side.
+ *
+ * This was a mockup until now: the fields were fixed display text and the
+ * button only navigated, so no salon could ever be created and every account
+ * owned nothing. The whole portal depends on this row existing.
+ *
+ * The form state is local rather than in the reducer because it belongs to one
+ * screen and nothing else reads it. The sign-in sheet floats over this screen
+ * rather than replacing it, so a half-filled form survives being asked to sign
+ * in partway through.
+ */
+
+const EMPTY: SalonDraft = {
+  nameEn: '',
+  nameAr: '',
+  categoryEn: '',
+  categoryAr: '',
+  areaEn: '',
+  areaAr: '',
+  city: 'Riyadh',
+  crNumber: '',
+  phone: '',
+};
+
+/** Long enough for any real value, short enough to bound what is stored. */
+const MAX = 80;
+
 export function Onboarding() {
-  const { t, state, dispatch, isArabic, backIcon } = useApp();
+  const { t, state, dispatch, isArabic, backIcon, owner, registerSalon } = useApp();
+
+  const [draft, setDraft] = useState<SalonDraft>(EMPTY);
+  const [saving, setSaving] = useState(false);
+
+  const set = (key: keyof SalonDraft) => (value: string) =>
+    setDraft((current) => ({ ...current, [key]: value.slice(0, MAX) }));
+
+  const alreadyOwns = owner.status === 'live';
+  const ready = Boolean(draft.nameEn.trim() && draft.nameAr.trim() && draft.crNumber.trim());
+
+  const submit = async () => {
+    if (!ready || saving) return;
+    setSaving(true);
+    const created = await registerSalon(draft);
+    setSaving(false);
+    if (created) setDraft(EMPTY);
+  };
 
   return (
     <Screen bottomInset={100}>
@@ -17,7 +62,14 @@ export function Onboarding() {
         backLabel={isArabic ? 'رجوع' : 'Back'}
         title={t.registerSalon}
       />
-      <div lang="ar" style={{ font: `700 15px ${font.arabicDisplay}`, color: color.goldLink, padding: '0 24px 0 76px' }}>
+      <div
+        lang="ar"
+        style={{
+          font: `700 15px ${font.arabicDisplay}`,
+          color: color.goldLink,
+          padding: '0 24px 0 76px',
+        }}
+      >
         سجّل صالونك
       </div>
 
@@ -32,91 +84,187 @@ export function Onboarding() {
         {t.registerDesc}
       </p>
 
-      <div
-        style={{
-          margin: '16px 24px 0',
-          height: 130,
-          borderRadius: 18,
-          background: 'repeating-linear-gradient(125deg,#eef1ee 0 12px,#e6ebe6 12px 24px)',
-          position: 'relative',
-          overflow: 'hidden',
-          border: '1px solid #e4e8e4',
-        }}
-      >
+      {alreadyOwns ? (
         <div
           style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#9aa79a',
-            font: `500 10px ${font.mono}`,
-            letterSpacing: '.1em',
+            margin: '16px 24px 0',
+            background: color.tealSoft,
+            border: `1px solid ${color.tealLine}`,
+            borderRadius: 14,
+            padding: '13px 15px',
+            font: `600 12px/1.55 ${font.sans}`,
+            color: color.teal,
           }}
         >
-          {t.dropPin}
+          {t.alreadyRegistered}
         </div>
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%,-100%) rotate(45deg)',
-            width: 22,
-            height: 22,
-            background: color.gold,
-            border: '3px solid #fff',
-            borderRadius: '50% 50% 50% 0',
-            boxShadow: '0 6px 14px -4px rgba(0,0,0,.4)',
-          }}
-        />
-      </div>
-
-      <div style={{ padding: '20px 24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {VENDOR_ONBOARD_FIELDS.map((field) => (
-          <div key={field.label}>
-            <div
-              style={{ font: `600 11px ${font.sans}`, color: color.mutedSoft, marginBottom: 6 }}
-            >
-              {isArabic ? field.arLabel : field.label}
-            </div>
-            <div
-              style={{
-                background: color.surfaceWarm,
-                border: `1.5px solid ${color.lineWarm}`,
-                borderRadius: 13,
-                padding: 14,
-                font: `600 13.5px ${font.sans}`,
-                color: color.ink,
-              }}
-            >
-              {isArabic ? field.arValue : field.value}
-            </div>
+      ) : (
+        <>
+          {/* Says what happens after registering, before they fill anything in. */}
+          <div
+            style={{
+              margin: '16px 24px 0',
+              background: color.cream,
+              border: `1px solid ${color.creamLine}`,
+              borderRadius: 14,
+              padding: '13px 15px',
+              font: `600 11.5px/1.6 ${font.sans}`,
+              color: '#8a6d14',
+            }}
+          >
+            {t.verificationNote}
           </div>
-        ))}
-      </div>
+
+          <div
+            style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}
+          >
+            <Field
+              label={isArabic ? 'اسم الصالون (بالإنجليزية)' : 'Salon name (English)'}
+              value={draft.nameEn}
+              onChange={set('nameEn')}
+              placeholder="Maison Noir"
+              required
+              dir="ltr"
+            />
+            <Field
+              label={isArabic ? 'اسم الصالون (بالعربية)' : 'Salon name (Arabic)'}
+              value={draft.nameAr}
+              onChange={set('nameAr')}
+              placeholder="ميزون نوار"
+              required
+              dir="rtl"
+            />
+            <Field
+              label={isArabic ? 'السجل التجاري' : 'Commercial registration (CR)'}
+              value={draft.crNumber}
+              onChange={set('crNumber')}
+              placeholder="1010XXXXXX"
+              required
+              dir="ltr"
+              inputMode="numeric"
+            />
+            <Field
+              label={isArabic ? 'الفئة (بالإنجليزية)' : 'Category (English)'}
+              value={draft.categoryEn}
+              onChange={set('categoryEn')}
+              placeholder="Hair"
+              dir="ltr"
+            />
+            <Field
+              label={isArabic ? 'الفئة (بالعربية)' : 'Category (Arabic)'}
+              value={draft.categoryAr}
+              onChange={set('categoryAr')}
+              placeholder="شعر"
+              dir="rtl"
+            />
+            <Field
+              label={isArabic ? 'الحي (بالإنجليزية)' : 'District (English)'}
+              value={draft.areaEn}
+              onChange={set('areaEn')}
+              placeholder="Al Olaya"
+              dir="ltr"
+            />
+            <Field
+              label={isArabic ? 'الحي (بالعربية)' : 'District (Arabic)'}
+              value={draft.areaAr}
+              onChange={set('areaAr')}
+              placeholder="العليا"
+              dir="rtl"
+            />
+            <Field
+              label={isArabic ? 'المدينة' : 'City'}
+              value={draft.city}
+              onChange={set('city')}
+              placeholder="Riyadh"
+            />
+            <Field
+              label={isArabic ? 'الهاتف' : 'Phone'}
+              value={draft.phone}
+              onChange={set('phone')}
+              placeholder="+9665XXXXXXXX"
+              dir="ltr"
+              inputMode="tel"
+            />
+          </div>
+        </>
+      )}
 
       <BottomBar>
         <button
           type="button"
-          onClick={() => dispatch({ type: 'go', screen: 'v_dash' })}
+          onClick={() => (alreadyOwns ? dispatch({ type: 'go', screen: 'v_dash' }) : void submit())}
+          disabled={!alreadyOwns && (!ready || saving)}
           className="press"
           style={{
             width: '100%',
             textAlign: 'center',
-            background: color.gold,
-            color: color.goldInk,
+            background: alreadyOwns || (ready && !saving) ? color.gold : '#f0ece2',
+            color: alreadyOwns || (ready && !saving) ? color.goldInk : '#b8b2a5',
             borderRadius: 15,
             padding: 16,
             font: `700 14px ${font.sans}`,
-            boxShadow: '0 12px 26px -12px rgba(245,197,66,.9)',
+            cursor: alreadyOwns || (ready && !saving) ? 'pointer' : 'not-allowed',
+            boxShadow:
+              alreadyOwns || (ready && !saving)
+                ? '0 12px 26px -12px rgba(245,197,66,.9)'
+                : 'none',
           }}
         >
-          {t.createSalon}
+          {alreadyOwns
+            ? t.openDashboard
+            : saving
+              ? t.registering
+              : ready
+                ? t.createSalon
+                : t.registerNeedsFields}
         </button>
       </BottomBar>
     </Screen>
+  );
+}
+
+interface FieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  dir?: 'ltr' | 'rtl';
+  inputMode?: 'text' | 'numeric' | 'tel';
+}
+
+function Field({ label, value, onChange, placeholder, required, dir, inputMode }: FieldProps) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span
+        style={{
+          display: 'block',
+          font: `600 11px ${font.sans}`,
+          color: color.mutedSoft,
+          marginBottom: 6,
+        }}
+      >
+        {label}
+        {required ? <span style={{ color: color.goldDeep }}> *</span> : null}
+      </span>
+      <input
+        type="text"
+        value={value}
+        dir={dir}
+        inputMode={inputMode}
+        maxLength={MAX}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        style={{
+          width: '100%',
+          background: color.surfaceWarm,
+          border: `1.5px solid ${color.lineWarm}`,
+          borderRadius: 13,
+          padding: 14,
+          font: `600 13.5px ${font.sans}`,
+          color: color.ink,
+        }}
+      />
+    </label>
   );
 }

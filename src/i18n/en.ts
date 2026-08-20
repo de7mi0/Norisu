@@ -25,6 +25,12 @@ export const en = {
   selectDateTime: 'Select date & time',
   availableSlots: 'Available slots',
   hoursTitle: 'Hours & booking',
+  alreadyRegistered: 'This account already has a salon. Its details are managed from the portal.',
+  verificationNote:
+    'Register now and set up your hours, services and team straight away. Your salon appears to customers once we have checked your commercial registration.',
+  registering: 'Registering…',
+  registerNeedsFields: 'Name and CR number required',
+  openDashboard: 'Open dashboard',
   hoursNeedSalon:
     'These settings belong to a salon. Sign in with the account that owns one to change them.',
   bookingInterval: 'Booking interval',

@@ -134,6 +134,12 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   booking time is the fix.
 - Booking lifecycle: ~~confirm, cancel, reschedule~~ built; **no-show** and a **cancellation
   policy** (notice period, fees) still to do.
+- ~~Salon self-registration~~ — **built.** The onboarding screen was a mockup: fixed placeholder
+  text and a button that only navigated, so no salon could ever exist and the entire vendor side
+  was unreachable. It now creates the salon owned by the signed-in user, unverified and
+  unpublished, with a default week of opening hours so the booking screen works from minute one.
+  Approval is a human step in the Supabase dashboard (`supabase/README.md`); still to do is an
+  admin screen and telling an owner when they go live.
 - ~~Per-owner vendor data~~ — **partly built.** `src/data/owner.ts` resolves the salon the
   signed-in user owns; the opening-hours and booking-interval editor writes `working_hours` and
   `salons.slot_step_minutes`, and the services and team lists are the owner's own. Still sample,
