@@ -102,11 +102,12 @@ supabase/
   migrations/0001_schema.sql              14 tables, constraints, rating view
   migrations/0002_row_level_security.sql  30 policies + grants
   migrations/0003_availability.sql        available_slots() + salons.slot_step_minutes
+  migrations/0004_owner_cannot_self_verify.sql  column grants: an owner may not approve itself
   setup.sql                   GENERATED — the two migrations concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   42 assertions
+  tests/01_policy_tests.sql   44 assertions
   README.md                   Supabase setup walkthrough + how to approve a registered salon
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -255,7 +256,7 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 42 assertions.
+plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS policies. 44 assertions.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -265,7 +266,10 @@ plus a `salon_ratings` view, and the `available_slots()` function. 30 RLS polici
 3. **Tenant isolation** — a vendor can only read/write their own salon's rows. Tested both directions.
 4. **Customers see only their own bookings** and cannot book in someone else's name.
 5. **Reviews require a completed booking of your own.**
-6. **A salon must be verified before it can be published.**
+6. **A salon must be verified before it can be published, and cannot verify itself.** The
+   constraint enforces the order; migration 0004 enforces *who* — `authenticated` has no UPDATE
+   privilege on `is_verified` or `is_published`, which row-level security cannot express because a
+   policy sees whole rows, not columns.
 7. **A signed-in user reads and updates only their own profile.**
 
 **Conventions:**
@@ -285,7 +289,7 @@ salon stops offering the time *and* stops offering the last person by name. That
 professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-42 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+44 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -323,6 +327,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
 | Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
+| **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
 | Vendor dashboard figures, calendar, reviews, waitlist | Browser-only, and **labelled as sample on screen** so an owner cannot read them as their own. |
@@ -384,9 +389,6 @@ constraint ignores cancelled rows, so the slot frees immediately.
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
   constraint stops the order being skipped, but there is no admin screen and no notification telling
   the owner they went live.
-- **A salon's menu is its own, but nothing else about it is editable in the app** — the business
-  profile screen (name, CR, district) is still the registration form, so a typo there has to be
-  fixed in the Supabase dashboard.
 - **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
   and a second would silently never be shown. The schema permits more.
 - **The vendor portal is only partly per-owner.** `data/owner.ts` finds the salon the signed-in

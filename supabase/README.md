@@ -240,6 +240,11 @@ salon is created straight away, and they can set up their opening hours, service
 immediately — but **customers cannot see or book it until you approve it.** The database enforces
 that: a salon cannot be published unless it has been verified first.
 
+**Only you can do this.** Migration 0004 revokes the salon owner's permission to write
+`is_verified` and `is_published`, so an owner cannot approve their own salon however they reach the
+database. The dashboard connects with a key that bypasses that, which is why these steps work here
+and nowhere else.
+
 Approving is a two-part act, and the order matters.
 
 1. Open your project at **https://supabase.com/dashboard**.

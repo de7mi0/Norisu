@@ -149,7 +149,11 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
 - ~~Vendor CRUD for services and team (backlog item 1)~~ — **built.** An owner adds, edits, hides
   and removes their own services and staff. Removing archives rather than deletes, because
   bookings reference the row and a past booking must keep meaning what it meant. What is still
-  unbuilt: editing the business profile itself (name, CR, district), and photo upload.
+  unbuilt: photo upload.
+- ~~Business profile editing~~ — **built,** and it turned up a hole worth recording: `salons_update_own`
+  plus 0002's blanket column grant let an owner set `is_verified` and `is_published` on their own
+  salon, walking into the customer catalogue with nobody having checked their CR. Migration 0004
+  revokes those two columns from `authenticated`; approval stays a human act in the dashboard.
 
 ### Phase 2 — Payments (start the paperwork now)
 - A **legal entity with a commercial registration (CR) and a business bank account** is a

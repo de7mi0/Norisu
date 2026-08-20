@@ -27,6 +27,7 @@ import {
   archiveStaff,
   createSalon,
   loadMySalon,
+  saveProfile,
   setServiceActive,
   updateService,
   updateStaff,
@@ -565,6 +566,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [catalogWrite],
   );
 
+  /**
+   * Saves the business profile. Verification is not among the fields, and the
+   * owner has no privilege on those columns either way — see migration 0004.
+   */
+  const saveBusinessProfile = useCallback(
+    async (draft: SalonDraft): Promise<boolean> => {
+      const salonId = owner.salon?.id;
+      if (!salonId) return false;
+
+      const failure = await saveProfile(salonId, draft);
+      if (failure) {
+        const messages: Partial<Record<RegisterFailure, { en: string; ar: string }>> = {
+          notConfigured: {
+            en: 'Not saved — no database is connected.',
+            ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.',
+          },
+          missingName: {
+            en: 'The salon needs a name in both English and Arabic.',
+            ar: 'يحتاج الصالون إلى اسم بالعربية والإنجليزية.',
+          },
+          missingCr: {
+            en: 'Your commercial registration number is required.',
+            ar: 'رقم السجل التجاري مطلوب.',
+          },
+        };
+        const message = messages[failure] ?? {
+          en: 'Could not save. Check your connection and try again.',
+          ar: 'تعذّر الحفظ. تحقق من الاتصال وحاول مرة أخرى.',
+        };
+        flash(isArabic ? message.ar : message.en);
+        return false;
+      }
+
+      await refreshOwner();
+      flash(isArabic ? 'تم حفظ بيانات العمل ✓' : 'Business details saved ✓');
+      return true;
+    },
+    [flash, isArabic, owner.salon?.id, refreshOwner],
+  );
+
   // A signed-in customer's language belongs to their account, not to this
   // browser, so it follows them to a new phone. The ref remembers what has
   // already been reconciled for this account — without it the write-back would
@@ -856,6 +897,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSlotStep,
       setDayHours,
       registerSalon,
+      saveBusinessProfile,
       saveService,
       removeService,
       toggleServiceLive,
@@ -907,6 +949,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSlotStep,
       setDayHours,
       registerSalon,
+      saveBusinessProfile,
       saveService,
       removeService,
       toggleServiceLive,

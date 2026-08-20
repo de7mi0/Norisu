@@ -1593,4 +1593,107 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- The business profile, and the line between editing a salon and approving it.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 43. An owner maintains their own business details — the typo they made at
+--     registration should not need a database administrator to fix.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  area  text;
+  cr    text;
+begin
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  update salons
+  set area_en = 'Al Malaz', area_ar = 'الملز', cr_number = '1010123456',
+      phone = '+966500000003'
+  where id = salon;
+
+  reset role;
+  select area_en, cr_number into area, cr from salons where id = salon;
+
+  if area <> 'Al Malaz' or cr <> '1010123456' then
+    raise exception 'FAIL 43: an owner could not correct their own details, got % / %', area, cr;
+  end if;
+
+  raise notice 'PASS 43: an owner maintains their own business details';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 44. A salon cannot approve itself.
+--
+--     salons_update_own lets an owner write their own row, and 0002's blanket
+--     UPDATE grant once covered every column — so an owner could set
+--     is_verified and is_published together and walk straight into the
+--     catalogue. published_salons_are_verified constrains the *order* of those
+--     flags, not who may set them, so it did not help. 0004 revokes the
+--     privilege at the column level, which is the only place this can be said.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  verified boolean;
+begin
+  update salons set is_verified = false, is_published = false where id = salon;
+
+  perform set_config(
+    'request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}',
+    true
+  );
+  set local role authenticated;
+
+  begin
+    update salons set is_verified = true where id = salon;
+    raise exception 'FAIL 44a: an owner verified their own salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update salons set is_published = true where id = salon;
+    raise exception 'FAIL 44b: an owner published their own salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Both at once was the actual bypass: it satisfies the constraint.
+  begin
+    update salons set is_verified = true, is_published = true where id = salon;
+    raise exception 'FAIL 44c: an owner approved and published in one statement';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Editing everything else still works, so the block is narrow.
+  update salons set name_en = 'Maison Noir' where id = salon;
+
+  reset role;
+  select is_verified into verified from salons where id = salon;
+  if verified then
+    raise exception 'FAIL 44d: the salon ended up verified anyway';
+  end if;
+
+  -- An admin, connecting as the table owner the way the dashboard does, still can.
+  update salons set is_verified = true, is_published = true where id = salon;
+
+  raise notice 'PASS 44: a salon cannot approve itself; only an admin can';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

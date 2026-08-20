@@ -25,6 +25,14 @@ export const en = {
   selectDateTime: 'Select date & time',
   availableSlots: 'Available slots',
   hoursTitle: 'Hours & booking',
+  businessProfile: 'Business details',
+  businessProfileDesc: 'What customers see about your salon, and how we reach you.',
+  saveChanges: 'Save changes',
+  profileAwaitingReview:
+    'Waiting on us. We check your commercial registration before your salon appears to customers — you can keep setting things up meanwhile.',
+  profileVerifiedNotLive:
+    'Verified. Your salon is not showing to customers yet — get in touch if that looks wrong.',
+  profileLive: 'Live. Customers can find and book your salon.',
   editService: 'Edit service',
   saving: 'Saving…',
   removeService: 'Remove from my menu',
@@ -34,12 +42,10 @@ export const en = {
   removeStaff: 'Remove from my team',
   removeStaffNote: 'They stop being bookable. Past appointments still show who did the work.',
   addStaffMember: 'Add team member',
-  alreadyRegistered: 'This account already has a salon. Its details are managed from the portal.',
   verificationNote:
     'Register now and set up your hours, services and team straight away. Your salon appears to customers once we have checked your commercial registration.',
   registering: 'Registering…',
   registerNeedsFields: 'Name and CR number required',
-  openDashboard: 'Open dashboard',
   hoursNeedSalon:
     'These settings belong to a salon. Sign in with the account that owns one to change them.',
   bookingInterval: 'Booking interval',

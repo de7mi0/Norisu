@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 import type { SalonDraft } from '../../data/owner';
 
 /**
- * Salon registration — the front door of the vendor side.
+ * Salon registration, and afterwards the business profile editor.
  *
- * This was a mockup until now: the fields were fixed display text and the
- * button only navigated, so no salon could ever be created and every account
- * owned nothing. The whole portal depends on this row existing.
+ * One screen for both because the fields are the same ones: an owner who mistyped
+ * their district at sign-up was previously stuck, since this screen only ever
+ * offered to open the dashboard once a salon existed.
+ *
+ * Verification is not editable here, and not merely absent from the form:
+ * migration 0004 revokes the owner's UPDATE privilege on is_verified and
+ * is_published, so a salon cannot approve itself into the catalogue.
  *
  * The form state is local rather than in the reducer because it belongs to one
  * screen and nothing else reads it. The sign-in sheet floats over this screen
@@ -33,23 +37,48 @@ const EMPTY: SalonDraft = {
 const MAX = 80;
 
 export function Onboarding() {
-  const { t, state, dispatch, isArabic, backIcon, owner, registerSalon } = useApp();
+  const {
+    t,
+    state,
+    dispatch,
+    isArabic,
+    backIcon,
+    owner,
+    registerSalon,
+    saveBusinessProfile,
+  } = useApp();
 
-  const [draft, setDraft] = useState<SalonDraft>(EMPTY);
+  const existing = owner.salon;
+  const editing = Boolean(existing);
+
+  const [draft, setDraft] = useState<SalonDraft>(existing?.profile ?? EMPTY);
   const [saving, setSaving] = useState(false);
+
+  // Adopt the stored profile once it arrives, and again if the owner changes.
+  // Keyed on the salon id so a half-typed edit is not overwritten by a reload.
+  const [loadedFor, setLoadedFor] = useState<string | null>(existing?.id ?? null);
+  useEffect(() => {
+    if (existing && existing.id !== loadedFor) {
+      setDraft(existing.profile);
+      setLoadedFor(existing.id);
+    }
+  }, [existing, loadedFor]);
 
   const set = (key: keyof SalonDraft) => (value: string) =>
     setDraft((current) => ({ ...current, [key]: value.slice(0, MAX) }));
 
-  const alreadyOwns = owner.status === 'live';
   const ready = Boolean(draft.nameEn.trim() && draft.nameAr.trim() && draft.crNumber.trim());
 
   const submit = async () => {
     if (!ready || saving) return;
     setSaving(true);
-    const created = await registerSalon(draft);
+    if (editing) {
+      await saveBusinessProfile(draft);
+    } else {
+      const created = await registerSalon(draft);
+      if (created) setDraft(EMPTY);
+    }
     setSaving(false);
-    if (created) setDraft(EMPTY);
   };
 
   return (
@@ -60,7 +89,7 @@ export function Onboarding() {
         }
         backIcon={backIcon}
         backLabel={isArabic ? 'رجوع' : 'Back'}
-        title={t.registerSalon}
+        title={editing ? t.businessProfile : t.registerSalon}
       />
       <div
         lang="ar"
@@ -70,7 +99,7 @@ export function Onboarding() {
           padding: '0 24px 0 76px',
         }}
       >
-        سجّل صالونك
+        {editing ? 'ملف العمل' : 'سجّل صالونك'}
       </div>
 
       <p
@@ -81,43 +110,31 @@ export function Onboarding() {
           margin: 0,
         }}
       >
-        {t.registerDesc}
+        {editing ? t.businessProfileDesc : t.registerDesc}
       </p>
 
-      {alreadyOwns ? (
-        <div
-          style={{
-            margin: '16px 24px 0',
-            background: color.tealSoft,
-            border: `1px solid ${color.tealLine}`,
-            borderRadius: 14,
-            padding: '13px 15px',
-            font: `600 12px/1.55 ${font.sans}`,
-            color: color.teal,
-          }}
-        >
-          {t.alreadyRegistered}
-        </div>
-      ) : (
-        <>
-          {/* Says what happens after registering, before they fill anything in. */}
-          <div
-            style={{
-              margin: '16px 24px 0',
-              background: color.cream,
-              border: `1px solid ${color.creamLine}`,
-              borderRadius: 14,
-              padding: '13px 15px',
-              font: `600 11.5px/1.6 ${font.sans}`,
-              color: '#8a6d14',
-            }}
-          >
-            {t.verificationNote}
-          </div>
+      {/* Where they stand: still waiting on approval, live, or not yet registered. */}
+      <div
+        style={{
+          margin: '16px 24px 0',
+          background: existing?.isPublished ? color.tealSoft : color.cream,
+          border: `1px solid ${existing?.isPublished ? color.tealLine : color.creamLine}`,
+          borderRadius: 14,
+          padding: '13px 15px',
+          font: `600 11.5px/1.6 ${font.sans}`,
+          color: existing?.isPublished ? color.teal : '#8a6d14',
+        }}
+      >
+        {!editing
+          ? t.verificationNote
+          : existing?.isPublished
+            ? t.profileLive
+            : existing?.isVerified
+              ? t.profileVerifiedNotLive
+              : t.profileAwaitingReview}
+      </div>
 
-          <div
-            style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}
-          >
+      <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Field
               label={isArabic ? 'اسم الصالون (بالإنجليزية)' : 'Salon name (English)'}
               value={draft.nameEn}
@@ -185,38 +202,35 @@ export function Onboarding() {
               dir="ltr"
               inputMode="tel"
             />
-          </div>
-        </>
-      )}
+      </div>
 
       <BottomBar>
         <button
           type="button"
-          onClick={() => (alreadyOwns ? dispatch({ type: 'go', screen: 'v_dash' }) : void submit())}
-          disabled={!alreadyOwns && (!ready || saving)}
+          onClick={() => void submit()}
+          disabled={!ready || saving}
           className="press"
           style={{
             width: '100%',
             textAlign: 'center',
-            background: alreadyOwns || (ready && !saving) ? color.gold : '#f0ece2',
-            color: alreadyOwns || (ready && !saving) ? color.goldInk : '#b8b2a5',
+            background: ready && !saving ? color.gold : '#f0ece2',
+            color: ready && !saving ? color.goldInk : '#b8b2a5',
             borderRadius: 15,
             padding: 16,
             font: `700 14px ${font.sans}`,
-            cursor: alreadyOwns || (ready && !saving) ? 'pointer' : 'not-allowed',
-            boxShadow:
-              alreadyOwns || (ready && !saving)
-                ? '0 12px 26px -12px rgba(245,197,66,.9)'
-                : 'none',
+            cursor: ready && !saving ? 'pointer' : 'not-allowed',
+            boxShadow: ready && !saving ? '0 12px 26px -12px rgba(245,197,66,.9)' : 'none',
           }}
         >
-          {alreadyOwns
-            ? t.openDashboard
-            : saving
-              ? t.registering
-              : ready
-                ? t.createSalon
-                : t.registerNeedsFields}
+          {saving
+            ? editing
+              ? t.saving
+              : t.registering
+            : !ready
+              ? t.registerNeedsFields
+              : editing
+                ? t.saveChanges
+                : t.createSalon}
         </button>
       </BottomBar>
     </Screen>

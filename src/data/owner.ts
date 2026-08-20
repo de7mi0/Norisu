@@ -31,6 +31,8 @@ export interface OwnerSalon {
   nameAr: string;
   isVerified: boolean;
   isPublished: boolean;
+  /** The rest of the business profile, as the owner filled it in. */
+  profile: SalonDraft;
   /** Spacing between the times the booking screen offers. */
   slotStepMinutes: number;
   /** Always seven entries, Sunday first, so the editor can render a full week. */
@@ -148,7 +150,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
   try {
     const salonCall = supabase
       .from('salons')
-      .select('id, name_en, name_ar, is_verified, is_published, slot_step_minutes')
+      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cr_number, phone, is_verified, is_published, slot_step_minutes')
       .eq('owner_id', userId)
       // One salon per owner for now; the schema permits more.
       .order('created_at', { ascending: true })
@@ -193,6 +195,17 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
         nameAr: row.name_ar,
         isVerified: Boolean(row.is_verified),
         isPublished: Boolean(row.is_published),
+        profile: {
+          nameEn: row.name_en,
+          nameAr: row.name_ar,
+          categoryEn: row.category_en ?? '',
+          categoryAr: row.category_ar ?? '',
+          areaEn: row.area_en ?? '',
+          areaAr: row.area_ar ?? '',
+          city: row.city ?? '',
+          crNumber: row.cr_number ?? '',
+          phone: row.phone ?? '',
+        },
         slotStepMinutes: row.slot_step_minutes ?? 30,
         hours: weekFrom((hours ?? []) as WorkingHoursRow[]),
         services: ((servicesResult.data ?? []) as ServiceRow[]).map(mapOwnerService),
@@ -557,4 +570,43 @@ export async function archiveStaff(staffId: string): Promise<CatalogFailure | nu
     .update({ is_archived: true, is_active: false })
     .eq('id', staffId);
   return error ? writeFailure(error) : null;
+}
+
+/**
+ * Updates the business profile — everything the owner told us at registration.
+ *
+ * `is_verified` and `is_published` are deliberately absent, and not merely
+ * omitted here: migration 0004 revokes the owner's UPDATE privilege on both
+ * columns, so a salon cannot approve itself even if this function is bypassed.
+ *
+ * Changing the CR number does **not** silently un-verify the salon. It is the
+ * number a human checked, so a change is worth someone looking at again — but
+ * quietly pulling a working salon out of the catalogue would be worse than
+ * saying so, and only an admin can move those flags now anyway.
+ */
+export async function saveProfile(
+  salonId: string,
+  draft: SalonDraft,
+): Promise<RegisterFailure | null> {
+  if (!supabase) return 'notConfigured';
+  if (!draft.nameEn.trim() || !draft.nameAr.trim()) return 'missingName';
+  if (!draft.crNumber.trim()) return 'missingCr';
+
+  const { error } = await supabase
+    .from('salons')
+    .update({
+      name_en: draft.nameEn.trim(),
+      name_ar: draft.nameAr.trim(),
+      category_en: draft.categoryEn.trim(),
+      category_ar: draft.categoryAr.trim(),
+      area_en: draft.areaEn.trim(),
+      area_ar: draft.areaAr.trim(),
+      city: draft.city.trim() || 'Riyadh',
+      cr_number: draft.crNumber.trim(),
+      phone: draft.phone.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', salonId);
+
+  return error ? 'network' : null;
 }

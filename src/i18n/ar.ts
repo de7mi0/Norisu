@@ -27,6 +27,14 @@ export const ar: Dictionary = {
   selectDateTime: 'اختر التاريخ والوقت',
   availableSlots: 'المواعيد المتاحة',
   hoursTitle: 'الساعات والحجز',
+  businessProfile: 'بيانات العمل',
+  businessProfileDesc: 'ما يراه العملاء عن صالونك، وكيف نتواصل معك.',
+  saveChanges: 'حفظ التغييرات',
+  profileAwaitingReview:
+    'بانتظارنا. نتحقق من سجلك التجاري قبل ظهور صالونك للعملاء — ويمكنك متابعة الإعداد في هذه الأثناء.',
+  profileVerifiedNotLive:
+    'تم التحقق. صالونك لا يظهر للعملاء بعد — تواصل معنا إن بدا ذلك خطأً.',
+  profileLive: 'مباشر. يمكن للعملاء إيجاد صالونك وحجز مواعيد فيه.',
   editService: 'تعديل الخدمة',
   saving: '…جارٍ الحفظ',
   removeService: 'إزالة من قائمتي',
@@ -36,12 +44,10 @@ export const ar: Dictionary = {
   removeStaff: 'إزالة من فريقي',
   removeStaffNote: 'لن يكون قابلاً للحجز. المواعيد السابقة تبقى موضحة من قام بالعمل.',
   addStaffMember: 'إضافة عضو للفريق',
-  alreadyRegistered: 'هذا الحساب يملك صالوناً بالفعل. تُدار تفاصيله من اللوحة.',
   verificationNote:
     'سجّل الآن وابدأ بضبط ساعاتك وخدماتك وفريقك فوراً. سيظهر صالونك للعملاء بعد التحقق من سجلك التجاري.',
   registering: '…جارٍ التسجيل',
   registerNeedsFields: 'الاسم ورقم السجل مطلوبان',
-  openDashboard: 'فتح اللوحة',
   hoursNeedSalon:
     'هذه الإعدادات تخص صالوناً. سجّل الدخول بالحساب المالك لصالون لتغييرها.',
   bookingInterval: 'الفاصل بين المواعيد',

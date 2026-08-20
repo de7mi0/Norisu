@@ -76,6 +76,8 @@ export interface AppContextValue {
   setDayHours: (day: DayHours) => Promise<void>;
   /** Registers a salon for the signed-in user. True once it exists. */
   registerSalon: (draft: SalonDraft) => Promise<boolean>;
+  /** Updates the business profile of the salon they already own. */
+  saveBusinessProfile: (draft: SalonDraft) => Promise<boolean>;
   /** Adds a service, or updates the one named. */
   saveService: (draft: ServiceDraft, serviceId?: string) => Promise<boolean>;
   /** Archives a service. Never deletes: bookings reference it. */

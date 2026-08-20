@@ -28,6 +28,8 @@ export interface SalonRow {
   area_ar: string;
   phone: string | null;
   is_published: boolean;
+  city?: string;
+  cr_number?: string | null;
   /** Only read on the owner's own row, which RLS lets them see unpublished. */
   is_verified?: boolean;
   /** Spacing between the times the booking screen offers. Added in 0003. */
