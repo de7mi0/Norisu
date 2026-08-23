@@ -73,7 +73,25 @@ export function ScreenHeader({
   );
 }
 
-/** The white bar pinned to the bottom of a screen, above the tab bar. */
+/**
+ * The white bar pinned to the bottom of the phone frame, above the tab bar.
+ *
+ * **Render it as a sibling of `Screen`, never inside one.** `Screen` is the
+ * scroll container, and an absolutely positioned child of a scroll container is
+ * laid out against that container and then scrolls away with the content — so a
+ * bar nested inside only *looks* pinned until the screen is scrolled, at which
+ * point it rides up and covers whatever is beneath it. Outside, `bottom: 0`
+ * resolves against `.viewport`, which is exactly how the tab bar and the
+ * assistant button in App.tsx already pin themselves.
+ *
+ *     <>
+ *       <Screen bottomInset={96}>…</Screen>
+ *       <BottomBar>…</BottomBar>
+ *     </>
+ *
+ * `bottomInset` on the `Screen` is what stops the last row of content sitting
+ * underneath it, so it has to be at least this bar's height.
+ */
 export function BottomBar({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
     <div

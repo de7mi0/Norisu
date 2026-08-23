@@ -82,127 +82,129 @@ export function Onboarding() {
   };
 
   return (
-    <Screen bottomInset={100}>
-      <ScreenHeader
-        onBack={() =>
-          dispatch({ type: 'go', screen: state.obBack === 'v_more' ? 'v_more' : 'v_dash' })
-        }
-        backIcon={backIcon}
-        backLabel={isArabic ? 'رجوع' : 'Back'}
-        title={editing ? t.businessProfile : t.registerSalon}
-      />
-      <div
-        lang="ar"
-        style={{
-          font: `700 15px ${font.arabicDisplay}`,
-          color: color.goldLink,
-          padding: '0 24px 0 76px',
-        }}
-      >
-        {editing ? 'ملف العمل' : 'سجّل صالونك'}
-      </div>
+    <>
+      <Screen bottomInset={100}>
+        <ScreenHeader
+          onBack={() =>
+            dispatch({ type: 'go', screen: state.obBack === 'v_more' ? 'v_more' : 'v_dash' })
+          }
+          backIcon={backIcon}
+          backLabel={isArabic ? 'رجوع' : 'Back'}
+          title={editing ? t.businessProfile : t.registerSalon}
+        />
+        <div
+          lang="ar"
+          style={{
+            font: `700 15px ${font.arabicDisplay}`,
+            color: color.goldLink,
+            padding: '0 24px 0 76px',
+          }}
+        >
+          {editing ? 'ملف العمل' : 'سجّل صالونك'}
+        </div>
 
-      <p
-        style={{
-          font: `500 12px/1.5 ${font.sans}`,
-          color: color.mutedSoft,
-          padding: '10px 24px 0',
-          margin: 0,
-        }}
-      >
-        {editing ? t.businessProfileDesc : t.registerDesc}
-      </p>
+        <p
+          style={{
+            font: `500 12px/1.5 ${font.sans}`,
+            color: color.mutedSoft,
+            padding: '10px 24px 0',
+            margin: 0,
+          }}
+        >
+          {editing ? t.businessProfileDesc : t.registerDesc}
+        </p>
 
-      {/* Where they stand: still waiting on approval, live, or not yet registered. */}
-      <div
-        style={{
-          margin: '16px 24px 0',
-          background: existing?.isPublished ? color.tealSoft : color.cream,
-          border: `1px solid ${existing?.isPublished ? color.tealLine : color.creamLine}`,
-          borderRadius: 14,
-          padding: '13px 15px',
-          font: `600 11.5px/1.6 ${font.sans}`,
-          color: existing?.isPublished ? color.teal : '#8a6d14',
-        }}
-      >
-        {!editing
-          ? t.verificationNote
-          : existing?.isPublished
-            ? t.profileLive
-            : existing?.isVerified
-              ? t.profileVerifiedNotLive
-              : t.profileAwaitingReview}
-      </div>
+        {/* Where they stand: still waiting on approval, live, or not yet registered. */}
+        <div
+          style={{
+            margin: '16px 24px 0',
+            background: existing?.isPublished ? color.tealSoft : color.cream,
+            border: `1px solid ${existing?.isPublished ? color.tealLine : color.creamLine}`,
+            borderRadius: 14,
+            padding: '13px 15px',
+            font: `600 11.5px/1.6 ${font.sans}`,
+            color: existing?.isPublished ? color.teal : '#8a6d14',
+          }}
+        >
+          {!editing
+            ? t.verificationNote
+            : existing?.isPublished
+              ? t.profileLive
+              : existing?.isVerified
+                ? t.profileVerifiedNotLive
+                : t.profileAwaitingReview}
+        </div>
 
-      <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field
-              label={isArabic ? 'اسم الصالون (بالإنجليزية)' : 'Salon name (English)'}
-              value={draft.nameEn}
-              onChange={set('nameEn')}
-              placeholder="Maison Noir"
-              required
-              dir="ltr"
-            />
-            <Field
-              label={isArabic ? 'اسم الصالون (بالعربية)' : 'Salon name (Arabic)'}
-              value={draft.nameAr}
-              onChange={set('nameAr')}
-              placeholder="ميزون نوار"
-              required
-              dir="rtl"
-            />
-            <Field
-              label={isArabic ? 'السجل التجاري' : 'Commercial registration (CR)'}
-              value={draft.crNumber}
-              onChange={set('crNumber')}
-              placeholder="1010XXXXXX"
-              required
-              dir="ltr"
-              inputMode="numeric"
-            />
-            <Field
-              label={isArabic ? 'الفئة (بالإنجليزية)' : 'Category (English)'}
-              value={draft.categoryEn}
-              onChange={set('categoryEn')}
-              placeholder="Hair"
-              dir="ltr"
-            />
-            <Field
-              label={isArabic ? 'الفئة (بالعربية)' : 'Category (Arabic)'}
-              value={draft.categoryAr}
-              onChange={set('categoryAr')}
-              placeholder="شعر"
-              dir="rtl"
-            />
-            <Field
-              label={isArabic ? 'الحي (بالإنجليزية)' : 'District (English)'}
-              value={draft.areaEn}
-              onChange={set('areaEn')}
-              placeholder="Al Olaya"
-              dir="ltr"
-            />
-            <Field
-              label={isArabic ? 'الحي (بالعربية)' : 'District (Arabic)'}
-              value={draft.areaAr}
-              onChange={set('areaAr')}
-              placeholder="العليا"
-              dir="rtl"
-            />
-            <Field
-              label={isArabic ? 'المدينة' : 'City'}
-              value={draft.city}
-              onChange={set('city')}
-              placeholder="Riyadh"
-            />
-            <Field
-              label={isArabic ? 'الهاتف' : 'Phone'}
-              value={draft.phone}
-              onChange={set('phone')}
-              placeholder="+9665XXXXXXXX"
-              dir="ltr"
-              inputMode="tel"
-            />
-      </div>
+        <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <Field
+                label={isArabic ? 'اسم الصالون (بالإنجليزية)' : 'Salon name (English)'}
+                value={draft.nameEn}
+                onChange={set('nameEn')}
+                placeholder="Maison Noir"
+                required
+                dir="ltr"
+              />
+              <Field
+                label={isArabic ? 'اسم الصالون (بالعربية)' : 'Salon name (Arabic)'}
+                value={draft.nameAr}
+                onChange={set('nameAr')}
+                placeholder="ميزون نوار"
+                required
+                dir="rtl"
+              />
+              <Field
+                label={isArabic ? 'السجل التجاري' : 'Commercial registration (CR)'}
+                value={draft.crNumber}
+                onChange={set('crNumber')}
+                placeholder="1010XXXXXX"
+                required
+                dir="ltr"
+                inputMode="numeric"
+              />
+              <Field
+                label={isArabic ? 'الفئة (بالإنجليزية)' : 'Category (English)'}
+                value={draft.categoryEn}
+                onChange={set('categoryEn')}
+                placeholder="Hair"
+                dir="ltr"
+              />
+              <Field
+                label={isArabic ? 'الفئة (بالعربية)' : 'Category (Arabic)'}
+                value={draft.categoryAr}
+                onChange={set('categoryAr')}
+                placeholder="شعر"
+                dir="rtl"
+              />
+              <Field
+                label={isArabic ? 'الحي (بالإنجليزية)' : 'District (English)'}
+                value={draft.areaEn}
+                onChange={set('areaEn')}
+                placeholder="Al Olaya"
+                dir="ltr"
+              />
+              <Field
+                label={isArabic ? 'الحي (بالعربية)' : 'District (Arabic)'}
+                value={draft.areaAr}
+                onChange={set('areaAr')}
+                placeholder="العليا"
+                dir="rtl"
+              />
+              <Field
+                label={isArabic ? 'المدينة' : 'City'}
+                value={draft.city}
+                onChange={set('city')}
+                placeholder="Riyadh"
+              />
+              <Field
+                label={isArabic ? 'الهاتف' : 'Phone'}
+                value={draft.phone}
+                onChange={set('phone')}
+                placeholder="+9665XXXXXXXX"
+                dir="ltr"
+                inputMode="tel"
+              />
+        </div>
+      </Screen>
 
       <BottomBar>
         <button
@@ -233,7 +235,7 @@ export function Onboarding() {
                 : t.createSalon}
         </button>
       </BottomBar>
-    </Screen>
+    </>
   );
 }
 

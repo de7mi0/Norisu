@@ -37,308 +37,310 @@ export function SalonDetail() {
   } as const;
 
   return (
-    <Screen bottomInset={96}>
-      <div style={{ position: 'relative', height: 270, background: salon.tile }}>
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#b7ad97',
-            font: `500 10px ${font.mono}`,
-            letterSpacing: '.12em',
-          }}
-        >
-          SALON GALLERY
-        </div>
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background:
-              'linear-gradient(180deg,rgba(10,8,2,.35) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,0) 60%,rgba(253,252,250,1) 100%)',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            top: 52,
-            insetInline: 20,
-            display: 'flex',
-            justifyContent: 'space-between',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'back' })}
-            aria-label={isArabic ? 'رجوع' : 'Back'}
-            className="press"
-            style={{ ...circleButton, fontSize: 18, color: color.ink }}
-          >
-            {backIcon}
-          </button>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              type="button"
-              onClick={() => dispatch({ type: 'toggleSaved', salonId: salon.id })}
-              aria-pressed={saved}
-              aria-label={isArabic ? 'حفظ الصالون' : 'Save salon'}
-              className="press"
-              style={{
-                ...circleButton,
-                fontSize: 16,
-                color: saved ? color.danger : color.ink,
-              }}
-            >
-              {saved ? '♥' : '♡'}
-            </button>
-            <button
-              type="button"
-              onClick={() => flash(t.linkCopied)}
-              aria-label={isArabic ? 'مشاركة' : 'Share'}
-              className="press"
-              style={{ ...circleButton, fontSize: 15, color: color.ink }}
-            >
-              ↗
-            </button>
-          </div>
-        </div>
-        <div
-          aria-hidden="true"
-          style={{ position: 'absolute', bottom: 16, insetInline: 20, display: 'flex', gap: 6 }}
-        >
-          <span style={{ flex: 1, height: 3, borderRadius: 2, background: color.gold }} />
-          <span style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(255,255,255,.5)' }} />
-          <span style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(255,255,255,.5)' }} />
-        </div>
-      </div>
-
-      <div style={{ padding: '4px 24px 0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h1 style={{ font: `600 27px/1 ${font.serif}`, margin: 0 }}>
-              {isArabic ? salon.ar : salon.name}
-            </h1>
-            <div
-              style={{
-                font: `700 18px ${font.arabicDisplay}`,
-                color: color.goldLink,
-                marginTop: 2,
-              }}
-            >
-              {isArabic ? salon.name : salon.ar}
-            </div>
-          </div>
-          {salon.discount > 0 ? (
-            <div
-              style={{
-                background: color.gold,
-                color: color.goldInkAlt,
-                font: `700 12px ${font.sans}`,
-                padding: '6px 11px',
-                borderRadius: 10,
-              }}
-              className="ltr-run"
-            >
-              -{salon.discount}%
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            gap: 14,
-            alignItems: 'center',
-            marginTop: 10,
-            font: `500 12.5px ${font.sans}`,
-            color: color.muted,
-          }}
-        >
-          {salon.rating != null ? (
-            <span style={{ color: color.goldDeep, fontWeight: 600 }}>★ {salon.rating}</span>
-          ) : (
-            <span style={{ color: color.goldDeep, fontWeight: 600 }}>
-              {isArabic ? 'جديد' : 'New'}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'go', screen: 'reviews' })}
-            style={{ textDecoration: 'underline' }}
-          >
-            {isArabic ? `${salon.reviews} تقييم` : `${salon.reviews} reviews`}
-          </button>
-          {salon.distance ? (
-            <>
-              <span
-                aria-hidden="true"
-                style={{ width: 3, height: 3, background: '#c9c3b7', borderRadius: '50%' }}
-              />
-              <span className="ltr-run">{salon.distance}</span>
-            </>
-          ) : null}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+    <>
+      <Screen bottomInset={96}>
+        <div style={{ position: 'relative', height: 270, background: salon.tile }}>
           <div
             style={{
-              flex: 1,
-              background: color.surfaceWarm,
-              border: `1px solid ${color.lineWarm}`,
-              borderRadius: 12,
-              padding: 10,
-              textAlign: 'center',
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#b7ad97',
+              font: `500 10px ${font.mono}`,
+              letterSpacing: '.12em',
             }}
           >
-            <div style={{ font: `700 12px ${font.sans}` }}>{t.openNow}</div>
-            <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>{t.until}</div>
+            SALON GALLERY
           </div>
           <div
             style={{
-              flex: 1,
-              background: color.surfaceWarm,
-              border: `1px solid ${color.lineWarm}`,
-              borderRadius: 12,
-              padding: 10,
-              textAlign: 'center',
+              position: 'absolute',
+              inset: 0,
+              background:
+                'linear-gradient(180deg,rgba(10,8,2,.35) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,0) 60%,rgba(253,252,250,1) 100%)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: 52,
+              insetInline: 20,
+              display: 'flex',
+              justifyContent: 'space-between',
             }}
           >
-            <div style={{ font: `700 12px ${font.sans}` }}>
-              {salonCategory(salon, state.lang)}
-            </div>
-            <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>
-              {t.privateRooms}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, padding: '16px 24px 0' }}>
-        <button
-          type="button"
-          onClick={() => openConversation('chat')}
-          className="press"
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            background: color.ink,
-            color: color.goldSoft,
-            borderRadius: 14,
-            padding: 13,
-            font: `700 13px ${font.sans}`,
-          }}
-        >
-          <ChatIcon />
-          {t.message}
-        </button>
-        <button
-          type="button"
-          onClick={() => flash(`${isArabic ? 'جارٍ الاتصال ' : 'Calling '}${SALON_PHONE}`)}
-          className="press"
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            background: color.surfaceSand,
-            border: `1.5px solid ${color.lineSand}`,
-            color: color.ink,
-            borderRadius: 14,
-            padding: 13,
-            font: `700 13px ${font.sans}`,
-          }}
-        >
-          <PhoneIcon />
-          {t.callNow}
-        </button>
-      </div>
-
-      <div style={{ padding: '22px 24px 0' }}>
-        <h2 style={{ font: `600 19px ${font.serif}`, margin: 0 }}>{t.services}</h2>
-      </div>
-
-      <div style={{ padding: '12px 24px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {salonServices.map((service) => {
-          const active = Boolean(state.selected[service.id]);
-          return (
             <button
-              key={service.id}
               type="button"
-              onClick={() => dispatch({ type: 'toggleService', serviceId: service.id })}
-              aria-pressed={active}
+              onClick={() => dispatch({ type: 'back' })}
+              aria-label={isArabic ? 'رجوع' : 'Back'}
               className="press"
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: active ? color.cream : color.surface,
-                border: `1.5px solid ${active ? color.gold : color.lineWarm}`,
-                borderRadius: 16,
-                padding: 14,
-                textAlign: 'start',
-              }}
+              style={{ ...circleButton, fontSize: 18, color: color.ink }}
             >
-              <span style={{ flex: 1 }}>
-                <span style={{ display: 'block', font: `600 14.5px ${font.sans}` }}>
-                  {isArabic ? service.ar : service.name}
-                </span>
-                <span
-                  style={{
-                    display: 'block',
-                    font: `500 11px ${font.arabicSans}`,
-                    color: color.mutedSoft,
-                    margin: '2px 0 4px',
-                  }}
-                >
-                  {isArabic ? service.name : service.ar} · {localizeUnits(service.dur, state.lang)}
-                </span>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                  <span style={{ font: `700 13px ${font.sans}`, color: color.ink }}>
-                    {money(priceNow(service))}
-                  </span>
-                  {service.discount > 0 ? (
-                    <span
-                      style={{
-                        font: `500 11px ${font.sans}`,
-                        color: color.mutedFaint,
-                        textDecoration: 'line-through',
-                      }}
-                    >
-                      {money(service.price)}
-                    </span>
-                  ) : null}
-                </span>
-              </span>
-              <span
-                aria-hidden="true"
+              {backIcon}
+            </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => dispatch({ type: 'toggleSaved', salonId: salon.id })}
+                aria-pressed={saved}
+                aria-label={isArabic ? 'حفظ الصالون' : 'Save salon'}
+                className="press"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                  flex: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 15,
-                  background: active ? color.gold : color.surface,
-                  color: active ? color.goldInk : color.disabled,
-                  border: `1.5px solid ${active ? color.gold : '#d8d2c6'}`,
+                  ...circleButton,
+                  fontSize: 16,
+                  color: saved ? color.danger : color.ink,
                 }}
               >
-                {active ? '✓' : '+'}
+                {saved ? '♥' : '♡'}
+              </button>
+              <button
+                type="button"
+                onClick={() => flash(t.linkCopied)}
+                aria-label={isArabic ? 'مشاركة' : 'Share'}
+                className="press"
+                style={{ ...circleButton, fontSize: 15, color: color.ink }}
+              >
+                ↗
+              </button>
+            </div>
+          </div>
+          <div
+            aria-hidden="true"
+            style={{ position: 'absolute', bottom: 16, insetInline: 20, display: 'flex', gap: 6 }}
+          >
+            <span style={{ flex: 1, height: 3, borderRadius: 2, background: color.gold }} />
+            <span style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(255,255,255,.5)' }} />
+            <span style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(255,255,255,.5)' }} />
+          </div>
+        </div>
+
+        <div style={{ padding: '4px 24px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h1 style={{ font: `600 27px/1 ${font.serif}`, margin: 0 }}>
+                {isArabic ? salon.ar : salon.name}
+              </h1>
+              <div
+                style={{
+                  font: `700 18px ${font.arabicDisplay}`,
+                  color: color.goldLink,
+                  marginTop: 2,
+                }}
+              >
+                {isArabic ? salon.name : salon.ar}
+              </div>
+            </div>
+            {salon.discount > 0 ? (
+              <div
+                style={{
+                  background: color.gold,
+                  color: color.goldInkAlt,
+                  font: `700 12px ${font.sans}`,
+                  padding: '6px 11px',
+                  borderRadius: 10,
+                }}
+                className="ltr-run"
+              >
+                -{salon.discount}%
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 14,
+              alignItems: 'center',
+              marginTop: 10,
+              font: `500 12.5px ${font.sans}`,
+              color: color.muted,
+            }}
+          >
+            {salon.rating != null ? (
+              <span style={{ color: color.goldDeep, fontWeight: 600 }}>★ {salon.rating}</span>
+            ) : (
+              <span style={{ color: color.goldDeep, fontWeight: 600 }}>
+                {isArabic ? 'جديد' : 'New'}
               </span>
+            )}
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'go', screen: 'reviews' })}
+              style={{ textDecoration: 'underline' }}
+            >
+              {isArabic ? `${salon.reviews} تقييم` : `${salon.reviews} reviews`}
             </button>
-          );
-        })}
-      </div>
-      <div style={{ height: 20 }} />
+            {salon.distance ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  style={{ width: 3, height: 3, background: '#c9c3b7', borderRadius: '50%' }}
+                />
+                <span className="ltr-run">{salon.distance}</span>
+              </>
+            ) : null}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <div
+              style={{
+                flex: 1,
+                background: color.surfaceWarm,
+                border: `1px solid ${color.lineWarm}`,
+                borderRadius: 12,
+                padding: 10,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ font: `700 12px ${font.sans}` }}>{t.openNow}</div>
+              <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>{t.until}</div>
+            </div>
+            <div
+              style={{
+                flex: 1,
+                background: color.surfaceWarm,
+                border: `1px solid ${color.lineWarm}`,
+                borderRadius: 12,
+                padding: 10,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ font: `700 12px ${font.sans}` }}>
+                {salonCategory(salon, state.lang)}
+              </div>
+              <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>
+                {t.privateRooms}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, padding: '16px 24px 0' }}>
+          <button
+            type="button"
+            onClick={() => openConversation('chat')}
+            className="press"
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              background: color.ink,
+              color: color.goldSoft,
+              borderRadius: 14,
+              padding: 13,
+              font: `700 13px ${font.sans}`,
+            }}
+          >
+            <ChatIcon />
+            {t.message}
+          </button>
+          <button
+            type="button"
+            onClick={() => flash(`${isArabic ? 'جارٍ الاتصال ' : 'Calling '}${SALON_PHONE}`)}
+            className="press"
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              background: color.surfaceSand,
+              border: `1.5px solid ${color.lineSand}`,
+              color: color.ink,
+              borderRadius: 14,
+              padding: 13,
+              font: `700 13px ${font.sans}`,
+            }}
+          >
+            <PhoneIcon />
+            {t.callNow}
+          </button>
+        </div>
+
+        <div style={{ padding: '22px 24px 0' }}>
+          <h2 style={{ font: `600 19px ${font.serif}`, margin: 0 }}>{t.services}</h2>
+        </div>
+
+        <div style={{ padding: '12px 24px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {salonServices.map((service) => {
+            const active = Boolean(state.selected[service.id]);
+            return (
+              <button
+                key={service.id}
+                type="button"
+                onClick={() => dispatch({ type: 'toggleService', serviceId: service.id })}
+                aria-pressed={active}
+                className="press"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: active ? color.cream : color.surface,
+                  border: `1.5px solid ${active ? color.gold : color.lineWarm}`,
+                  borderRadius: 16,
+                  padding: 14,
+                  textAlign: 'start',
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: 'block', font: `600 14.5px ${font.sans}` }}>
+                    {isArabic ? service.ar : service.name}
+                  </span>
+                  <span
+                    style={{
+                      display: 'block',
+                      font: `500 11px ${font.arabicSans}`,
+                      color: color.mutedSoft,
+                      margin: '2px 0 4px',
+                    }}
+                  >
+                    {isArabic ? service.name : service.ar} · {localizeUnits(service.dur, state.lang)}
+                  </span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                    <span style={{ font: `700 13px ${font.sans}`, color: color.ink }}>
+                      {money(priceNow(service))}
+                    </span>
+                    {service.discount > 0 ? (
+                      <span
+                        style={{
+                          font: `500 11px ${font.sans}`,
+                          color: color.mutedFaint,
+                          textDecoration: 'line-through',
+                        }}
+                      >
+                        {money(service.price)}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    flex: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 15,
+                    background: active ? color.gold : color.surface,
+                    color: active ? color.goldInk : color.disabled,
+                    border: `1.5px solid ${active ? color.gold : '#d8d2c6'}`,
+                  }}
+                >
+                  {active ? '✓' : '+'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ height: 20 }} />
+      </Screen>
 
       {hasSelection ? (
         <BottomBar style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
@@ -367,6 +369,6 @@ export function SalonDetail() {
           </button>
         </BottomBar>
       ) : null}
-    </Screen>
+    </>
   );
 }
