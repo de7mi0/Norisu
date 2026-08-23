@@ -46,6 +46,11 @@ import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import {
   loadSalonReviews,
   loadVendorDay,
+  reassignAppointment,
+  replyToReview,
+  setAppointmentStatus,
+  type AppointmentFailure,
+  type AppointmentStatus,
   type VendorDay,
   type VendorReviews,
 } from '../data/vendorBookings';
@@ -420,6 +425,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [ownedSalonId, state.screen]);
+
+  const appointmentFailureText = useCallback(
+    (failure: AppointmentFailure): string => {
+      const messages: Record<AppointmentFailure, string> = {
+        notConfigured: t.apptNoBackend,
+        slotTaken: t.apptSlotTaken,
+        notAllowed: t.apptNotAllowed,
+        network: t.apptFailed,
+      };
+      return messages[failure];
+    },
+    [t],
+  );
+
+  /** Re-reads the day on screen after a write, so the row reflects the truth. */
+  const refreshVendorDay = useCallback(async () => {
+    if (!ownedSalonId || vendorDayOffset == null) return;
+    setVendorDay(await loadVendorDay(ownedSalonId, dateAtOffset(vendorDayOffset)));
+  }, [ownedSalonId, vendorDayOffset]);
+
+  /**
+   * Moves an appointment through the salon's lifecycle. Which moves are
+   * legitimate is settled by the database (0006's status trigger), not here —
+   * this offers them and reports back what Postgres said.
+   */
+  const setAppointment = useCallback(
+    async (bookingId: string, status: AppointmentStatus) => {
+      const failure = await setAppointmentStatus(bookingId, status);
+      if (failure) {
+        flash(appointmentFailureText(failure));
+        return;
+      }
+      dispatch({ type: 'closeAppointment' });
+      await refreshVendorDay();
+      flash(t.apptUpdated);
+    },
+    [appointmentFailureText, flash, refreshVendorDay, t],
+  );
+
+  /** Hands an appointment to a different specialist, or back to anyone free. */
+  const reassignTo = useCallback(
+    async (bookingId: string, staffId: string | null) => {
+      const failure = await reassignAppointment(bookingId, staffId);
+      if (failure) {
+        // Nearly always "that person is already booked then", which is why it
+        // has its own message rather than a generic failure.
+        flash(appointmentFailureText(failure));
+        return;
+      }
+      dispatch({ type: 'closeAppointment' });
+      await refreshVendorDay();
+      flash(t.apptUpdated);
+    },
+    [appointmentFailureText, flash, refreshVendorDay, t],
+  );
+
+  /** Answers a review, through the 0007 function rather than a table write. */
+  const answerReview = useCallback(
+    async (reviewId: string, reply: string): Promise<boolean> => {
+      const failure = await replyToReview(reviewId, reply);
+      if (failure) {
+        flash(appointmentFailureText(failure));
+        return false;
+      }
+      if (ownedSalonId) setVendorReviews(await loadSalonReviews(ownedSalonId));
+      flash(t.replySaved);
+      return true;
+    },
+    [appointmentFailureText, flash, ownedSalonId, t],
+  );
+
 
   const ownerFailureText = useCallback(
     (failure: OwnerWriteFailure): string => {
@@ -979,6 +1055,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       vendorDay,
       vendorReviews,
+      setAppointment,
+      reassignTo,
+      answerReview,
       saveMyName,
       setSlotStep,
       setDayHours,
@@ -1034,6 +1113,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       vendorDay,
       vendorReviews,
+      setAppointment,
+      reassignTo,
+      answerReview,
       saveMyName,
       setSlotStep,
       setDayHours,

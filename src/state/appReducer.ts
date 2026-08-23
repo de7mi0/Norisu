@@ -112,6 +112,13 @@ export interface AppState {
   nameModal: boolean;
   nameForm: string;
 
+  /**
+   * Which appointment the owner has open on the calendar, by id, and null when
+   * the sheet is closed. Only the *choice* lives here; the appointment itself
+   * is remote state on `vendorDay`.
+   */
+  apptSheet: string | null;
+
   vDay: number;
   /** Vendor services switched off (hidden from customers), keyed by service id. */
   vOff: Record<string, boolean>;
@@ -173,6 +180,7 @@ export const initialState: AppState = {
   extraStaff: [],
   nameModal: false,
   nameForm: '',
+  apptSheet: null,
   svcModal: false,
   svcForm: { name: '', price: '', dur: '' },
   staffModal: false,
@@ -226,6 +234,8 @@ export type Action =
   | { type: 'dismissSeatBanner' }
   | { type: 'bookFromWaitlist' }
   | { type: 'toggleWaitlistAcceptance' }
+  | { type: 'openAppointment'; bookingId: string }
+  | { type: 'closeAppointment' }
   | { type: 'openNameSheet'; current: string }
   | { type: 'setNameForm'; value: string }
   | { type: 'closeNameSheet' }
@@ -415,6 +425,10 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'toggleWaitlistAcceptance':
       return { ...state, waitlistOn: !state.waitlistOn };
 
+    case 'openAppointment':
+      return { ...state, apptSheet: action.bookingId };
+    case 'closeAppointment':
+      return { ...state, apptSheet: null };
     case 'openNameSheet':
       // Prefilled with whatever is stored, so this edits rather than retypes.
       return { ...state, nameModal: true, nameForm: action.current };

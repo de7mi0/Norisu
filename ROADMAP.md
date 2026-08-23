@@ -167,11 +167,14 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   closed, and capped at 100% because unassigned bookings can oversell a day (see the
   double-booking item above).
 
-  Still to do here: **the calendar is read-only.** An owner cannot confirm, complete, cancel or
-  reassign an appointment from it, though `bookings_update` already permits all four — that is UI
-  and a write, not a policy, and it is the recommended next task. Replying to a review is likewise
-  unbuilt, though `reviews.reply` exists for it. The dashboard covers today only: no week, no
-  month, no trend beyond yesterday's count.
+  ~~The calendar is read-only~~ — **built.** Tapping an appointment offers confirm, start,
+  complete, no-show, cancel and reassign, and only the moves that are legal from where it stands.
+  What is legal is decided in the database by 0006's status trigger rather than duplicated in the
+  browser. Replying to a review is built too, through `reply_to_review()` (0007) — it had to be a
+  function, because 0006 left `reviews` with no UPDATE privilege at all.
+
+  Still to do here: the "+ Add" pill, which needs a customer account for a walk-in to belong to,
+  and the dashboard, which covers today only — no week, no month, no trend beyond yesterday.
 - ~~Vendor CRUD for services and team (backlog item 1)~~ — **built.** An owner adds, edits, hides
   and removes their own services and staff. Removing archives rather than deletes, because
   bookings reference the row and a past booking must keep meaning what it meant. What is still

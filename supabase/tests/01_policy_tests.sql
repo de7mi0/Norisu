@@ -2473,4 +2473,177 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 59. A salon answers a review of itself, and touches nothing else.
+--
+--     0006 left reviews with no UPDATE privilege at all, so replying can only
+--     happen through reply_to_review(). The function is security definer, which
+--     means its own guard is the entire boundary — the same shape as the 0005
+--     functions, and asserted the same way.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  review uuid;
+  got    record;
+begin
+  select id into review from reviews where salon_id = salon;
+
+  perform set_config('request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}', true);
+  set local role authenticated;
+
+  perform reply_to_review(review, '  We are sorry, and we have retrained the team.  ');
+
+  reset role;
+  select rating, body, reply, replied_at into got from reviews where id = review;
+
+  if got.reply <> 'We are sorry, and we have retrained the team.' then
+    raise exception 'FAIL 59a: the reply was not stored (%)', got.reply;
+  end if;
+  if got.replied_at is null then
+    raise exception 'FAIL 59b: a reply was stored without a timestamp';
+  end if;
+
+  -- 55 set these; the function must not have been able to reach them.
+  if got.rating <> 1.0 or got.body <> 'Terrible. Rude staff and dirty tools.' then
+    raise exception 'FAIL 59c: replying altered the customer''s own words (% / %)',
+      got.rating, got.body;
+  end if;
+
+  -- Clearing the reply clears the timestamp, so the two cannot disagree.
+  perform set_config('request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}', true);
+  set local role authenticated;
+  perform reply_to_review(review, '');
+  reset role;
+
+  select reply, replied_at into got from reviews where id = review;
+  if got.reply <> '' or got.replied_at is not null then
+    raise exception 'FAIL 59d: clearing the reply left a timestamp behind';
+  end if;
+
+  raise notice 'PASS 59: a salon answers a review of itself, and can change nothing else about it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 60. Nobody else may answer it.
+--
+--     If the guard inside the function were dropped, any signed-in account
+--     could put words in any salon's mouth. This is the assertion that catches
+--     that.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  review uuid;
+begin
+  select id into review from reviews where salon_id = salon;
+
+  -- The rival salon.
+  perform set_config('request.jwt.claims',
+    '{"sub":"44444444-4444-4444-4444-444444444444"}', true);
+  set local role authenticated;
+  begin
+    perform reply_to_review(review, 'Their tools really are dirty.');
+    raise exception 'FAIL 60a: a rival salon replied to this salon''s review';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- The customer who wrote it. Editing their own review is a different job and
+  -- is not this function.
+  perform set_config('request.jwt.claims',
+    '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+  begin
+    perform reply_to_review(review, 'Actually it was fine.');
+    raise exception 'FAIL 60b: the customer wrote the salon''s reply';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- A review that does not exist answers exactly like one that is not yours,
+  -- so the function cannot be used to find out which reviews are real.
+  begin
+    perform reply_to_review('00000000-0000-0000-0000-000000000000', 'hello');
+    raise exception 'FAIL 60c: a missing review answered differently';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+  raise notice 'PASS 60: only the salon a review is about may answer it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 61. The salon runs the appointment; reassigning cannot double-book.
+--
+--     Phase 1 lets an owner confirm, complete, cancel, no-show and reassign
+--     from the calendar. The status half is 0006's trigger (57); this is the
+--     other half — moving an appointment to a staff member who is already busy
+--     must be refused by the exclusion constraint rather than quietly accepted.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner    uuid := '33333333-3333-3333-3333-333333333333';
+  layla    uuid := 'dddddddd-0000-0000-0000-000000000001';
+  omar     uuid;
+  first_b  uuid;
+  second_b uuid;
+  final    booking_status;
+begin
+  insert into staff (salon_id, name_en, name_ar, initials)
+  values (salon, 'Omar K.', 'عمر ك.', 'OK') returning id into omar;
+
+  -- Two appointments at the same time, on different people.
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-REA1', '11111111-1111-1111-1111-111111111111', salon, layla,
+          '2026-11-01 10:00+03', '2026-11-01 11:00+03', 'confirmed', 10000, 11500)
+  returning id into first_b;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-REA2', '22222222-2222-2222-2222-222222222222', salon, omar,
+          '2026-11-01 10:00+03', '2026-11-01 11:00+03', 'confirmed', 10000, 11500)
+  returning id into second_b;
+
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', owner), true);
+  set local role authenticated;
+
+  -- Moving the second onto Layla would put her in two chairs at once.
+  begin
+    update bookings set staff_id = layla where id = second_b;
+    raise exception 'FAIL 61a: reassigning double-booked a staff member';
+  exception
+    when exclusion_violation then null;
+  end;
+
+  -- Freeing the slot first makes the same move legitimate.
+  update bookings set status = 'cancelled', cancelled_at = now() where id = first_b;
+  update bookings set staff_id = layla where id = second_b;
+
+  -- And the salon may run the appointment through to the end.
+  update bookings set status = 'in_progress' where id = second_b;
+  update bookings set status = 'completed'   where id = second_b;
+
+  reset role;
+  select status into final from bookings where id = second_b;
+  if final <> 'completed' then
+    raise exception 'FAIL 61b: the salon could not complete its own appointment (%)', final;
+  end if;
+
+  raise notice 'PASS 61: a salon runs its own appointments, and reassigning cannot double-book';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

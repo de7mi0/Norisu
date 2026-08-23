@@ -1,6 +1,10 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { Availability } from '../data/availability';
-import type { VendorDay, VendorReviews } from '../data/vendorBookings';
+import type {
+  AppointmentStatus,
+  VendorDay,
+  VendorReviews,
+} from '../data/vendorBookings';
 import type {
   DayHours,
   OwnerState,
@@ -79,6 +83,15 @@ export interface AppContextValue {
   vendorDay: VendorDay;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
+  /**
+   * Moves one of the owner's appointments through its lifecycle. Which moves
+   * are legal is decided by the database, not by the caller.
+   */
+  setAppointment: (bookingId: string, status: AppointmentStatus) => Promise<void>;
+  /** Hands an appointment to another specialist; null means "any professional". */
+  reassignTo: (bookingId: string, staffId: string | null) => Promise<void>;
+  /** Answers a review. True once stored, so the form can close on success only. */
+  answerReview: (reviewId: string, reply: string) => Promise<boolean>;
   /**
    * Stores the signed-in customer's name on their profile. True once written;
    * the sheet stays open on false so nothing is typed twice.

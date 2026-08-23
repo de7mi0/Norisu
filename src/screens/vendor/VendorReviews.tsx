@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
+import { SheetField, SheetModal } from '../../components/SheetModal';
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { VENDOR_REVIEWS } from '../../data/vendor';
 import type { SalonReview } from '../../data/vendorBookings';
+import { REPLY_MAX_LENGTH } from '../../data/vendorBookings';
 import { instantLabel } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font, tile } from '../../theme';
@@ -19,6 +22,11 @@ export function VendorReviews() {
   const { t, state, dispatch, isArabic, backIcon, vendorReviews } = useApp();
 
   const live = vendorReviews.source === 'live';
+
+  // Which review is being answered. Local to this screen rather than the
+  // reducer: no other screen has any use for it.
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const answering = vendorReviews.reviews.find((review) => review.id === replyTo);
 
   return (
     <Screen bottomInset={40}>
@@ -50,7 +58,12 @@ export function VendorReviews() {
             </div>
           ) : (
             vendorReviews.reviews.map((review) => (
-              <LiveReview key={review.id} review={review} lang={state.lang} />
+              <LiveReview
+                key={review.id}
+                review={review}
+                lang={state.lang}
+                onReply={() => setReplyTo(review.id)}
+              />
             ))
           )
         ) : (
@@ -144,6 +157,10 @@ export function VendorReviews() {
           </div>
         )}
       </div>
+
+      {answering ? (
+        <ReplySheet review={answering} onClose={() => setReplyTo(null)} />
+      ) : null}
     </Screen>
   );
 }
@@ -153,7 +170,15 @@ export function VendorReviews() {
  * from the business it is about would help nobody, and the owner cannot act on
  * what they cannot see.
  */
-function LiveReview({ review, lang }: { review: SalonReview; lang: 'en' | 'ar' }) {
+function LiveReview({
+  review,
+  lang,
+  onReply,
+}: {
+  review: SalonReview;
+  lang: 'en' | 'ar';
+  onReply: () => void;
+}) {
   const { t } = useApp();
 
   return (
@@ -214,21 +239,90 @@ function LiveReview({ review, lang }: { review: SalonReview; lang: 'en' | 'ar' }
         </div>
       )}
 
+      {/* Answering goes through the 0007 function: 0006 left this table with no
+          UPDATE privilege at all, so there is no way to write a reply directly. */}
+      <button
+        type="button"
+        onClick={onReply}
+        className="press"
+        style={{
+          display: 'block',
+          width: '100%',
+          textAlign: 'start',
+          marginTop: 10,
+          background: review.reply ? color.surfaceWarm : 'transparent',
+          border: review.reply ? 'none' : `1px dashed ${color.lineDashed}`,
+          borderRadius: 12,
+          padding: '10px 12px',
+          font: `500 11.5px/1.5 ${font.sans}`,
+          color: review.reply ? color.muted : color.goldLink,
+          cursor: 'pointer',
+        }}
+      >
+        {review.reply ? (
+          <>
+            <span style={{ color: color.goldLink, fontWeight: 600 }}>{t.ownerReply}</span>
+            {review.reply}
+          </>
+        ) : (
+          <span style={{ fontWeight: 600 }}>{t.replyTitle}</span>
+        )}
+      </button>
+    </article>
+  );
+}
+
+/** The reply form. Saving closes it; a failure leaves the text where it was. */
+function ReplySheet({
+  review,
+  onClose,
+}: {
+  review: SalonReview;
+  onClose: () => void;
+}) {
+  const { t, answerReview } = useApp();
+  const [text, setText] = useState(review.reply);
+
+  return (
+    <SheetModal
+      title={t.replyTitle}
+      cancelLabel={t.cancel}
+      saveLabel={t.save}
+      onCancel={onClose}
+      onSave={() => {
+        void answerReview(review.id, text).then((saved) => {
+          if (saved) onClose();
+        });
+      }}
+    >
+      <SheetField
+        label={t.replyTitle}
+        value={text}
+        onChange={(value) => setText(value.slice(0, REPLY_MAX_LENGTH))}
+        placeholder={t.replyPlaceholder}
+        style={{ marginBottom: 14 }}
+      />
       {review.reply ? (
-        <div
+        <button
+          type="button"
+          onClick={() => {
+            void answerReview(review.id, '').then((saved) => {
+              if (saved) onClose();
+            });
+          }}
           style={{
-            marginTop: 10,
-            background: color.surfaceWarm,
-            borderRadius: 12,
-            padding: '10px 12px',
-            font: `500 11.5px/1.5 ${font.sans}`,
-            color: color.muted,
+            display: 'block',
+            width: '100%',
+            textAlign: 'center',
+            marginBottom: 14,
+            font: `600 12px ${font.sans}`,
+            color: color.danger,
+            cursor: 'pointer',
           }}
         >
-          <span style={{ color: color.goldLink, fontWeight: 600 }}>{t.ownerReply}</span>
-          {review.reply}
-        </div>
+          {t.replyRemove}
+        </button>
       ) : null}
-    </article>
+    </SheetModal>
   );
 }

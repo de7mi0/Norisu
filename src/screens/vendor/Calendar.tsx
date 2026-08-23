@@ -6,6 +6,7 @@ import { dayLabel, weekdayLabel } from '../../i18n';
 import { useApp, dateAtOffset } from '../../state/context';
 import { bookingStatus, color, font } from '../../theme';
 import { AppointmentRow } from './appointment';
+import { AppointmentSheet } from './AppointmentSheet';
 
 /** A week from today. The strip used to be four dates in July 2026. */
 const DAY_COUNT = 7;
@@ -18,7 +19,8 @@ export function Calendar() {
   const live = vendorDay.source === 'live';
 
   return (
-    <Screen bottomInset={88}>
+    <>
+      <Screen bottomInset={88}>
       <div
         style={{
           padding: '56px 24px 0',
@@ -138,6 +140,9 @@ export function Calendar() {
         )}
       </div>
     </Screen>
+
+      <AppointmentSheet />
+    </>
   );
 }
 
@@ -146,7 +151,7 @@ export function Calendar() {
  * says so plainly rather than showing a spinner or nothing at all.
  */
 function LiveDay({ appointments }: { appointments: SalonAppointment[] }) {
-  const { t, isArabic } = useApp();
+  const { t, isArabic, dispatch } = useApp();
 
   if (appointments.length === 0) return <Note text={t.noAppointments} />;
 
@@ -167,17 +172,25 @@ function LiveDay({ appointments }: { appointments: SalonAppointment[] }) {
             >
               {appointment.time}
             </div>
-            <div
+            {/* The whole row is the control: an owner reaches for the
+                appointment, not for a small button beside it. */}
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'openAppointment', bookingId: appointment.id })}
+              className="press"
               style={{
                 flex: 1,
+                minWidth: 0,
+                textAlign: 'start',
                 background: tone.bg,
                 borderInlineStart: `3px solid ${tone.dot}`,
                 borderRadius: 12,
                 padding: '13px 14px',
+                cursor: 'pointer',
               }}
             >
               <AppointmentRow appointment={appointment} isArabic={isArabic} t={t} />
-            </div>
+            </button>
           </div>
         );
       })}

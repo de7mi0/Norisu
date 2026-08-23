@@ -13,6 +13,7 @@ supabase/
     0004_owner_cannot_self_verify.sql  an owner may not approve their own salon
     0005_vendor_day.sql          the owner's own diary, figures and reviews
     0006_column_privileges.sql   which columns each side may write
+    0007_review_reply.sql        the only way a salon can answer a review
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -358,7 +359,7 @@ order by proname;
 ```
 
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
-`salon_reviews` mean 0005 is in.
+`salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in.
 
 For 0006, which leaves grants and a trigger rather than functions, this is the
 check — it should come back `applied`:

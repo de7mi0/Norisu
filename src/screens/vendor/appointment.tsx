@@ -1,24 +1,7 @@
 import type { SalonAppointment } from '../../data/vendorBookings';
 import type { Dictionary } from '../../i18n/en';
 import { color, font } from '../../theme';
-
-/** The booking's status in the reader's language. Every enum value has one. */
-function statusLabel(status: SalonAppointment['status'], t: Dictionary): string {
-  switch (status) {
-    case 'pending':
-      return t.statusPending;
-    case 'confirmed':
-      return t.statusConfirmed;
-    case 'in_progress':
-      return t.statusInProgress;
-    case 'completed':
-      return t.statusCompleted;
-    case 'cancelled':
-      return t.statusCancelled;
-    case 'no_show':
-      return t.statusNoShow;
-  }
-}
+import { statusLabel } from './status';
 
 /**
  * One appointment's text, shared by the calendar and the dashboard so the two

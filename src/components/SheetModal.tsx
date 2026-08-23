@@ -4,7 +4,12 @@ import { color, font } from '../theme';
 interface SheetModalProps {
   title: string;
   cancelLabel: string;
-  saveLabel: string;
+  /**
+   * Null for a sheet with nothing to submit — a list of actions rather than a
+   * form. The footer then holds one full-width dismiss button instead of a
+   * pair, because two buttons that both close the sheet reads as a bug.
+   */
+  saveLabel: string | null;
   onCancel: () => void;
   onSave: () => void;
   children: ReactNode;
@@ -82,21 +87,23 @@ export function SheetModal({
           >
             {cancelLabel}
           </button>
-          <button
-            type="submit"
-            className="press"
-            style={{
-              flex: 1,
-              textAlign: 'center',
-              padding: 14,
-              background: color.gold,
-              color: color.goldInk,
-              borderRadius: 13,
-              font: `700 13px ${font.sans}`,
-            }}
-          >
-            {saveLabel}
-          </button>
+          {saveLabel === null ? null : (
+            <button
+              type="submit"
+              className="press"
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                padding: 14,
+                background: color.gold,
+                color: color.goldInk,
+                borderRadius: 13,
+                font: `700 13px ${font.sans}`,
+              }}
+            >
+              {saveLabel}
+            </button>
+          )}
         </div>
       </form>
     </div>

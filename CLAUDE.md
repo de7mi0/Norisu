@@ -97,8 +97,9 @@ src/
                               SampleDataNotice, Conversation, Toast, LangToggle, icons
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
   screens/customer/           12 screens
-  screens/vendor/             10 screens + appointment.tsx, the row the dashboard and
-                              calendar share so they identify a customer identically
+  screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
+                              appointment.tsx (the row the dashboard and calendar share)
+                              and status.ts (one status → label map for both)
   hooks/useDragScroll.ts      mouse-drag for horizontal rails
 supabase/
   migrations/0001_schema.sql              14 tables, constraints, rating view
@@ -108,11 +109,12 @@ supabase/
   migrations/0005_vendor_day.sql  salon_day() / salon_stats() / salon_reviews()
   migrations/0006_column_privileges.sql  which columns each side may write, and
                                          which status changes each side may make
+  migrations/0007_review_reply.sql  reply_to_review(); the only way to answer one
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   58 assertions
+  tests/01_policy_tests.sql   61 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -281,8 +283,9 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view and four functions — `available_slots()` (0003) and `salon_day()`,
-`salon_stats()`, `salon_reviews()` (0005). 30 RLS policies. 58 assertions.
+plus a `salon_ratings` view and five functions — `available_slots()` (0003), `salon_day()`,
+`salon_stats()`, `salon_reviews()` (0005) and `reply_to_review()` (0007). 30 RLS policies.
+61 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -321,8 +324,9 @@ which columns the policy is really meant to expose — the answer is rarely "all
     it in Postgres closes that, and it must land before payments do.
 11. **A review cannot be rewritten by its subject.** `authenticated` has no UPDATE on `reviews` at
     all (0006) — the customer owns `rating`/`body` and the salon owns `reply`, and a grant cannot
-    say "different columns for different people". Replying must arrive as a `security definer`
-    function. Assertion 55.
+    say "different columns for different people". Replying arrives as `reply_to_review()` (0007),
+    a `security definer` function that can write `reply` and `replied_at` and nothing else.
+    Assertions 55, 59 and 60.
 12. **Only the salon may complete a booking.** `reviews_insert_after_visit` trusts
     `status = 'completed'` to decide who has earned a review, so a trigger (0006) limits the
     customer to cancelling. A grant restricts columns, not values. Assertion 57.
@@ -344,7 +348,7 @@ salon stops offering the time *and* stops offering the last person by name. That
 professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-58 assertions, drops it. Each of 53–58 was checked against a database with its own protection
+61 assertions, drops it. Each of 53–61 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -387,8 +391,8 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
 | **Vendor dashboard figures** | **Real.** Today's bookings, the value booked, occupancy and the rating, from `salon_stats()`. "Booked today" is **not revenue** — nothing is paid. |
-| **Vendor day calendar** | **Real.** The owner's own appointments for any day in the coming week, from `salon_day()`, cancellations included. |
-| **Vendor reviews** | **Real.** From `salon_reviews()`, unpublished rows included and marked. Replying is still not built. |
+| **Vendor day calendar** | **Real, and the owner can act on it.** Appointments for any day in the coming week from `salon_day()`, cancellations included. Tapping one offers confirm, start, complete, no-show, cancel and reassign. |
+| **Vendor reviews** | **Real.** From `salon_reviews()`, unpublished rows included and marked. **Replying is real too**, through `reply_to_review()`. |
 | Vendor waitlist | Browser-only, and **the last section still labelled as sample on screen**. |
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
@@ -470,9 +474,10 @@ totals in Postgres is the fix and must land before payments.
   services, team, the dashboard figures, the day calendar and reviews are all the owner's own. The
   **waitlist** is the last sample section, and still says so on screen — it needs
   `waitlist_entries` to be written by the customer side first, which nothing does yet.
-- **The vendor calendar is read-only.** An owner cannot confirm, complete, cancel or reassign an
-  appointment from it, though `bookings_update` already permits all four. The "+ Add" pill is still
-  inert. Replying to a review is likewise unbuilt, though `reviews.reply` exists for it.
+- **The "+ Add" pill on the calendar is still inert.** A walk-in booking needs a customer account
+  to belong to, which is a different problem from acting on one that exists.
+- **The dashboard's today list is read-only** and links to the calendar instead. One place to act
+  on an appointment is clearer than two.
 - **Occupancy is capped at 100%.** It counts booked minutes against opening hours times active
   staff, and "any professional" bookings are not assigned a chair at write time, so an oversold day
   would otherwise exceed the salon's own hours. The cap hides that rather than fixing it.
@@ -485,23 +490,21 @@ totals in Postgres is the fix and must land before payments.
 
 ## 11. Suggested next steps
 
-1. **Let the owner act on an appointment, not just read it.** The calendar now shows the real day
-   but does nothing to it: confirm, complete, cancel and reassign are all permitted by
-   `bookings_update` already, so this is UI and a write, not a policy. **This is the recommended
-   next task** — a diary you cannot change is half a portal, and cancelling from the salon side is
-   what the waitlist will eventually hang off.
-2. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
+1. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
    covers it at write time rather than only at offer time (§7). This is also what would make
-   occupancy honest rather than capped.
-3. **Persist the waitlist** — the last sample section in the portal, and the one the ROADMAP calls
+   occupancy honest rather than capped, and it pairs naturally with **`create_booking()`** — one
+   Postgres function that assigns the chair, computes the price from the salon's own `services`
+   rows and writes the booking with its items atomically. **This is the recommended next task**,
+   and it closes the last thing the 0006 audit left open.
+2. **Persist the waitlist** — the last sample section in the portal, and the one the ROADMAP calls
    the most interesting feature. `waitlist_entries` and its policies already exist; nothing writes
    to them.
-4. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
-5. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+3. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
+4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-6. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
+5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
 
 ---
 

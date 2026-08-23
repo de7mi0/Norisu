@@ -95,6 +95,86 @@ export interface VendorReviews {
   source: VendorSource;
 }
 
+/**
+ * Why a change to an appointment did not stick.
+ *
+ * `slotTaken` and `notAllowed` are the two the database answers with, and both
+ * need saying in their own words rather than as "could not save": moving an
+ * appointment onto somebody who is already busy is the likely outcome of
+ * reassigning, and 0006's status trigger is what refuses a change the account
+ * is not entitled to make.
+ */
+export type AppointmentFailure =
+  | 'notConfigured'
+  | 'slotTaken'
+  | 'notAllowed'
+  | 'network';
+
+/** Reads Postgres' complaint back as something the owner can act on. */
+function appointmentFailure(error: { code?: string; message?: string } | null): AppointmentFailure {
+  if (!error) return 'network';
+  // The no-double-booking exclusion constraint.
+  if (error.code === '23P01' || /exclusion|overlap/i.test(error.message ?? '')) return 'slotTaken';
+  if (error.code === '42501') return 'notAllowed';
+  return 'network';
+}
+
+/**
+ * Moves an appointment through the salon's own lifecycle.
+ *
+ * The rules about *which* changes are legitimate live in the database, in
+ * 0006's `bookings_status_transition` trigger — deliberately not duplicated
+ * here, because a copy in the browser is a copy that drifts and is not a
+ * boundary anyway. This offers what the owner may do and lets Postgres be the
+ * authority on it.
+ */
+export async function setAppointmentStatus(
+  bookingId: string,
+  status: AppointmentStatus,
+): Promise<AppointmentFailure | null> {
+  if (!supabase) return 'notConfigured';
+
+  const fields: Record<string, unknown> = { status };
+  // Mirrors the customer-side cancel in data/bookings.ts: the row stays, so the
+  // salon keeps the history, and the exclusion constraint ignores it so the
+  // time frees immediately.
+  if (status === 'cancelled') fields.cancelled_at = new Date().toISOString();
+
+  const { error } = await supabase.from('bookings').update(fields).eq('id', bookingId);
+  return error ? appointmentFailure(error) : null;
+}
+
+/** Hands an appointment to a different specialist, or back to "any professional". */
+export async function reassignAppointment(
+  bookingId: string,
+  staffId: string | null,
+): Promise<AppointmentFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase.from('bookings').update({ staff_id: staffId }).eq('id', bookingId);
+  return error ? appointmentFailure(error) : null;
+}
+
+/**
+ * Answers a review. Goes through the 0007 function rather than an update,
+ * because 0006 revoked UPDATE on `reviews` outright — the customer owns the
+ * rating and the body, the salon owns the reply, and a column grant cannot
+ * express that split.
+ */
+export async function replyToReview(
+  reviewId: string,
+  reply: string,
+): Promise<AppointmentFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase.rpc('reply_to_review', {
+    p_review_id: reviewId,
+    p_reply: reply.slice(0, REPLY_MAX_LENGTH),
+  });
+  return error ? appointmentFailure(error) : null;
+}
+
+/** Matches the cap inside reply_to_review(), so nothing is silently truncated. */
+export const REPLY_MAX_LENGTH = 1000;
+
 /** Races a call against the shared timeout. Rejects rather than hanging. */
 async function withTimeout<T>(call: PromiseLike<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
