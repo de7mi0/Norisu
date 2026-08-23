@@ -2137,4 +2137,340 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 53. A customer cannot make themselves an administrator.
+--
+--     This is the one that mattered. is_admin() reads profiles.role, and
+--     profiles_update_own lets you write your own row — so before 0006 the
+--     blanket column grant meant one statement turned any customer into an
+--     admin, and admin unlocks reading every profile, every booking at every
+--     salon, and every unpublished salon. Confirmed by doing it before the fix.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  attacker uuid := '11111111-1111-1111-1111-111111111111';
+  role_now user_role;
+begin
+  perform set_config('request.jwt.claims',
+    format('{"sub":"%s"}', attacker), true);
+  set local role authenticated;
+
+  begin
+    update profiles set role = 'admin' where id = attacker;
+    raise exception 'FAIL 53a: a customer promoted themselves to admin';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Nor by writing every column at once, which is how the salons equivalent
+  -- was bypassed before 0004.
+  begin
+    update profiles set full_name = 'Huda A.', role = 'admin' where id = attacker;
+    raise exception 'FAIL 53b: role slipped through alongside a legitimate column';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- ...and not on somebody else's row either, though the policy already said so.
+  begin
+    update profiles set role = 'admin'
+      where id = '22222222-2222-2222-2222-222222222222';
+    raise exception 'FAIL 53c: a customer promoted another account';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+  select role into role_now from profiles where id = attacker;
+  if role_now <> 'customer' then
+    raise exception 'FAIL 53d: the account ended up % anyway', role_now;
+  end if;
+
+  raise notice 'PASS 53: a customer cannot make themselves an administrator';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 54. ...while still being able to edit what is genuinely theirs.
+--
+--     A fix that stopped people setting their own name or language would be no
+--     fix at all: those are the only two profile columns the app writes.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  me uuid := '11111111-1111-1111-1111-111111111111';
+  got record;
+begin
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', me), true);
+  set local role authenticated;
+
+  update profiles set full_name = 'Huda Al-Otaibi' where id = me;
+  update profiles set locale = 'ar' where id = me;
+  update profiles set phone = '+966500000001', allow_whatsapp = false where id = me;
+
+  select full_name, locale, allow_whatsapp into got from profiles where id = me;
+  if got.full_name <> 'Huda Al-Otaibi' or got.locale <> 'ar' or got.allow_whatsapp then
+    raise exception 'FAIL 54: the account could not edit its own details';
+  end if;
+
+  reset role;
+  raise notice 'PASS 54: an account still edits its own name, language and contact preferences';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 55. A salon cannot rewrite the reviews written about it.
+--
+--     reviews_update lets the customer and the salon owner touch the row, but
+--     they own different columns of it and a grant cannot draw that line — so
+--     0006 revokes UPDATE on the table outright and grants nothing back.
+--     Before it, an owner turned a 1.0 "Terrible" into a 5.0 rave, still in the
+--     customer's name, and salon_ratings averaged the result.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  got record;
+begin
+  -- Assertion 51 left one review on this salon; make its content known.
+  update reviews set rating = 1.0, body = 'Terrible. Rude staff and dirty tools.'
+    where salon_id = salon;
+
+  perform set_config('request.jwt.claims',
+    '{"sub":"33333333-3333-3333-3333-333333333333"}', true);
+  set local role authenticated;
+
+  begin
+    update reviews set rating = 5.0, body = 'Wonderful!' where salon_id = salon;
+    raise exception 'FAIL 55a: the salon rewrote a review of itself';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Replying is not built yet, and until it is a function it is closed too.
+  begin
+    update reviews set reply = 'Thanks!' where salon_id = salon;
+    raise exception 'FAIL 55b: the salon wrote a reply through a raw update';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Hiding an unflattering review is the other half of the same abuse.
+  begin
+    update reviews set is_published = false where salon_id = salon;
+    raise exception 'FAIL 55c: the salon buried a review';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+  select rating, body into got from reviews where salon_id = salon;
+  if got.rating <> 1.0 or got.body <> 'Terrible. Rude staff and dirty tools.' then
+    raise exception 'FAIL 55d: the review was altered anyway (% / %)', got.rating, got.body;
+  end if;
+
+  raise notice 'PASS 55: a salon cannot rewrite, bury or reply to reviews by raw update';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 56. Nobody on a booking can rewrite what it cost.
+--
+--     Before 0006 the customer zeroed their own subtotal and total, and the
+--     owner set paid_at on a booking nobody had paid for. Today that corrupts
+--     the vendor dashboard, which sums total_halalas; the day money moves it is
+--     a payment bypass.
+--
+--     Note what this does NOT cover: the price is still stated by the client
+--     when the booking is first created. Only computing it in Postgres closes
+--     that — see the comment in 0006 and create_booking() on the roadmap.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  customer uuid := '22222222-2222-2222-2222-222222222222';
+  owner    uuid := '33333333-3333-3333-3333-333333333333';
+  booking  uuid;
+  got      record;
+begin
+  insert into bookings (
+    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    'SL-MONEY', customer, salon, 'dddddddd-0000-0000-0000-000000000001',
+    '2026-10-01 10:00+03', '2026-10-01 11:00+03', 'confirmed', 50000, 57500
+  ) returning id into booking;
+
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', customer), true);
+  set local role authenticated;
+
+  begin
+    update bookings set total_halalas = 0, subtotal_halalas = 0 where id = booking;
+    raise exception 'FAIL 56a: the customer rewrote what they owe';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update bookings set paid_at = now() where id = booking;
+    raise exception 'FAIL 56b: the customer marked their own booking paid';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Moving and calling off an appointment must still work: those are the only
+  -- two booking updates the app makes.
+  update bookings set starts_at = '2026-10-01 14:00+03',
+                      ends_at   = '2026-10-01 15:00+03'
+    where id = booking;
+  update bookings set status = 'cancelled', cancelled_at = now() where id = booking;
+
+  reset role;
+
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', owner), true);
+  set local role authenticated;
+
+  begin
+    update bookings set paid_at = now() where id = booking;
+    raise exception 'FAIL 56c: the salon marked an unpaid booking paid';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update bookings set total_halalas = 99999 where id = booking;
+    raise exception 'FAIL 56d: the salon inflated a booking after the fact';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+  select subtotal_halalas, total_halalas, paid_at, status, starts_at
+    into got from bookings where id = booking;
+  if got.subtotal_halalas <> 50000 or got.total_halalas <> 57500 then
+    raise exception 'FAIL 56e: the price changed anyway (% / %)',
+      got.subtotal_halalas, got.total_halalas;
+  end if;
+  if got.paid_at is not null then
+    raise exception 'FAIL 56f: the booking ended up marked paid';
+  end if;
+  if got.status <> 'cancelled' then
+    raise exception 'FAIL 56g: the customer could no longer cancel';
+  end if;
+
+  raise notice 'PASS 56: the money on a booking is fixed once made, while moving and cancelling still work';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 57. A customer cannot mark their own booking completed.
+--
+--     reviews_insert_after_visit decides who has earned the right to review by
+--     reading `status = 'completed'`. A customer who can set that reviews a
+--     salon they never visited — guarantee 5 failing quietly. A grant can
+--     restrict which column you write, not which value, so this is a trigger.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  customer uuid := '22222222-2222-2222-2222-222222222222';
+  owner    uuid := '33333333-3333-3333-3333-333333333333';
+  booking  uuid;
+  final    booking_status;
+begin
+  insert into bookings (
+    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+    subtotal_halalas, total_halalas
+  ) values (
+    'SL-STATUS', customer, salon, 'dddddddd-0000-0000-0000-000000000001',
+    '2026-10-02 10:00+03', '2026-10-02 11:00+03', 'confirmed', 50000, 57500
+  ) returning id into booking;
+
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', customer), true);
+  set local role authenticated;
+
+  begin
+    update bookings set status = 'completed' where id = booking;
+    raise exception 'FAIL 57a: a customer marked their own booking completed';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Nor any other part of the salon's lifecycle.
+  begin
+    update bookings set status = 'no_show' where id = booking;
+    raise exception 'FAIL 57b: a customer marked their own booking a no-show';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Cancelling is theirs, and still works.
+  update bookings set status = 'cancelled' where id = booking;
+
+  -- But not un-cancelling: the record of what happened is not theirs to redo.
+  begin
+    update bookings set status = 'confirmed' where id = booking;
+    raise exception 'FAIL 57c: a customer reinstated a cancelled booking';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+
+  -- The salon runs the appointment, so the lifecycle is theirs.
+  perform set_config('request.jwt.claims', format('{"sub":"%s"}', owner), true);
+  set local role authenticated;
+  update bookings set status = 'confirmed'   where id = booking;
+  update bookings set status = 'in_progress' where id = booking;
+  update bookings set status = 'completed'   where id = booking;
+  reset role;
+
+  select status into final from bookings where id = booking;
+  if final <> 'completed' then
+    raise exception 'FAIL 57d: the salon could not run its own appointment (%)', final;
+  end if;
+
+  raise notice 'PASS 57: only the salon may complete a booking; the customer may only cancel';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 58. An admin is still not locked out.
+--
+--     0004 deliberately left the Supabase dashboard working, because approving
+--     a salon has to happen somewhere. The status trigger keeps that door open
+--     the same way: no JWT means service_role, and it passes straight through.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  booking uuid;
+  final   booking_status;
+begin
+  select id into booking from bookings where reference = 'SL-STATUS';
+
+  -- No request.jwt.claims set: this is how the dashboard connects.
+  perform set_config('request.jwt.claims', '', true);
+  update bookings set status = 'no_show' where id = booking;
+
+  select status into final from bookings where id = booking;
+  if final <> 'no_show' then
+    raise exception 'FAIL 58: an admin could not correct a status (%)', final;
+  end if;
+
+  raise notice 'PASS 58: the dashboard can still correct a booking';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

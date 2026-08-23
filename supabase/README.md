@@ -12,6 +12,7 @@ supabase/
     0003_availability.sql        which times a salon can actually take
     0004_owner_cannot_self_verify.sql  an owner may not approve their own salon
     0005_vendor_day.sql          the owner's own diary, figures and reviews
+    0006_column_privileges.sql   which columns each side may write
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -40,6 +41,12 @@ the app has a bug or someone calls the API directly:
   asking about your day gets an error, not a list.
 - **A customer's contact details stay theirs.** The salon is given the name they
   chose to give and nothing more — never an e-mail address or a phone number.
+- **Nobody can promote themselves.** Being an administrator is not something an
+  account can grant itself, which it could before migration 0006.
+- **What a booking cost cannot be changed after it is made**, by either side,
+  and nobody can mark a booking paid that was not.
+- **A salon cannot edit, hide or answer the reviews written about it** by writing
+  to the database directly.
 
 All of the above are covered by assertions in `tests/01_policy_tests.sql`.
 
@@ -319,8 +326,13 @@ applied either.
 When a new migration is added after your project is running, paste **just that
 file**. Nothing already in the database is touched, and no data is lost.
 
-Take `0005_vendor_day.sql` — the one that made the vendor dashboard, calendar
-and reviews show the owner's real salon instead of sample data:
+**Right now the one you need is [`0006_column_privileges.sql`](https://github.com/de7mi0/Norisu/blob/claude/saloni-prototype-dev-idl8tr/supabase/migrations/0006_column_privileges.sql).**
+It closes three security holes, and unlike most changes it takes effect the moment
+you run it — the website redeploying does nothing for it, because these are
+database permissions rather than app code.
+
+The steps are the same for any migration. Taking `0005_vendor_day.sql` as the
+example, the one that made the vendor dashboard show the owner's real salon:
 
 1. Open **[0005_vendor_day.sql on GitHub](https://github.com/de7mi0/Norisu/blob/claude/app-progress-review-a83m59/supabase/migrations/0005_vendor_day.sql)**.
    (That link points at the branch the file was written on. Once the branch is
@@ -332,7 +344,8 @@ and reviews show the owner's real salon instead of sample data:
    "If something goes wrong".
 
 If you get `function "salon_day" already exists`, it has been applied before and
-there is nothing to do.
+there is nothing to do. (0006 is grants and a trigger rather than functions, so
+the equivalent there is `trigger "bookings_status_transition" ... already exists`.)
 
 Migrations are numbered, and each one only ever needs applying once. If you are
 unsure which your project has, the quickest check is to run this in the SQL
@@ -346,6 +359,17 @@ order by proname;
 
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
 `salon_reviews` mean 0005 is in.
+
+For 0006, which leaves grants and a trigger rather than functions, this is the
+check — it should come back `applied`:
+
+```sql
+select case
+  when has_column_privilege('authenticated','public.profiles','role','UPDATE')
+    then 'NOT APPLIED — accounts can still promote themselves'
+  else 'applied'
+end as migration_0006;
+```
 
 ## Running the tests
 

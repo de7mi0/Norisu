@@ -106,11 +106,13 @@ supabase/
   migrations/0003_availability.sql        available_slots() + salons.slot_step_minutes
   migrations/0004_owner_cannot_self_verify.sql  column grants: an owner may not approve itself
   migrations/0005_vendor_day.sql  salon_day() / salon_stats() / salon_reviews()
+  migrations/0006_column_privileges.sql  which columns each side may write, and
+                                         which status changes each side may make
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   52 assertions
+  tests/01_policy_tests.sql   58 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -280,7 +282,14 @@ so the e-mail was the only place Arabic genuinely could not reach.
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
 plus a `salon_ratings` view and four functions — `available_slots()` (0003) and `salon_day()`,
-`salon_stats()`, `salon_reviews()` (0005). 30 RLS policies. 52 assertions.
+`salon_stats()`, `salon_reviews()` (0005). 30 RLS policies. 58 assertions.
+
+**Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
+`insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
+whole rows. So "you may edit your own X" means "you may edit *every field* of your own X" unless a
+grant says otherwise. 0004 said so for `salons`; **0006 says so for `profiles`, `bookings` and
+`reviews`**, after an audit found three live holes (see §10). When adding a table or a column, ask
+which columns the policy is really meant to expose — the answer is rarely "all of them".
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
@@ -294,7 +303,10 @@ plus a `salon_ratings` view and four functions — `available_slots()` (0003) an
    constraint enforces the order; migration 0004 enforces *who* — `authenticated` has no UPDATE
    privilege on `is_verified` or `is_published`, which row-level security cannot express because a
    policy sees whole rows, not columns.
-7. **A signed-in user reads and updates only their own profile.**
+7. **A signed-in user reads and updates only their own profile** — and only the parts of it that
+   are theirs. `profiles.role` is **not** writable by `authenticated` (0006). It has to be:
+   `is_admin()` reads it, so a self-settable role was a one-line privilege escalation to the whole
+   database. Assertion 53.
 8. **A salon owner reads their own customers and nobody else's.** The 0005 functions are
    `security definer`, so RLS does not filter them — the `is_salon_owner()` guard at the top of each
    *is* the boundary, and a rival salon or a plain customer gets `42501`. They are granted to
@@ -302,6 +314,18 @@ plus a `salon_ratings` view and four functions — `available_slots()` (0003) an
    Assertions 46 and 47.
 9. **A customer's contact details never reach the salon.** The functions return
    `nullif(full_name, '')` and nothing else about the person — no e-mail, no phone.
+10. **What a booking cost cannot be rewritten after it is made.** The five money columns,
+    `vat_rate`, `payment_method` and `paid_at` are not writable by `authenticated` (0006), so
+    neither side can zero a total or claim an unpaid booking was paid. Assertion 56. **Still open:
+    the client states the price when the booking is *created*** — only `create_booking()` computing
+    it in Postgres closes that, and it must land before payments do.
+11. **A review cannot be rewritten by its subject.** `authenticated` has no UPDATE on `reviews` at
+    all (0006) — the customer owns `rating`/`body` and the salon owns `reply`, and a grant cannot
+    say "different columns for different people". Replying must arrive as a `security definer`
+    function. Assertion 55.
+12. **Only the salon may complete a booking.** `reviews_insert_after_visit` trusts
+    `status = 'completed'` to decide who has earned a review, so a trigger (0006) limits the
+    customer to cancelling. A grant restricts columns, not values. Assertion 57.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -320,7 +344,8 @@ salon stops offering the time *and* stops offering the last person by name. That
 professional" can still both be accepted. Assignment at booking time remains the real fix.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-52 assertions, drops it. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
+58 assertions, drops it. Each of 53–58 was checked against a database with its own protection
+removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
 
@@ -417,6 +442,20 @@ constraint ignores cancelled rows, so the slot frees immediately.
   it is now capacity-checked when times are offered. See §7.
 - **Nothing is paid.** `payment_method` is recorded but `paid_at` stays null, because no money
   moves. Do not treat a booking as paid.
+
+**Security posture, and the audit that produced 0006.** Three live holes were found by attacking a
+throwaway database rather than by reading the policies, and all three shared one cause: 0002's
+column-blind grant (§7). They are closed, and each has an assertion that fails if the protection is
+removed. Worth knowing they existed, because the same mistake is easy to repeat:
+- A customer could `update profiles set role = 'admin'` on their own row and then read every
+  profile, every booking at every salon, and every unpublished salon.
+- A salon could rewrite the reviews written about it — a 1.0 became a 5.0, still in the customer's
+  name — and `salon_ratings` averaged the result.
+- Either side of a booking could rewrite its price, or mark it paid.
+
+**Still open from that audit:** `createBooking` states the price from the browser, so a customer can
+*create* a zero-priced booking even though nobody can now *edit* one. `create_booking()` computing
+totals in Postgres is the fix and must land before payments.
 
 **Structural gaps:**
 - The waitlist does not survive a refresh.

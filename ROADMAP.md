@@ -201,6 +201,19 @@ Backlog item 3: FCM and APNs for push, plus a WhatsApp Business API provider (Un
 Twilio, 360dialog) with pre-approved bilingual templates. Template approval takes days, so
 submit them before you need them.
 
+### Phase 3.5 — The security audit, and what it left open
+- ~~Column-level write privileges~~ — **built (migration 0006).** Row policies gate rows; only
+  grants can gate columns, and 0002's blanket grant meant every "edit your own X" policy allowed
+  editing *every field* of X. An audit found three live holes: a customer could promote themselves
+  to `admin` and read the whole database, a salon could rewrite reviews about itself, and either
+  side of a booking could rewrite its price or mark it paid. All closed, each with an assertion
+  that fails when its protection is removed.
+- **Still open, and it blocks payments:** the browser states the booking price at creation time.
+  `create_booking()` computing totals in Postgres from the salon's own `services` rows is the fix,
+  and it is the same function that makes the booking and its items atomic. Do it before money moves.
+- Still to do: rate limiting on booking creation, and a decision on open signup — anyone can create
+  an account today, which is fine for a demo and worth revisiting before launch.
+
 ### Phase 4 — Compliance and trust
 - **PDPL** (Saudi Personal Data Protection Law, SDAIA): privacy policy, consent, retention
   periods, deletion rights, and a decision on data residency.
