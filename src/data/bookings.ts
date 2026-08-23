@@ -42,27 +42,35 @@ export type BookingFailure =
   | 'noServices'
   | 'noSlot'
   | 'slotTaken'
+  | 'closed'
+  | 'sampleData'
   | 'network';
 
-/** A reference a human can read out over the phone. */
-function newReference(): string {
-  const stamp = Date.now().toString(36).toUpperCase().slice(-5);
-  const noise = Math.floor(Math.random() * 36 ** 3)
-    .toString(36)
-    .toUpperCase()
-    .padStart(3, '0');
-  return `SL-${stamp}${noise}`;
+/**
+ * Turns Postgres' complaint into something the customer can act on. The codes
+ * are create_booking()'s own (migration 0008); 23P01 is the no-double-booking
+ * constraint having the last word after a chair was assigned.
+ */
+function bookingFailure(error: { code?: string; message?: string } | null): BookingFailure {
+  if (!error) return 'network';
+  switch (error.code) {
+    case 'SL001':
+      return 'noServices';
+    case 'SL002':
+      return 'closed';
+    case 'SL003':
+    case '23P01':
+      return 'slotTaken';
+    case '42501':
+      return 'notSignedIn';
+    default:
+      return /exclusion|overlap/i.test(error.message ?? '') ? 'slotTaken' : 'network';
+  }
 }
 
 /** The exact stored price, falling back to the display price for demo rows. */
 function halalasOf(service: Service): number {
   return service.priceHalalas ?? service.price * 100;
-}
-
-function minutesOf(service: Service): number {
-  if (service.durationMinutes != null) return service.durationMinutes;
-  const parsed = Number.parseInt(service.dur, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 45;
 }
 
 /** What a line costs after its own discount, rounded to the halala. */
@@ -75,6 +83,12 @@ function lineTotalHalalas(service: Service): number {
  * Totals in halalas, computed from the exact stored prices rather than from the
  * rounded riyals on screen — otherwise the invoice and the database disagree by
  * a few halalas on every discounted line.
+ *
+ * **Display only.** Since 0008 the figure that is actually stored is computed by
+ * `create_booking()` from the salon's own `services` rows, because a price the
+ * browser states is a price the browser can lie about. This draws the cart
+ * total; the arithmetic is mirrored in the function, and assertion 17 checks the
+ * two agree.
  */
 export function totalsFor(services: Service[]) {
   const subtotal = services.reduce((sum, service) => sum + halalasOf(service), 0);
@@ -97,13 +111,18 @@ export function startsAt(date: Date, time: string): Date {
 }
 
 /**
- * Writes the booking and its line items.
+ * Makes the booking.
  *
- * The two inserts are not a transaction — supabase-js speaks REST, which has no
- * way to open one. If the items fail the booking is deleted again, so a booking
- * never survives with no services on it. That compensation can itself fail, in
- * which case the orphan is left and reported rather than hidden; moving both
- * inserts into a Postgres function is the real fix and is recorded in ROADMAP.
+ * One call, one transaction, and almost nothing is taken on trust: the price,
+ * the end time, the staff member and the reference are all decided by
+ * `create_booking()` (migration 0008) from the salon's own rows. The browser
+ * says which salon, which services and when, and that is all it is allowed to
+ * say — `authenticated` has no INSERT privilege on `bookings` at all any more.
+ *
+ * That closes three things at once. The client could state its own total; "any
+ * professional" left `staff_id` null so the no-double-booking constraint had
+ * nobody to compare against and the salon could be oversold; and the booking
+ * and its items were two round trips with a compensating delete between them.
  */
 export async function createBooking(
   draft: BookingDraft,
@@ -113,62 +132,30 @@ export async function createBooking(
   if (!customerId) return { error: 'notSignedIn' };
   if (draft.services.length === 0) return { error: 'noServices' };
 
+  // A service with no stored price came from the bundled sample catalogue, not
+  // the database, so its id is not one the function can look up. Said plainly
+  // rather than sent and refused.
+  if (draft.services.some((service) => service.priceHalalas == null)) {
+    return { error: 'sampleData' };
+  }
+
   const start = startsAt(draft.date, draft.time);
   if (Number.isNaN(start.getTime())) return { error: 'noSlot' };
 
-  const minutes = draft.services.reduce((sum, service) => sum + minutesOf(service), 0);
-  const end = new Date(start.getTime() + minutes * 60_000);
-  const totals = totalsFor(draft.services);
-  const reference = newReference();
-
   try {
-    const { data, error } = await supabase
-      .from('bookings')
-      .insert({
-        reference,
-        customer_id: customerId,
-        salon_id: draft.salonId,
-        staff_id: draft.staffId,
-        starts_at: start.toISOString(),
-        ends_at: end.toISOString(),
-        status: 'confirmed',
-        subtotal_halalas: totals.subtotalHalalas,
-        discount_halalas: totals.discountHalalas,
-        vat_halalas: totals.vatHalalas,
-        total_halalas: totals.totalHalalas,
-        vat_rate: VAT_RATE,
-        payment_method: draft.paymentMethod,
-        // Deliberately not set: no money has actually moved. Checkout is
-        // simulated, and claiming otherwise would put a lie in the invoice.
-        paid_at: null,
-      })
-      .select('id')
-      .single<{ id: string }>();
+    const { data, error } = await supabase.rpc('create_booking', {
+      p_salon_id: draft.salonId,
+      p_staff_id: draft.staffId,
+      p_service_ids: draft.services.map((service) => service.id),
+      p_starts_at: start.toISOString(),
+      p_payment_method: draft.paymentMethod,
+    });
 
-    if (error || !data) {
-      // The exclusion constraint fires when someone else took the slot first.
-      const conflict = error?.code === '23P01' || /exclusion|overlap/i.test(error?.message ?? '');
-      return { error: conflict ? 'slotTaken' : 'network' };
-    }
+    if (error) return { error: bookingFailure(error) };
 
-    const items = draft.services.map((service) => ({
-      booking_id: data.id,
-      service_id: service.priceHalalas != null ? service.id : null,
-      name_en: service.name,
-      name_ar: service.ar,
-      duration_minutes: minutesOf(service),
-      unit_price_halalas: halalasOf(service),
-      discount_percent: service.discount,
-      quantity: 1,
-    }));
-
-    const { error: itemsError } = await supabase.from('booking_items').insert(items);
-    if (itemsError) {
-      await supabase.from('bookings').delete().eq('id', data.id);
-      return { error: 'network' };
-    }
-
-    return { reference };
+    const row = (data ?? [])[0] as { reference?: string } | undefined;
+    if (!row?.reference) return { error: 'network' };
+    return { reference: row.reference };
   } catch {
     return { error: 'network' };
   }
@@ -179,12 +166,13 @@ export async function createBooking(
  *
  * This is an update, not a new row: the customer keeps their reference, the
  * salon sees one appointment that moved rather than two, and the prices agreed
- * on the original day stay snapshotted on the items untouched. Creating a
- * second booking and leaving the first standing — which is what "Reschedule"
- * used to do — double-books the salon for the same customer.
+ * on the original day stay snapshotted on the items untouched.
  *
- * The appointment keeps its original length, so the caller passes the duration
- * read off the booking being moved.
+ * It goes through `reschedule_booking()` (0008) rather than a plain update,
+ * because now that every booking has a staff member somebody has to decide
+ * whether the move keeps that person. If the customer named them it does; if
+ * they took "any professional" the function re-picks whoever is free, so an
+ * unrequested booking is not quietly narrowed to one diary.
  */
 export async function rescheduleBooking(
   bookingId: string,
@@ -196,20 +184,18 @@ export async function rescheduleBooking(
 
   const start = startsAt(date, time);
   if (Number.isNaN(start.getTime())) return { error: 'noSlot' };
-  const end = new Date(start.getTime() + (durationMs > 0 ? durationMs : 45 * 60_000));
+  // The length comes off the booking itself, inside the function — the caller's
+  // duration is no longer used, and is kept in the signature only so the call
+  // sites read the same.
+  void durationMs;
 
   try {
-    const { error } = await supabase
-      .from('bookings')
-      .update({ starts_at: start.toISOString(), ends_at: end.toISOString() })
-      .eq('id', bookingId);
+    const { error } = await supabase.rpc('reschedule_booking', {
+      p_booking_id: bookingId,
+      p_starts_at: start.toISOString(),
+    });
 
-    if (error) {
-      // Somebody else holds the new time. The original booking is untouched,
-      // so the customer still has the appointment they started with.
-      const conflict = error.code === '23P01' || /exclusion|overlap/i.test(error.message ?? '');
-      return { error: conflict ? 'slotTaken' : 'network' };
-    }
+    if (error) return { error: bookingFailure(error) };
     return { ok: true };
   } catch {
     return { error: 'network' };

@@ -110,11 +110,13 @@ supabase/
   migrations/0006_column_privileges.sql  which columns each side may write, and
                                          which status changes each side may make
   migrations/0007_review_reply.sql  reply_to_review(); the only way to answer one
+  migrations/0008_create_booking.sql  create_booking() / reschedule_booking();
+                                      the only way a booking comes into existence
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   61 assertions
+  tests/01_policy_tests.sql   69 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -283,9 +285,9 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view and five functions — `available_slots()` (0003), `salon_day()`,
-`salon_stats()`, `salon_reviews()` (0005) and `reply_to_review()` (0007). 30 RLS policies.
-61 assertions.
+plus a `salon_ratings` view and the functions in 0003–0008 — `available_slots()`, `salon_day()`,
+`salon_stats()`, `salon_reviews()`, `reply_to_review()`, `create_booking()` and
+`reschedule_booking()`. 30 RLS policies. 69 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -295,8 +297,12 @@ grant says otherwise. 0004 said so for `salons`; **0006 says so for `profiles`, 
 which columns the policy is really meant to expose — the answer is rarely "all of them".
 
 **Guarantees enforced by Postgres, not by app code:**
-1. **No double-booking** — a GiST exclusion constraint on `(staff_id, tstzrange(starts_at, ends_at))`
-   for active statuses. Two people tapping the same slot simultaneously is a race the UI cannot win.
+1. **No double-booking, including "any professional".** A GiST exclusion constraint on
+   `(staff_id, tstzrange(starts_at, ends_at))` for active statuses settles two people tapping the
+   same slot. It needs a `staff_id` to compare, which unassigned bookings never had — so
+   `create_booking()` (0008) assigns a chair *before* inserting, and refuses when there is none
+   left. Measured: four "any professional" requests against a two-chair salon used to write four
+   bookings; they now write two. Assertion 62.
 2. **Past bookings never change** — `booking_items` snapshots name, price and duration. Editing a
    service can never rewrite what a customer was charged.
 3. **Tenant isolation** — a vendor can only read/write their own salon's rows. Tested both directions.
@@ -317,11 +323,10 @@ which columns the policy is really meant to expose — the answer is rarely "all
    Assertions 46 and 47.
 9. **A customer's contact details never reach the salon.** The functions return
    `nullif(full_name, '')` and nothing else about the person — no e-mail, no phone.
-10. **What a booking cost cannot be rewritten after it is made.** The five money columns,
-    `vat_rate`, `payment_method` and `paid_at` are not writable by `authenticated` (0006), so
-    neither side can zero a total or claim an unpaid booking was paid. Assertion 56. **Still open:
-    the client states the price when the booking is *created*** — only `create_booking()` computing
-    it in Postgres closes that, and it must land before payments do.
+10. **What a booking costs is the salon's to say, not the caller's.** The money columns are not
+    writable by `authenticated` (0006), and since 0008 `authenticated` cannot INSERT a booking at
+    all — `create_booking()` prices it from the salon's own `services` rows. So there is no moment
+    at which a total is taken on trust, before or after. Assertions 56 and 65.
 11. **A review cannot be rewritten by its subject.** `authenticated` has no UPDATE on `reviews` at
     all (0006) — the customer owns `rating`/`body` and the salon owns `reply`, and a grant cannot
     say "different columns for different people". Replying arrives as `reply_to_review()` (0007),
@@ -330,6 +335,12 @@ which columns the policy is really meant to expose — the answer is rarely "all
 12. **Only the salon may complete a booking.** `reviews_insert_after_visit` trusts
     `status = 'completed'` to decide who has earned a review, so a trigger (0006) limits the
     customer to cancelling. A grant restricts columns, not values. Assertion 57.
+13. **A booking and its items are written together or not at all**, because they are one function
+    call and therefore one transaction. A booking with no services on it is unreachable.
+    Assertion 66.
+14. **Opening hours bound what can be booked, not just what is offered.** `create_booking()`
+    checks the same window `available_slots()` steps across, so calling the API directly cannot
+    take a time the salon never offered. Assertion 67.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -339,16 +350,15 @@ which columns the policy is really meant to expose — the answer is rarely "all
 - IDs use `gen_random_uuid()`. `btree_gist` is the **only** required extension — `uuid-ossp` was
   deliberately removed because Supabase installs it where the column default may not resolve.
 
-**Known schema gap, now partly closed:** the double-booking constraint still **cannot cover
-`staff_id IS NULL`** ("any professional") — there is nobody to compare against. `available_slots()`
-(0003) performs the separate capacity check the constraint's own comment asks for: it counts
-eligible staff who are free and subtracts the bookings that are themselves unassigned, so a full
-salon stops offering the time *and* stops offering the last person by name. That is enforcement at
-**offer** time, not at write time — two people racing the same last chair through "any
-professional" can still both be accepted. Assignment at booking time remains the real fix.
+**The "any professional" gap is closed.** It ran from 0001 to 0008: with `staff_id` null the
+exclusion constraint had nobody to compare against, so a salon could be oversold.
+`available_slots()` (0003) capacity-checks at **offer** time, which narrowed the window without
+shutting it; `create_booking()` (0008) assigns a chair at **write** time, which does.
+`available_slots()` still subtracts unassigned bookings when counting capacity — that only applies
+to rows made before 0008 now, and stays correct.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-61 assertions, drops it. Each of 53–61 was checked against a database with its own protection
+69 assertions, drops it. Each of 53–69 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -434,16 +444,15 @@ entirely, because the appointment was already paid for (or not) once. Cancelling
 constraint ignores cancelled rows, so the slot frees immediately.
 
 **Booking gaps:**
-- **The two inserts are not one transaction.** supabase-js speaks REST, which cannot open one, so
-  `createBooking` writes the booking, then its items, and deletes the booking again if the items
-  fail. The compensating delete can itself fail. A Postgres function taking both in one call is the
-  real fix.
+- ~~The two inserts are not one transaction.~~ **Fixed in 0008**: `create_booking()` is one call
+  and therefore one transaction, so the compensating delete is gone along with the orphan it could
+  leave.
 - **Times are real now.** `available_slots()` computes them from `working_hours`, the services'
   length and existing bookings, for new bookings and reschedules alike. The database is still the
   final authority: a slot can be taken between being offered and being confirmed, and the app still
   says "That time was just taken" — but it is now a genuine race, not the everyday case.
-- **"Any professional" is still outside the no-double-booking constraint** at write time, though
-  it is now capacity-checked when times are offered. See §7.
+- ~~"Any professional" is outside the no-double-booking constraint at write time.~~ **Fixed in
+  0008**: a chair is assigned before the insert, so the constraint applies. See §7.
 - **Nothing is paid.** `payment_method` is recorded but `paid_at` stays null, because no money
   moves. Do not treat a booking as paid.
 
@@ -457,13 +466,12 @@ removed. Worth knowing they existed, because the same mistake is easy to repeat:
   name — and `salon_ratings` averaged the result.
 - Either side of a booking could rewrite its price, or mark it paid.
 
-**Still open from that audit:** `createBooking` states the price from the browser, so a customer can
-*create* a zero-priced booking even though nobody can now *edit* one. `create_booking()` computing
-totals in Postgres is the fix and must land before payments.
+**That audit is now fully closed.** The last item — `createBooking` stating the price from the
+browser — went with 0008: `authenticated` has no INSERT on `bookings`, and `create_booking()`
+prices from the salon's own rows.
 
 **Structural gaps:**
 - The waitlist does not survive a refresh.
-- "Any professional" bookings are outside the no-double-booking constraint at write time.
 - **Verification is a manual step.** A registered salon stays invisible to customers until someone
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
   constraint stops the order being skipped, but there is no admin screen and no notification telling
@@ -478,9 +486,9 @@ totals in Postgres is the fix and must land before payments.
   to belong to, which is a different problem from acting on one that exists.
 - **The dashboard's today list is read-only** and links to the calendar instead. One place to act
   on an appointment is clearer than two.
-- **Occupancy is capped at 100%.** It counts booked minutes against opening hours times active
-  staff, and "any professional" bookings are not assigned a chair at write time, so an oversold day
-  would otherwise exceed the salon's own hours. The cap hides that rather than fixing it.
+- **Occupancy is still capped at 100%**, though the cap should now be unreachable: every booking
+  made since 0008 holds a chair, so a day cannot be oversold. Rows created before it can still
+  exceed the hours, which is the case the cap now covers.
 - **The dashboard is today only.** No week, no month, no trend beyond yesterday's count.
 - No storage bucket exists for photo upload.
 - Open signup: anyone visiting the public demo can create an account. Accepted for now — a
@@ -490,21 +498,15 @@ totals in Postgres is the fix and must land before payments.
 
 ## 11. Suggested next steps
 
-1. **Assign staff at booking time for "any professional"**, so the no-double-booking constraint
-   covers it at write time rather than only at offer time (§7). This is also what would make
-   occupancy honest rather than capped, and it pairs naturally with **`create_booking()`** — one
-   Postgres function that assigns the chair, computes the price from the salon's own `services`
-   rows and writes the booking with its items atomically. **This is the recommended next task**,
-   and it closes the last thing the 0006 audit left open.
-2. **Persist the waitlist** — the last sample section in the portal, and the one the ROADMAP calls
+1. **Persist the waitlist** — the last sample section in the portal, and the one the ROADMAP calls
    the most interesting feature. `waitlist_entries` and its policies already exist; nothing writes
-   to them.
-3. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
-4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+   to them. **This is the recommended next task** — it is the last simulated section in the portal.
+2. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
+3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
+4. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
 
 ---
 

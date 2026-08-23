@@ -71,6 +71,8 @@ export interface BookingRow {
   ends_at: string;
   status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
   total_halalas: number;
+  /** True when the customer named a specialist; see migration 0008. */
+  staff_requested?: boolean;
 }
 
 /** The price snapshot. Deliberately a copy, never a lookup — see data/bookings.ts. */

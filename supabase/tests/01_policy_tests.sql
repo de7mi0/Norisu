@@ -39,6 +39,14 @@ values
   ('dddddddd-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000001', 'Layla A.', 'ليلى ع.', 'LA');
 
+-- 10:00–23:00 every day but Friday, which opens at 14:00. Mirrors seed.sql.
+insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+select 'aaaaaaaa-0000-0000-0000-000000000001', d, time '10:00', time '23:00'
+from generate_series(0, 6) d where d <> 5;
+insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+values ('aaaaaaaa-0000-0000-0000-000000000001', 5, time '14:00', time '23:00');
+
+
 -- ---------------------------------------------------------------------------
 -- 1. A staff member cannot be booked twice over the same period.
 --    This is the guarantee the UI cannot make.
@@ -199,7 +207,10 @@ $$;
 reset role;
 
 -- ---------------------------------------------------------------------------
--- 7. A customer cannot create a booking in someone else's name.
+-- 7. A customer cannot create a booking in someone else's name — and since
+--     0008, cannot create one directly at all. create_booking() takes no
+--     customer parameter, so filing a booking under somebody else stopped being
+--     a rule to enforce and became impossible to express.
 -- ---------------------------------------------------------------------------
 
 do $$
@@ -476,67 +487,109 @@ $$;
 reset role;
 
 -- ---------------------------------------------------------------------------
--- 17. The booking write the app actually issues, as the customer making it.
---     Names every column src/data/bookings.ts sends, so renaming one here fails
---     the tests rather than the app in someone's browser.
+-- 17. The booking the app actually makes, through create_booking().
+--     Since 0008 this is the only way one comes into existence: the client no
+--     longer states the price, or the staff member, or the end time.
 -- ---------------------------------------------------------------------------
 
 do $$
 declare
-  new_id uuid;
+  customer uuid := '22222222-2222-2222-2222-222222222222';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  -- Read rather than hardcoded: what matters is that the function prices from
+  -- the salon's own row, whatever earlier assertions have left it saying.
+  listed   integer;
+  cut      integer;
+  net      integer;
+  -- Far enough out that it cannot collide with the availability fixtures below,
+  -- which all work a week ahead.
+  day      date := current_date + 200;
+  at_time  timestamptz := (day + time '14:30') at time zone 'Asia/Riyadh';
+  made     record;
   readback record;
 begin
-  perform set_config(
-    'request.jwt.claims',
-    '{"sub":"22222222-2222-2222-2222-222222222222"}',
-    true
-  );
+  select price_halalas, discount_percent into listed, cut
+  from services where id = service;
+  net := round(listed::numeric * (100 - cut) / 100)::integer;
+
+  perform auth.login_as(customer);
   set local role authenticated;
 
-  insert into bookings (
-    reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
-    subtotal_halalas, discount_halalas, vat_halalas, total_halalas, vat_rate,
-    payment_method, paid_at
-  ) values (
-    'SL-APPTEST1', '22222222-2222-2222-2222-222222222222',
-    'aaaaaaaa-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001',
-    '2027-03-01 14:30+03', '2027-03-01 15:15+03', 'confirmed',
-    15000, 3000, 1800, 13800, 0.150,
-    -- Simulated checkout: a method is recorded, but no money moved.
-    'applepay', null
-  ) returning id into new_id;
-
-  insert into booking_items (
-    booking_id, service_id, name_en, name_ar, duration_minutes,
-    unit_price_halalas, discount_percent, quantity
-  ) values (
-    new_id, 'cccccccc-0000-0000-0000-000000000001',
-    'Signature Haircut', 'قص شعر', 45, 15000, 20, 1
+  select * into made from create_booking(
+    'aaaaaaaa-0000-0000-0000-000000000001',
+    null,                                             -- any professional
+    array[service]::uuid[],
+    at_time,
+    'applepay'
   );
 
-  -- Read it back exactly as loadMyBookings() does, joins included.
-  select b.reference, b.total_halalas, b.status, i.name_ar, i.unit_price_halalas,
-         s.name_en as salon_name, st.name_en as staff_name
+  reset role;
+
+  -- The price is the salon's, not the caller's.
+  select b.reference, b.subtotal_halalas, b.discount_halalas, b.vat_halalas,
+         b.total_halalas, b.staff_id, b.staff_requested, b.status, b.paid_at,
+         b.ends_at, i.name_ar, i.unit_price_halalas,
+         sa.name_en as salon_name, st.name_en as staff_name
     into readback
   from bookings b
   join booking_items i on i.booking_id = b.id
-  join salons s on s.id = b.salon_id
+  join salons sa on sa.id = b.salon_id
   left join staff st on st.id = b.staff_id
-  where b.id = new_id;
+  where b.id = made.booking_id;
 
-  if readback.reference <> 'SL-APPTEST1' or readback.total_halalas <> 13800 then
-    raise exception 'FAIL 17a: booking read back as % / %',
-      readback.reference, readback.total_halalas;
+  -- Line discounted and rounded on its own, VAT taken on the net. This is
+  -- totalsFor() in src/data/bookings.ts, restated — if the two ever disagree,
+  -- the cart total and the invoice disagree.
+  if readback.subtotal_halalas <> listed
+     or readback.discount_halalas <> listed - net
+     or readback.vat_halalas <> round(net::numeric * 0.150)::integer
+     or readback.total_halalas <> net + round(net::numeric * 0.150)::integer then
+    raise exception 'FAIL 17a: priced % / % / % / % from a listed % at %%%',
+      readback.subtotal_halalas, readback.discount_halalas,
+      readback.vat_halalas, readback.total_halalas, listed, cut;
   end if;
+  -- A discount that silently stopped applying would still satisfy the formula
+  -- above if both sides dropped it, so check it actually bit.
+  if cut > 0 and readback.discount_halalas <= 0 then
+    raise exception 'FAIL 17b: the %%% discount was not applied', cut;
+  end if;
+  if made.total_halalas <> readback.total_halalas then
+    raise exception 'FAIL 17c: the function reported a different total (% vs %)',
+      made.total_halalas, readback.total_halalas;
+  end if;
+
+  -- Nobody was named, so somebody was assigned anyway — that is what brings the
+  -- no-double-booking constraint to bear on "any professional".
+  if readback.staff_id is null then
+    raise exception 'FAIL 17d: no staff member was assigned';
+  end if;
+  if readback.staff_requested then
+    raise exception 'FAIL 17e: an unnamed booking was recorded as a request';
+  end if;
+
+  -- The end time follows the service length, not anything the caller said.
+  if readback.ends_at <> at_time + interval '45 minutes' then
+    raise exception 'FAIL 17f: the appointment does not last 45 minutes';
+  end if;
+
+  -- Simulated checkout: a method is recorded, no money moved.
+  if readback.paid_at is not null then
+    raise exception 'FAIL 17g: the booking came out marked paid';
+  end if;
+
   -- Arabic must survive the round trip byte for byte.
   if readback.name_ar <> 'قص شعر' then
-    raise exception 'FAIL 17b: Arabic service name came back as %', readback.name_ar;
+    raise exception 'FAIL 17h: Arabic service name came back as %', readback.name_ar;
   end if;
   if readback.salon_name is null or readback.staff_name is null then
-    raise exception 'FAIL 17c: the joins the app relies on returned nothing';
+    raise exception 'FAIL 17i: the joins the app relies on returned nothing';
   end if;
 
-  raise notice 'PASS 17: the app''s booking write and read-back work end to end';
+  -- Later assertions work on this booking; the reference is generated by the
+  -- database now, so it is carried forward rather than hardcoded.
+  perform set_config('saloni.booking_ref', readback.reference, false);
+
+  raise notice 'PASS 17: create_booking() prices, assigns and writes in one call';
 end
 $$;
 reset role;
@@ -557,10 +610,12 @@ begin
   select i.unit_price_halalas into charged
   from booking_items i
   join bookings b on b.id = i.booking_id
-  where b.reference = 'SL-APPTEST1';
+  where b.reference = current_setting('saloni.booking_ref');
 
-  if charged <> 15000 then
-    raise exception 'FAIL 18a: past booking now says %, expected 15000', charged;
+  -- Whatever the service listed at when the booking was made, that is what the
+  -- item still says — 25000 above must not reach it.
+  if charged = 25000 then
+    raise exception 'FAIL 18a: the price rise rewrote a past booking';
   end if;
 
   perform set_config(
@@ -601,6 +656,10 @@ declare
   after_count  integer;
   moved        record;
   items_after  integer;
+  total_before integer;
+  staff_before uuid;
+  -- The day after the one assertion 17 booked, so nothing collides.
+  moved_to     timestamptz := ((current_date + 201) + time '16:00') at time zone 'Asia/Riyadh';
 begin
   perform set_config(
     'request.jwt.claims',
@@ -612,10 +671,16 @@ begin
   select count(*) into before_count from bookings
   where customer_id = '22222222-2222-2222-2222-222222222222';
 
-  -- Exactly the update src/data/bookings.ts issues.
-  update bookings
-     set starts_at = '2027-03-05 16:00+03', ends_at = '2027-03-05 16:45+03'
-   where reference = 'SL-APPTEST1';
+  select total_halalas, staff_id into total_before, staff_before
+  from bookings where reference = current_setting('saloni.booking_ref');
+
+  -- Exactly the call src/data/bookings.ts issues. Since 0008 this is a function
+  -- rather than an update, because moving an unrequested booking has to be able
+  -- to re-pick whoever is free.
+  perform reschedule_booking(
+    (select id from bookings where reference = current_setting('saloni.booking_ref')),
+    moved_to
+  );
 
   select count(*) into after_count from bookings
   where customer_id = '22222222-2222-2222-2222-222222222222';
@@ -625,19 +690,26 @@ begin
       before_count, after_count;
   end if;
 
-  select starts_at, reference, total_halalas into moved
-  from bookings where reference = 'SL-APPTEST1';
+  select starts_at, reference, total_halalas, staff_id into moved
+  from bookings where reference = current_setting('saloni.booking_ref');
 
-  if moved.starts_at <> '2027-03-05 16:00+03'::timestamptz then
+  if moved.starts_at <> moved_to then
     raise exception 'FAIL 19b: booking did not move, starts_at is %', moved.starts_at;
   end if;
-  -- The reference and the money must survive the move untouched.
-  if moved.total_halalas <> 13800 then
-    raise exception 'FAIL 19c: moving the booking changed its total to %', moved.total_halalas;
+  -- The reference and the money must survive the move untouched: this is the
+  -- same appointment at a new time, not a new one.
+  if moved.total_halalas <> total_before then
+    raise exception 'FAIL 19c: moving the booking changed its total from % to %',
+      total_before, moved.total_halalas;
+  end if;
+  -- Nobody was named when it was booked, so the move is free to re-pick — but
+  -- it must still land on somebody.
+  if moved.staff_id is null then
+    raise exception 'FAIL 19e: the moved booking lost its staff member';
   end if;
 
   select count(*) into items_after from booking_items i
-  join bookings b on b.id = i.booking_id where b.reference = 'SL-APPTEST1';
+  join bookings b on b.id = i.booking_id where b.reference = current_setting('saloni.booking_ref');
   if items_after <> 1 then
     raise exception 'FAIL 19d: the price snapshot was disturbed (% items)', items_after;
   end if;
@@ -664,22 +736,27 @@ begin
   set local role authenticated;
 
   update bookings set status = 'cancelled', cancelled_at = now()
-  where reference = 'SL-APPTEST1';
+  where reference = current_setting('saloni.booking_ref');
 
-  select count(*) into still_there from bookings where reference = 'SL-APPTEST1';
+  select count(*) into still_there from bookings where reference = current_setting('saloni.booking_ref');
   if still_there <> 1 then
     raise exception 'FAIL 20a: cancelling deleted the row instead of marking it';
   end if;
 
   -- The freed time is immediately bookable by the same staff member, because
-  -- the exclusion constraint ignores cancelled rows.
+  -- the exclusion constraint ignores cancelled rows. Inserted as the table
+  -- owner: since 0008 nobody signs in and inserts a booking directly, and what
+  -- is under test here is the constraint rather than the write path.
+  reset role;
   insert into bookings (
     reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
     subtotal_halalas, total_halalas
   ) values (
     'SL-AFTERCANCEL', '22222222-2222-2222-2222-222222222222',
     'aaaaaaaa-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001',
-    '2027-03-05 16:00+03', '2027-03-05 16:45+03', 'confirmed', 15000, 17250
+    ((current_date + 201) + time '16:00') at time zone 'Asia/Riyadh',
+    ((current_date + 201) + time '16:45') at time zone 'Asia/Riyadh',
+    'confirmed', 15000, 17250
   );
 
   raise notice 'PASS 20: cancelling keeps the record and frees the slot';
@@ -702,12 +779,8 @@ insert into staff (id, salon_id, name_en, name_ar, initials)
 values ('dddddddd-0000-0000-0000-000000000002',
         'aaaaaaaa-0000-0000-0000-000000000001', 'Noura S.', 'نورة س.', 'NS');
 
--- 10:00–23:00 every day but Friday, which opens at 14:00. Mirrors seed.sql.
-insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
-select 'aaaaaaaa-0000-0000-0000-000000000001', d, time '10:00', time '23:00'
-from generate_series(0, 6) d where d <> 5;
-insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
-values ('aaaaaaaa-0000-0000-0000-000000000001', 5, time '14:00', time '23:00');
+-- Opening hours are set up with the other fixtures at the top of this file:
+-- create_booking() needs them too, and it runs long before this section.
 
 -- ---------------------------------------------------------------------------
 -- 21. A booked staff member's time is offered but marked taken, and the same
@@ -2642,6 +2715,446 @@ begin
   end if;
 
   raise notice 'PASS 61: a salon runs its own appointments, and reassigning cannot double-book';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- create_booking() and reschedule_booking() (0008).
+--
+-- Assertion 49 cut this salon back to one weekday to test a closed day, and
+-- create_booking() refuses a time the salon is not open for — so the week goes
+-- back before any of these run.
+-- ---------------------------------------------------------------------------
+
+delete from working_hours where salon_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+select 'aaaaaaaa-0000-0000-0000-000000000001', d, time '10:00', time '23:00'
+from generate_series(0, 6) d where d <> 5;
+insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+values ('aaaaaaaa-0000-0000-0000-000000000001', 5, time '14:00', time '23:00');
+
+-- Assertion 49 also archived the rest of the team to pin occupancy to one
+-- chair. Two are needed here, so "any professional" has somewhere to go.
+update staff set is_active = true, is_archived = false
+where id in ('dddddddd-0000-0000-0000-000000000001',
+             'dddddddd-0000-0000-0000-000000000002');
+
+-- ---------------------------------------------------------------------------
+-- 62. Two people cannot both take the last chair through "any professional".
+--
+--     THE race this whole migration exists for, open since 0001. With staff_id
+--     null the exclusion constraint has nobody to compare against, so both
+--     bookings were written and the salon was oversold. create_booking()
+--     assigns a chair before inserting, which is what brings the constraint to
+--     bear — and when the chairs run out there is simply nobody to assign.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day      date := current_date + 210;
+  at_time  timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  taken    integer;
+  who      uuid[];
+begin
+  -- Exactly two people can work, so the third booking has nowhere to go.
+  update staff set is_active = false, is_archived = true
+   where salon_id = salon
+     and id not in ('dddddddd-0000-0000-0000-000000000001',
+                    'dddddddd-0000-0000-0000-000000000002');
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  perform create_booking(salon, null, array[service]::uuid[], at_time, 'cash');
+  reset role;
+
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  perform create_booking(salon, null, array[service]::uuid[], at_time, 'cash');
+  reset role;
+
+  -- Both fitted, on different people.
+  select count(*), array_agg(distinct staff_id) into taken, who
+  from bookings
+  where salon_id = salon and starts_at = at_time
+    and status in ('pending', 'confirmed', 'in_progress');
+
+  if taken <> 2 then
+    raise exception 'FAIL 62a: expected two bookings to fit, got %', taken;
+  end if;
+  if array_length(who, 1) <> 2 or who @> array[null]::uuid[] then
+    raise exception 'FAIL 62b: they were not given different staff (%)', who;
+  end if;
+
+  -- The third has nobody left, and must be refused rather than oversold.
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    perform create_booking(salon, null, array[service]::uuid[], at_time, 'cash');
+    raise exception 'FAIL 62c: a third booking was accepted with no chair free';
+  exception
+    when sqlstate 'SL003' then null;
+  end;
+  reset role;
+
+  select count(*) into taken
+  from bookings
+  where salon_id = salon and starts_at = at_time
+    and status in ('pending', 'confirmed', 'in_progress');
+  if taken <> 2 then
+    raise exception 'FAIL 62d: the salon ended up oversold (% bookings)', taken;
+  end if;
+
+  raise notice 'PASS 62: "any professional" can no longer oversell the salon';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 63. An unnamed booking goes to whoever has least on that day.
+--
+--     The alternative — first by sort order — piles every unnamed booking onto
+--     one person until they are full.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  layla   uuid := 'dddddddd-0000-0000-0000-000000000001';
+  noura   uuid := 'dddddddd-0000-0000-0000-000000000002';
+  day     date := current_date + 211;
+  chosen  uuid;
+begin
+  -- Layla already has one that morning; Noura has nothing.
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-LOAD1', '11111111-1111-1111-1111-111111111111', salon, layla,
+          (day + time '10:00') at time zone 'Asia/Riyadh',
+          (day + time '10:45') at time zone 'Asia/Riyadh',
+          'confirmed', 1000, 1150);
+
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  select f.staff_id into chosen from create_booking(
+    salon, null, array[service]::uuid[],
+    (day + time '15:00') at time zone 'Asia/Riyadh', 'cash') f;
+  reset role;
+
+  if chosen <> noura then
+    raise exception 'FAIL 63: the busier staff member was given the booking';
+  end if;
+
+  raise notice 'PASS 63: an unnamed booking goes to whoever has least on that day';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 64. Naming somebody is honoured, and recorded — and refused if they are busy.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  layla    uuid := 'dddddddd-0000-0000-0000-000000000001';
+  day      date := current_date + 212;
+  at_time  timestamptz := (day + time '16:00') at time zone 'Asia/Riyadh';
+  made     record;
+  asked    boolean;
+begin
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select * into made from create_booking(salon, layla, array[service]::uuid[], at_time, 'cash');
+  reset role;
+
+  if made.staff_id <> layla then
+    raise exception 'FAIL 64a: the named specialist was not the one booked';
+  end if;
+  select staff_requested into asked from bookings where id = made.booking_id;
+  if not asked then
+    raise exception 'FAIL 64b: naming somebody was not recorded';
+  end if;
+
+  -- She is now busy, so asking for her again is refused rather than quietly
+  -- handed to a colleague.
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  begin
+    perform create_booking(salon, layla, array[service]::uuid[], at_time, 'cash');
+    raise exception 'FAIL 64c: a busy specialist was booked twice';
+  exception
+    when sqlstate 'SL003' then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 64: naming a specialist is honoured, recorded, and refused when busy';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 65. The caller can no longer state a price, or write a booking at all.
+--
+--     0006 stopped a price being edited. This is the other half: creating one
+--     is not something a browser can do any more, so there is no moment at
+--     which a total is taken on trust.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+begin
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+
+  begin
+    insert into bookings (reference, customer_id, salon_id, starts_at, ends_at,
+                          subtotal_halalas, total_halalas)
+    values ('SL-FREE', '11111111-1111-1111-1111-111111111111', salon,
+            (current_date + 213 + time '10:00') at time zone 'Asia/Riyadh',
+            (current_date + 213 + time '10:45') at time zone 'Asia/Riyadh',
+            0, 0);
+    raise exception 'FAIL 65a: a customer wrote their own booking, priced at zero';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into booking_items (booking_id, name_en, name_ar, duration_minutes,
+                               unit_price_halalas)
+    values ((select id from bookings limit 1), 'x', 'x', 30, 0);
+    raise exception 'FAIL 65b: a customer wrote a line item directly';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  reset role;
+  raise notice 'PASS 65: only create_booking() can bring a booking into existence';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 66. A booking and its items are written together or not at all.
+--
+--     They used to be two round trips with a compensating delete between them,
+--     and the compensation could itself fail — leaving a booking with no
+--     services on it and no price anybody could explain.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  before_count integer;
+  after_count  integer;
+  orphans      integer;
+begin
+  select count(*) into before_count from bookings;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+
+  -- One real service and one that belongs to nobody.
+  begin
+    perform create_booking(
+      salon, null,
+      array[service, '00000000-0000-0000-0000-000000000000']::uuid[],
+      (current_date + 214 + time '15:00') at time zone 'Asia/Riyadh', 'cash');
+    raise exception 'FAIL 66a: a booking was made with a service that does not exist';
+  exception
+    when sqlstate 'SL001' then null;
+  end;
+
+  -- A hidden service is refused the same way, so a customer cannot book
+  -- something the salon has taken off its menu. Hidden as the table owner: a
+  -- customer cannot edit a salon's services, and services_write would filter
+  -- the update to nothing rather than fail, quietly making this prove nothing.
+  reset role;
+  update services set is_active = false where id = service;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    perform create_booking(salon, null, array[service]::uuid[],
+      (current_date + 214 + time '16:00') at time zone 'Asia/Riyadh', 'cash');
+    raise exception 'FAIL 66b: a hidden service was bookable';
+  exception
+    when sqlstate 'SL001' then null;
+  end;
+  reset role;
+  update services set is_active = true where id = service;
+
+  select count(*) into after_count from bookings;
+  if after_count <> before_count then
+    raise exception 'FAIL 66c: a failed booking left % row(s) behind',
+      after_count - before_count;
+  end if;
+
+  -- Every booking the function has made carries its services. Matched on the
+  -- reference it generates, because assertions elsewhere insert bare fixture
+  -- bookings as the table owner and those are not what is under test here.
+  select count(*) into orphans from bookings b
+  where b.reference ~ '^SL-[0-9A-F]{8}$'
+    and not exists (select 1 from booking_items i where i.booking_id = b.id);
+  if orphans > 0 then
+    raise exception 'FAIL 66d: % booking(s) exist with no services on them', orphans;
+  end if;
+
+  raise notice 'PASS 66: a booking that cannot be completed leaves nothing behind';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 67. The salon's opening hours bound what can be booked, not just what is
+--     offered. available_slots() never offers a time outside them; this is what
+--     stops somebody calling the API directly and taking one anyway.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day     date := current_date + 215;
+begin
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+
+  -- Long before it opens.
+  begin
+    perform create_booking(salon, null, array[service]::uuid[],
+      (day + time '06:00') at time zone 'Asia/Riyadh', 'cash');
+    raise exception 'FAIL 67a: booked before the salon opens';
+  exception
+    when sqlstate 'SL002' then null;
+  end;
+
+  -- Starts inside the day but would run past closing.
+  begin
+    perform create_booking(salon, null, array[service]::uuid[],
+      (day + time '22:45') at time zone 'Asia/Riyadh', 'cash');
+    raise exception 'FAIL 67b: booked an appointment that runs past closing';
+  exception
+    when sqlstate 'SL002' then null;
+  end;
+
+  -- And the past is not bookable at all.
+  begin
+    perform create_booking(salon, null, array[service]::uuid[],
+      (current_date - 1 + time '11:00') at time zone 'Asia/Riyadh', 'cash');
+    raise exception 'FAIL 67c: booked a time that has already passed';
+  exception
+    when sqlstate 'SL002' then null;
+  end;
+
+  reset role;
+  raise notice 'PASS 67: opening hours bound what can be booked, not just what is offered';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 68. Rescheduling re-picks for a booking nobody asked for, keeps the person
+--     for one they did, and never touches the money.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  layla    uuid := 'dddddddd-0000-0000-0000-000000000001';
+  noura    uuid := 'dddddddd-0000-0000-0000-000000000002';
+  day      date := current_date + 216;
+  target   timestamptz := (day + time '17:00') at time zone 'Asia/Riyadh';
+  loose    record;
+  firm     record;
+  paid     integer;
+  landed   uuid;
+begin
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  -- One booked without naming anyone, one that asked for Layla.
+  select * into loose from create_booking(salon, null, array[service]::uuid[],
+    (day + time '15:00') at time zone 'Asia/Riyadh', 'cash');
+  select * into firm  from create_booking(salon, layla, array[service]::uuid[],
+    (day + time '16:00') at time zone 'Asia/Riyadh', 'cash');
+  reset role;
+
+  -- Block the target time for whoever the loose booking landed on, so moving it
+  -- there has to find somebody else.
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  select 'SL-BLOCK', '22222222-2222-2222-2222-222222222222', salon, b.staff_id,
+         target, target + interval '45 minutes', 'confirmed', 1000, 1150
+  from bookings b where b.id = loose.booking_id;
+
+  select total_halalas into paid from bookings where id = loose.booking_id;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select r.staff_id into landed from reschedule_booking(loose.booking_id, target) r;
+
+  if landed is null then
+    raise exception 'FAIL 68a: an unrequested booking could not be moved';
+  end if;
+  if landed not in (layla, noura) then
+    raise exception 'FAIL 68b: it landed on somebody who does not work here';
+  end if;
+
+  -- The person it was blocked against must not be the one it landed on.
+  if exists (select 1 from bookings where reference = 'SL-BLOCK' and staff_id = landed) then
+    raise exception 'FAIL 68c: it was moved onto somebody already busy';
+  end if;
+
+  -- Asking for Layla means Layla. Moving that booking onto the hour she is
+  -- already working must fail rather than quietly hand it to a colleague.
+  begin
+    perform reschedule_booking(firm.booking_id,
+      (select starts_at from bookings where id = loose.booking_id));
+    raise exception 'FAIL 68d: a requested specialist was silently swapped';
+  exception
+    when sqlstate 'SL003' then null;
+  end;
+  reset role;
+
+  if (select total_halalas from bookings where id = loose.booking_id) <> paid then
+    raise exception 'FAIL 68e: moving the booking changed what it cost';
+  end if;
+
+  raise notice 'PASS 68: rescheduling re-picks when nobody was asked for, and keeps them when they were';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 69. What the customer asked for is not theirs to rewrite afterwards.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  booking uuid;
+begin
+  select id into booking from bookings
+  where customer_id = '11111111-1111-1111-1111-111111111111'
+  order by created_at desc limit 1;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    update bookings set staff_requested = true where id = booking;
+    raise exception 'FAIL 69: staff_requested was rewritten after the booking';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 69: what the customer asked for is recorded once and not edited';
 end
 $$;
 reset role;

@@ -116,11 +116,11 @@ product) rather than assembling four services. The swap-in points already exist 
 codebase: the modules under `src/data/` and the actions in `src/state/appReducer.ts`.
 
 ### Phase 1 — Real business logic
-- ~~Bookings that persist~~ — **built.** Written to `bookings` + `booking_items` with prices
-  snapshotted, read back into "My bookings", and gated on sign-in. Rescheduling moves the booking
-  rather than creating a second one, and cancelling frees the slot while keeping the record.
-  Still to do here: moving the two inserts into one Postgres function so they cannot
-  half-succeed, and a cancellation policy (how late is too late to cancel free of charge).
+- ~~Bookings that persist~~ — **built**, and since migration 0008 they are made by
+  `create_booking()` rather than by the browser. One call is one transaction, the price comes from
+  the salon's own `services` rows, and a chair is assigned before the insert. `authenticated` has
+  no INSERT privilege on `bookings` at all now, so there is no path that skips any of it.
+  Still to do here: a cancellation policy (how late is too late to cancel free of charge).
 - ~~A genuine availability engine~~ — **built.** `available_slots()` (migration 0003) computes
   offered times from `working_hours`, the chosen services' length and the bookings already made,
   per staff member or across the salon's capacity for "any professional". It is `security
@@ -128,11 +128,12 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   The salon's own `slot_step_minutes` sets the spacing. Still to do here: **buffer//turnaround
   time between appointments**, per-staff schedules beyond the `working_hours.staff_id` rows the
   function already honours, and owner-facing screens to edit any of it.
-- ~~Double-booking must be prevented by a database constraint~~ — **built** for named staff (the
-  GiST exclusion constraint). **Still open for "any professional"**: `staff_id` is null, so
-  Postgres has nobody to compare against. Availability capacity-checks it when offering times,
-  but two people racing the last chair can still both be written. Assigning a staff member at
-  booking time is the fix.
+- ~~Double-booking must be prevented by a database constraint~~ — **built, and now covering "any
+  professional" too.** The GiST exclusion constraint always handled named staff; it needs a
+  `staff_id` to compare, which unassigned bookings never had. `create_booking()` (0008) assigns
+  one before inserting — least-loaded staff member first, so the work spreads — and refuses when
+  there is no chair left. Measured: four "any professional" requests against a two-chair salon
+  used to write four bookings, and now write two.
 - Booking lifecycle: ~~confirm, cancel, reschedule~~ built **from the customer's side**; the salon
   cannot yet move a booking through its own statuses from the portal. **No-show** and a
   **cancellation policy** (notice period, fees) still to do.
@@ -204,16 +205,16 @@ Backlog item 3: FCM and APNs for push, plus a WhatsApp Business API provider (Un
 Twilio, 360dialog) with pre-approved bilingual templates. Template approval takes days, so
 submit them before you need them.
 
-### Phase 3.5 — The security audit, and what it left open
+### Phase 3.5 — The security audit, and what it left open (now nothing)
 - ~~Column-level write privileges~~ — **built (migration 0006).** Row policies gate rows; only
   grants can gate columns, and 0002's blanket grant meant every "edit your own X" policy allowed
   editing *every field* of X. An audit found three live holes: a customer could promote themselves
   to `admin` and read the whole database, a salon could rewrite reviews about itself, and either
   side of a booking could rewrite its price or mark it paid. All closed, each with an assertion
   that fails when its protection is removed.
-- **Still open, and it blocks payments:** the browser states the booking price at creation time.
-  `create_booking()` computing totals in Postgres from the salon's own `services` rows is the fix,
-  and it is the same function that makes the booking and its items atomic. Do it before money moves.
+- ~~The browser states the booking price at creation time~~ — **closed by 0008.** INSERT on
+  `bookings` and `booking_items` is revoked from `authenticated` entirely, and `create_booking()`
+  prices from the salon's own rows. The payments work no longer inherits a hole.
 - Still to do: rate limiting on booking creation, and a decision on open signup — anyone can create
   an account today, which is fine for a demo and worth revisiting before launch.
 

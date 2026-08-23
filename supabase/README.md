@@ -14,6 +14,7 @@ supabase/
     0005_vendor_day.sql          the owner's own diary, figures and reviews
     0006_column_privileges.sql   which columns each side may write
     0007_review_reply.sql        the only way a salon can answer a review
+    0008_create_booking.sql      the only way a booking is made, priced and staffed
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -48,6 +49,11 @@ the app has a bug or someone calls the API directly:
   and nobody can mark a booking paid that was not.
 - **A salon cannot edit, hide or answer the reviews written about it** by writing
   to the database directly.
+- **A booking cannot be made at a price the customer chose**, at a time the salon
+  is closed, or without a real staff member to do the work — and one that cannot
+  be completed leaves nothing behind.
+- **The salon cannot be oversold.** "Any professional" used to leave nobody
+  attached to the appointment, so the database could not tell it was full.
 
 All of the above are covered by assertions in `tests/01_policy_tests.sql`.
 
@@ -359,7 +365,12 @@ order by proname;
 ```
 
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
-`salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in.
+`salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in, and
+`create_booking` means 0008 is.
+
+**0008 is the one migration that must not be skipped once the site is
+redeployed.** From that version the app books by calling `create_booking()`, so
+until the function exists booking fails outright rather than falling back.
 
 For 0006, which leaves grants and a trigger rather than functions, this is the
 check — it should come back `applied`:

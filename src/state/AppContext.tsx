@@ -886,6 +886,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return isArabic ? 'اختر خدمة أولاً.' : 'Choose a service first.';
         case 'noSlot':
           return isArabic ? 'اختر وقتاً أولاً.' : 'Pick a time first.';
+        case 'closed':
+          return isArabic
+            ? 'الصالون غير مفتوح في هذا الوقت. اختر وقتاً آخر.'
+            : "The salon isn't open then. Please pick another time.";
+        case 'sampleData':
+          return isArabic
+            ? 'هذه بيانات تجريبية ولا يمكن الحجز عليها.'
+            : "That's sample data — it can't be booked.";
         default:
           return isArabic
             ? 'تعذّر حفظ الحجز. تحقّق من اتصالك وحاول مجدداً.'
