@@ -422,7 +422,9 @@ one `initdb`.
 To run against a Postgres of your own instead, set `PGHOST`, `PGPORT` or
 `PGUSER`. `test-db.sh` then leaves the starting to you and says so if nothing is
 listening. It needs Postgres 16 — that is the version the assertions are written
-against. `tests/00_local_shim.sql` recreates the small part of
+against.
+
+`tests/00_local_shim.sql` recreates the small part of
 Supabase the migrations depend on (the `auth` schema, `auth.uid()`, and the
 `anon` / `authenticated` roles) so the policies can be tested exactly as they
 will run in production. That file is never applied to Supabase.
