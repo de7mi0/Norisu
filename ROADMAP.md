@@ -81,6 +81,10 @@ of them is code in this repository:
 3. **A provider account and a running worker.**
    `supabase/functions/send-notifications/` is written and has **never been run**.
 
+Step 5 below — the one-tap deep link — is also still open. The token is queued in the
+payload and the template's button carries it, but the app reads no `claim` parameter yet,
+so the button opens Saloni rather than that seat. Two taps, not one.
+
 Push remains for Phase 5 — it needs the Capacitor wrap and a device-token table, so 0010
 does not queue push at all rather than queue rows nothing could deliver.
 

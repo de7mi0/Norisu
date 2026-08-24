@@ -99,8 +99,17 @@ Add one button, type **URL**, sub-type **Dynamic**:
 
 The button's `{{1}}` is numbered separately from the body's — it is the first variable
 *of the button*, not a sixth variable. The value is the offer's `claim_token`, which
-migration 0009 has been generating all along for exactly this purpose. It is single-use
-and unguessable, so the link cannot be shared to steal somebody else's seat.
+migration 0009 has been generating all along for exactly this purpose: it is single-use
+and unguessable, so a forwarded link could not be used to take somebody else's seat.
+
+**One honest caveat about that button today.** The app does not yet read the `claim`
+parameter — tapping it opens Saloni, and the held seat is then one more tap away on the
+Bookings screen, where it already appears with a "Take this seat" button. So the link
+works, but it is two taps rather than one, and the token is carried without yet being
+used. Wiring it up is a small change on both sides (a lookup by token in the database,
+and reading the parameter on load) and is the next piece of this feature. Submitting the
+template with the button now is still right — changing an approved template means
+resubmitting and waiting again, so it is much better to have the button already there.
 
 ---
 

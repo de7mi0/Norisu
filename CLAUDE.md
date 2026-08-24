@@ -543,6 +543,12 @@ deliberately:
   message template (`docs/whatsapp-waitlist-template.md` is the submission — **the long pole, days
   of waiting, submit it first**), a WhatsApp provider account, and a running worker
   (`supabase/functions/send-notifications/`, written and **never run**).
+- **The claim link is carried but not yet used.** The queued payload contains a
+  `claim_url` with the offer's `claim_token`, and the WhatsApp template has the button —
+  but the app reads no URL parameter, so tapping it opens Saloni rather than that seat.
+  The seat is one further tap away on the Bookings screen, which already shows it. Closing
+  this needs a lookup by token in the database and a parameter read on load; it is the
+  smallest remaining piece of A3 and worth doing before anything actually sends.
 - **And nobody has a phone number.** `profiles.phone` is populated from `auth.users` only when
   someone signs in by SMS, and phone OTP has never been switched on. So today the outbox stays
   almost empty in production for a reason that has nothing to do with the outbox: there is nobody
