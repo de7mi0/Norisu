@@ -55,7 +55,8 @@ deploy) · `npm run lint` · `./scripts/test-db.sh` · the browser checks in
 `scripts/browser-tests/` (see its README — Playwright is installed ad hoc, not a dependency)
 
 The hosted Postgres version is whatever Supabase provisioned for the project — check the
-dashboard rather than assuming. The local test harness runs against Postgres 16.
+dashboard rather than assuming. The local test harness runs against Postgres 16, and
+`test-db.sh` now brings that Postgres up itself — see §7.
 
 ---
 
@@ -67,6 +68,8 @@ dashboard rather than assuming. The local test harness runs against Postgres 16.
 index.html                    fonts, favicon, meta
 scripts/
   test-db.sh                  applies migrations to a throwaway Postgres, runs assertions
+  pg-start.sh                 starts that Postgres, creating the cluster on the first run
+  pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   browser-tests/              97 Chromium checks in both languages; see its README
 src/
@@ -368,7 +371,15 @@ shutting it; `create_booking()` (0008) assigns a chair at **write** time, which 
 `available_slots()` still subtracts unassigned bookings when counting capacity — that only applies
 to rows made before 0008 now, and stays correct.
 
-**Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
+**Testing:** `./scripts/test-db.sh` is the whole command — **there is no Postgres to start by
+hand any more.** It was a real trip-hazard: Postgres does not run by default here and a fresh
+container has no cluster at all, so the script now calls `scripts/pg-start.sh`, which runs `initdb`
+if `/var/tmp/saloni-pg` is missing and starts the server if it is down. Both are silent no-ops once
+done, and `scripts/pg-stop.sh` reverses it. Setting `PGHOST`/`PGPORT`/`PGUSER` points the tests at
+a Postgres of your own and leaves the starting to you. The server listens on a Unix socket only,
+never on a network port.
+
+It then creates a throwaway database, applies the migrations, runs all
 76 assertions, drops it. Each of 53–76 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
@@ -559,8 +570,8 @@ find out in time. Two consequences worth knowing:
 
 The Claude Code environment's egress proxy **blocks `supabase.co` and `github.io`**, so an agent
 working on this repo **cannot** query the live database or load the deployed site. Work around it
-by running Postgres locally with the same schema (`scripts/test-db.sh`) and by testing the app's
-fallback path. Playwright is not a dependency — install it ad hoc (`npm install --no-save
+by running Postgres locally with the same schema (`./scripts/test-db.sh`, which starts and if
+necessary creates that Postgres itself) and by testing the app's fallback path. Playwright is not a dependency — install it ad hoc (`npm install --no-save
 playwright`, browser at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). For anything needing
 a *working* backend, `page.route()` the Supabase endpoints (`**/auth/v1/otp*`, `**/auth/v1/verify*`,
 `**/rest/v1/profiles*`) and answer them yourself. **Live behaviour has to be confirmed by the user

@@ -388,14 +388,41 @@ end as migration_0006;
 
 ## Running the tests
 
-Against any local Postgres 16:
-
 ```bash
 ./scripts/test-db.sh
 ```
 
-It creates a throwaway database, applies the migrations, runs every assertion and
-drops the database again. `tests/00_local_shim.sql` recreates the small part of
+That is the whole thing. On a machine that has never run it, it creates a local
+Postgres cluster in `/var/tmp/saloni-pg` and starts it first — Postgres does not
+run by default, and a fresh container has no cluster to start. Both steps happen
+once and are silent afterwards.
+
+It then creates a throwaway database, applies the migrations, runs every assertion and
+drops the database again. The cluster itself stays, so the next run is immediate.
+
+The two helpers behind it can also be run on their own:
+
+```bash
+./scripts/pg-start.sh   # start the server (creating the cluster if needed)
+./scripts/pg-stop.sh    # stop it again; the cluster's files stay put
+```
+
+`pg-start.sh` is worth running by hand when you want a database to look inside
+rather than a pass/fail — it leaves the server up for `psql`:
+
+```bash
+psql -h /var/tmp -p 5433 -U postgres
+```
+
+The server listens on a Unix socket only, never on a network port, so nothing off
+the machine can reach it. Nothing in `/var/tmp/saloni-pg` is worth keeping: every
+run builds its own database and drops it, so losing the cluster on reboot costs
+one `initdb`.
+
+To run against a Postgres of your own instead, set `PGHOST`, `PGPORT` or
+`PGUSER`. `test-db.sh` then leaves the starting to you and says so if nothing is
+listening. It needs Postgres 16 — that is the version the assertions are written
+against. `tests/00_local_shim.sql` recreates the small part of
 Supabase the migrations depend on (the `auth` schema, `auth.uid()`, and the
 `anon` / `authenticated` roles) so the policies can be tested exactly as they
 will run in production. That file is never applied to Supabase.
