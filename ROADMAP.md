@@ -64,11 +64,25 @@ at all** — it is decorative. Every image in the app is a striped CSS placehold
 
 ### 3. Notifying a customer when a seat opens
 
-**Now:** joining the waitlist starts a `setTimeout` in `src/state/AppContext.tsx`
-(`joinWaitlist`) that fakes a seat opening 3.2 seconds later, and the vendor's "Notify"
-button in `src/screens/vendor/Waitlist.tsx` shows a toast on the owner's own screen.
-Nothing reaches the customer. This is the biggest gap of the three — the waitlist is the
-feature that makes the product interesting, and it currently does nothing.
+**Now:** steps 1–5 below are built (migration 0009), and step 8 with them. Migration 0010
+added the queueing half of step 6 and all of step 7: every offer writes a row to the
+`notifications` outbox, in the customer's language, with a claim link, honouring opt-outs
+and a rate cap, and holding rather than waking during quiet hours.
+
+**What is left is delivery.** Nothing drains the outbox. Three things are needed and none
+of them is code in this repository:
+
+1. **A Meta-approved template.** `docs/whatsapp-waitlist-template.md` is ready to submit
+   and approval is quoted in days. **This is the long pole — submit it before anything
+   else.**
+2. **A phone number to send to.** `profiles.phone` is only populated by SMS sign-in, and
+   phone OTP has never been switched on (`VITE_AUTH_PHONE_OTP`). Until it is, there is
+   nobody to message. Easy to miss and it blocks everything downstream.
+3. **A provider account and a running worker.**
+   `supabase/functions/send-notifications/` is written and has **never been run**.
+
+Push remains for Phase 5 — it needs the Capacitor wrap and a device-token table, so 0010
+does not queue push at all rather than queue rows nothing could deliver.
 
 **How it should actually work:**
 
@@ -212,9 +226,12 @@ Two things worth knowing early:
   accountant.
 
 ### Phase 3 — Notifications
-Backlog item 3: FCM and APNs for push, plus a WhatsApp Business API provider (Unifonic,
-Twilio, 360dialog) with pre-approved bilingual templates. Template approval takes days, so
-submit them before you need them.
+Backlog item 3, partly built. The database side is done (migration 0010): offers queue
+messages, opt-outs and quiet hours are honoured, and only the sender role can drain the
+outbox. What remains is external — a WhatsApp Business API provider (Unifonic, Twilio,
+360dialog), the approved bilingual template in `docs/whatsapp-waitlist-template.md`, SMS
+sign-in switched on so customers have a number, and the worker deployed. FCM and APNs for
+push wait on the Capacitor wrap in Phase 5.
 
 ### Phase 3.5 — The security audit, and what it left open (now nothing)
 - ~~Column-level write privileges~~ — **built (migration 0006).** Row policies gate rows; only

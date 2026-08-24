@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 62 TypeScript files, ~12,300 lines. ~1,280 lines of schema SQL, ~3,640 including tests and seed.
+**Scale:** 66 TypeScript files, ~13,800 lines. ~3,100 lines of migrations, ~7,400 including tests and seed.
 
 ---
 
@@ -119,12 +119,17 @@ supabase/
   migrations/0008_create_booking.sql  create_booking() / reschedule_booking();
                                       the only way a booking comes into existence
   migrations/0009_waitlist.sql  the queue, the 15-minute holds, and claiming
+  migrations/0010_notifications.sql  every offer queues a message; nothing sends one yet.
+                                     Also closes a function-privilege hole — see §7
+  functions/send-notifications/  the worker that would drain the outbox. NEVER RUN
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   76 assertions
+  tests/01_policy_tests.sql   84 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
+docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
+                              in both languages, plus how to get it approved by Meta
 ROADMAP.md                    backlog + the path to the app stores
 ```
 
@@ -290,11 +295,12 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 ## 7. Database
 
-14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
-time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view and the functions in 0003–0009 — `available_slots()`, `salon_day()`,
-`salon_stats()`, `salon_reviews()`, `reply_to_review()`, `create_booking()`,
-`reschedule_booking()`, and 0009's waitlist set. 30 RLS policies. 76 assertions.
+15 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
+time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications,
+notification_settings, reviews` — plus a `salon_ratings` view and the functions in 0003–0010 —
+`available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
+`create_booking()`, `reschedule_booking()`, 0009's waitlist set, and 0010's outbox set.
+30 RLS policies. 84 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -355,6 +361,18 @@ which columns the policy is really meant to expose — the answer is rarely "all
 16. **A freed seat is offered to one person at a time.** A cancellation triggers
     `offer_next_for_slot()`, which holds it for the longest-waiting match for 15 minutes; a lapsed
     hold passes on, and nobody is offered the same slot twice. Assertions 70 and 71.
+17. **A queued message belongs to the sender, not to the browser.** `authenticated` has no INSERT,
+    UPDATE or DELETE on `notifications` (0010), so an account cannot queue a message to anybody,
+    mark its own as sent, or rewrite a queued payload so the link points elsewhere. It reads its
+    own and nothing more. Assertion 83.
+18. **Nobody is messaged who did not ask, and nobody twice.** Queueing honours `allow_whatsapp`,
+    skips a profile with no phone number, refuses a slot already in the past, caps how often one
+    person is pinged, and a unique index on `(offer_id, channel)` makes the three code paths that
+    reach an offer unable to double-send. Assertions 78–81.
+19. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
+    new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
+    nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
+    if a function added later forgets to.**
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -380,7 +398,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-76 assertions, drops it. Each of 53–76 was checked against a database with its own protection
+84 assertions, drops it. Each of 53–84 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -417,7 +435,8 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Who you are** | **Real.** Profile screen shows the account, its role, and sign-out. |
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
-| **Waitlist** | **Real.** Joining is stored, a cancellation offers the freed seat to whoever waited longest, and claiming makes a real booking. **Not timely though** — with no push notification, an offer is only seen when the app is next opened. |
+| **Waitlist** | **Real.** Joining is stored, a cancellation offers the freed seat to whoever waited longest, and claiming makes a real booking. **Still not timely** — every offer now queues a WhatsApp message (0010), but nothing sends one, so an offer is still only seen when the app is next opened. |
+| **Notifications** | **Queued, never sent.** The outbox fills correctly — right person, right language, claim link, opt-outs honoured. There is no approved Meta template, no provider account and no worker running, so nothing leaves the database. See §10. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
@@ -493,12 +512,48 @@ removed. Worth knowing they existed, because the same mistake is easy to repeat:
 browser — went with 0008: `authenticated` has no INSERT on `bookings`, and `create_booking()`
 prices from the salon's own rows.
 
-**The waitlist is real but not timely.** The queue, the 15-minute holds, passing a lapsed hold to
-the next person, opening the slot to everyone once they have all had a turn, and claiming — all
-genuine, all in the database. What is missing is the tap on the shoulder: with no push, no SMS and
-no WhatsApp, a customer only discovers an offer by opening the app, so most holds will lapse
-unseen. Nothing about the design changes when notifications land (ROADMAP Phase 3); people simply
-find out in time. Two consequences worth knowing:
+**A second finding, from 0010, of exactly the same shape.** Every migration since 0003 ends its
+functions with `revoke all on function … from public`. That line has never revoked anything.
+Supabase — and `tests/00_local_shim.sql`, which mirrors it — sets default privileges granting
+EXECUTE on every new function to `anon`, `authenticated` and `service_role` *by name*, and revoking
+from PUBLIC leaves named grants untouched. Checked rather than assumed: before 0010, all thirty
+`security definer` functions were executable by an anonymous visitor. Most did not matter, because
+the guard is inside the body — `salon_day()` checks `is_salon_owner()` and does not care who calls
+it. Two did:
+- `waitlist_matches()` has no guard, so any visitor could list the customer ids waiting at any salon.
+- `offer_next_for_slot()` has no guard, so any account could force offers and spend other people's
+  one turn at a slot.
+
+Both are closed, along with the sender functions 0010 adds — `claim_pending_notifications()` would
+have been the worst of them, returning the phone number and name of everybody with a message
+queued. **The durable fix is assertion 84**, which enumerates every `security definer` function
+against an allow-list and fails if a new one is reachable. The same mistake cannot ship twice.
+
+**The waitlist is real, and now half-notified.** The queue, the 15-minute holds, passing a lapsed
+hold to the next person, opening the slot to everyone once they have all had a turn, and claiming —
+all genuine, all in the database. 0010 added the missing half and stopped short of finishing it,
+deliberately:
+
+- **What is built.** Every offer queues a message in the `notifications` outbox — the customer's
+  own language, the salon and services in both, a single-use claim link built from the
+  `claim_token` 0009 has been generating all along, opt-outs and missing phone numbers honoured, a
+  cap on how often one person is pinged, and quiet hours that stretch the hold rather than wake
+  anybody. Assertions 77–83.
+- **What is not.** Nothing sends. That needs three things this repo cannot produce: a Meta-approved
+  message template (`docs/whatsapp-waitlist-template.md` is the submission — **the long pole, days
+  of waiting, submit it first**), a WhatsApp provider account, and a running worker
+  (`supabase/functions/send-notifications/`, written and **never run**).
+- **And nobody has a phone number.** `profiles.phone` is populated from `auth.users` only when
+  someone signs in by SMS, and phone OTP has never been switched on. So today the outbox stays
+  almost empty in production for a reason that has nothing to do with the outbox: there is nobody
+  to message. Turning on phone sign-in (`VITE_AUTH_PHONE_OTP`) is the prerequisite nobody notices
+  until they look.
+
+**Push is not queued at all**, on purpose. It needs a device-token table that does not exist
+because there is no native app yet, so a queued push row could never be delivered. An outbox that
+fills with undeliverable rows looks like progress and hides the gap.
+
+Two older consequences still hold:
 - **Nothing advances on a timer.** There is no job runner, so a lapsed hold is swept whenever
   somebody next reads the waitlist — both read functions sweep before they answer.
 - **The salon can push it along.** "Notify" re-offers a lapsed slot to whoever is next, and
@@ -532,10 +587,13 @@ find out in time. Two consequences worth knowing:
 
 ## 11. Suggested next steps
 
-1. **Notifications (A3).** The waitlist works but nobody is told, which is the single thing that
-   would make it worth having. Push needs the Capacitor wrap for FCM/APNs; a WhatsApp Business
-   template can go sooner, and approval takes days, so submit it early. **This is the recommended
-   next task.**
+1. **Finish notifications (A3).** Half done: the outbox fills, nothing drains it. In order —
+   **(a)** submit the Meta template, because the approval clock is the long pole
+   (`docs/whatsapp-waitlist-template.md`); **(b)** turn on phone sign-in so customers have a number
+   to be reached at, which is the real blocker and the easiest to miss; **(c)** open a WhatsApp
+   provider account and deploy `supabase/functions/send-notifications/`, verifying its send call
+   against the provider's own documentation — it has never been run. Push still needs the Capacitor
+   wrap. **This remains the recommended next task.**
 2. Photo upload with EXIF stripping (A2).
 3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
@@ -547,7 +605,7 @@ find out in time. Two consequences worth knowing:
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (76 assertions);
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (84 assertions);
   UI changes with `scripts/browser-tests/` (97 checks, both languages). Do not report something as
   working because the code looks right.
 - **A security assertion that cannot fail is worse than none.** Every assertion from 53 onward was
@@ -561,6 +619,11 @@ find out in time. Two consequences worth knowing:
 - **Commit messages explain *why*,** and state known gaps honestly.
 - **Every push to the default branch redeploys the live site** — check the Actions run goes green.
   Work on a feature branch; merging to `claude/saloni-prototype-dev-idl8tr` is what publishes.
+- **A new Postgres function is public until you say otherwise, and saying otherwise means
+  naming `anon` and `authenticated`.** `revoke ... from public` does nothing on Supabase (§10). If
+  a function is internal or for the sender only, `revoke execute ... from anon, authenticated` and
+  grant it back to whoever genuinely needs it. Assertion 84 enforces this, so forgetting fails the
+  suite rather than shipping.
 - **Code style:** no `dangerouslySetInnerHTML`, no `eval`; user input is length-capped and rendered
   as text; real `<button>` elements with focus styles; `lang`/`dir` kept in sync.
 - **The user is not a developer.** Explain changes in plain language, and when something needs

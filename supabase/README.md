@@ -16,6 +16,8 @@ supabase/
     0007_review_reply.sql        the only way a salon can answer a review
     0008_create_booking.sql      the only way a booking is made, priced and staffed
     0009_waitlist.sql            the queue, the holds, and claiming a freed seat
+    0010_notifications.sql       every offer queues a message; nothing sends one yet
+  functions/send-notifications/  the worker that would send them. NEVER RUN
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -370,6 +372,7 @@ order by proname;
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
 `salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in, and
 `create_booking` means 0008 is, and `join_waitlist` means 0009 is.
+`claim_pending_notifications` means 0010 is.
 
 **0008 is the one migration that must not be skipped once the site is
 redeployed.** From that version the app books by calling `create_booking()`, so
@@ -385,6 +388,42 @@ select case
   else 'applied'
 end as migration_0006;
 ```
+
+## After 0010: what notifications do and do not do
+
+0010 makes every waitlist offer queue a message. **It does not send anything**, and
+nothing in Supabase will until three things are true:
+
+1. **The Meta template is approved.** `docs/whatsapp-waitlist-template.md` has the text
+   and the click-by-click. Approval takes days — submit it first.
+2. **Customers have phone numbers.** `profiles.phone` is filled in only when somebody
+   signs in by SMS, and phone sign-in has never been switched on. Until it is, almost
+   every profile has no number and nothing is queued for them at all. This is the step
+   most likely to be missed.
+3. **The worker is deployed** — `supabase/functions/send-notifications/`, holding the
+   provider's credentials as Supabase secrets, never in `.env`.
+
+To see what is waiting to go out:
+
+```sql
+select channel, locale, template, created_at, send_after, attempts,
+       sent_at, failed_at, error
+from notifications
+order by created_at desc
+limit 50;
+```
+
+**Quiet hours ship switched off**, because stretching holds overnight while nobody's
+phone buzzes costs the queue its turn-taking for nothing. Turn them on when messages are
+really being sent:
+
+```sql
+update notification_settings set quiet_from = '22:00', quiet_to = '08:00';
+```
+
+The same table holds `rate_per_hour` (how many separate offers one person may be pinged
+about in an hour, default 4) and `app_base_url`, which is where the claim link points —
+change that when the app moves off GitHub Pages.
 
 ## Running the tests
 

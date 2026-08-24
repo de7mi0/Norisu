@@ -3614,4 +3614,441 @@ end
 $$;
 reset role;
 
+
+-- ---------------------------------------------------------------------------
+-- Notification fixtures. Separate people from the customers above, whose
+-- preferences other assertions have already changed.
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id, phone) values
+  ('a1111111-0000-0000-0000-00000000000a', '+966555000001'),  -- wants messages
+  ('a2222222-0000-0000-0000-00000000000b', '+966555000002'),  -- has opted out
+  ('a3333333-0000-0000-0000-00000000000c', null);             -- no number at all
+
+update profiles set locale = 'ar'          where id = 'a1111111-0000-0000-0000-00000000000a';
+update profiles set allow_whatsapp = false where id = 'a2222222-0000-0000-0000-00000000000b';
+
+-- ---------------------------------------------------------------------------
+-- 77. Making an offer queues a message the sender can act on: right channel,
+--     right template, the customer's own language, and a single-use claim link.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  who     uuid := 'a1111111-0000-0000-0000-00000000000a';
+  day     date := current_date + 401;
+  at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  entry   uuid;
+  offer   waitlist_offers%rowtype;
+  n       notifications%rowtype;
+begin
+  perform auth.login_as(who);
+  set local role authenticated;
+  select w.entry_id into entry
+  from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  perform offer_next_for_slot(salon, at_time, at_time + interval '45 minutes');
+
+  select * into offer from waitlist_offers o
+   join waitlist_entries e on e.id = o.entry_id
+   where e.id = entry;
+  if offer.id is null then
+    raise exception 'FAIL 77: no offer was made, so there is nothing to notify about';
+  end if;
+
+  select * into n from notifications where offer_id = offer.id;
+  if n.id is null then
+    raise exception 'FAIL 77: an offer was made and no message was queued';
+  end if;
+
+  if n.channel <> 'whatsapp' or n.template <> 'waitlist_seat_offer' then
+    raise exception 'FAIL 77: queued as % / %, not a WhatsApp waitlist offer',
+      n.channel, n.template;
+  end if;
+
+  -- The language the customer chose in the app, not the salon's or the default.
+  if n.locale <> 'ar' then
+    raise exception 'FAIL 77: queued in % for a customer whose app is in Arabic', n.locale;
+  end if;
+
+  if n.profile_id <> who then
+    raise exception 'FAIL 77: queued for the wrong person';
+  end if;
+
+  -- The deep link carries the offer's own claim token, so tapping it claims
+  -- this seat and no other.
+  if n.payload ->> 'claim_url' is null
+     or position(offer.claim_token::text in n.payload ->> 'claim_url') = 0 then
+    raise exception 'FAIL 77: the queued message has no working claim link';
+  end if;
+
+  if n.payload -> 'salon' ->> 'ar' is null or n.payload -> 'services' ->> 'en' is null then
+    raise exception 'FAIL 77: the sender cannot fill the template from this payload';
+  end if;
+
+  -- Contact details are the sender's to look up, not something to copy into a
+  -- row the account itself can read back.
+  if n.payload::text ilike '%966555000001%' then
+    raise exception 'FAIL 77: the payload carries the customer''s phone number';
+  end if;
+
+  if n.sent_at is not null then
+    raise exception 'FAIL 77: queued already marked as sent, with no sender running';
+  end if;
+
+  raise notice 'PASS 77: an offer queues a real message, in the customer''s own language';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 78. Two people who must not be messaged: one who opted out, and one with no
+--     number. Both still get the offer — they simply see it in the app.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  optedout uuid := 'a2222222-0000-0000-0000-00000000000b';
+  nophone  uuid := 'a3333333-0000-0000-0000-00000000000c';
+  day1     date := current_date + 402;
+  day2     date := current_date + 403;
+  t1 timestamptz := (day1 + time '15:00') at time zone 'Asia/Riyadh';
+  t2 timestamptz := (day2 + time '15:00') at time zone 'Asia/Riyadh';
+  e1 uuid;
+  e2 uuid;
+  queued integer;
+  offers integer;
+begin
+  perform auth.login_as(optedout);
+  set local role authenticated;
+  select w.entry_id into e1 from join_waitlist(salon, array[service]::uuid[], day1) w;
+  reset role;
+
+  perform auth.login_as(nophone);
+  set local role authenticated;
+  select w.entry_id into e2 from join_waitlist(salon, array[service]::uuid[], day2) w;
+  reset role;
+
+  perform offer_next_for_slot(salon, t1, t1 + interval '45 minutes');
+  perform offer_next_for_slot(salon, t2, t2 + interval '45 minutes');
+
+  select count(*) into offers from waitlist_offers o
+   where o.entry_id in (e1, e2);
+  if offers <> 2 then
+    raise exception 'FAIL 78: % offers made, expected both people to still be offered a seat', offers;
+  end if;
+
+  select count(*) into queued from notifications
+   where profile_id in (optedout, nophone);
+  if queued <> 0 then
+    raise exception 'FAIL 78: % message(s) queued for people who cannot or will not be messaged', queued;
+  end if;
+
+  raise notice 'PASS 78: opting out, and having no number, both mean silence — not a lost seat';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 79. The same seat is never messaged about twice, however many code paths
+--     reach the offer. This is what makes it safe to call from a trigger, a
+--     lazy sweep and the salon's Notify button.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  offer  uuid;
+  before integer;
+  after_ integer;
+begin
+  select o.id into offer from waitlist_offers o
+   join waitlist_entries e on e.id = o.entry_id
+   where e.customer_id = 'a1111111-0000-0000-0000-00000000000a'
+   limit 1;
+
+  select count(*) into before from notifications where offer_id = offer;
+  perform enqueue_offer_notification(offer);
+  perform enqueue_offer_notification(offer);
+  select count(*) into after_ from notifications where offer_id = offer;
+
+  if before <> 1 or after_ <> 1 then
+    raise exception 'FAIL 79: % message(s) before, % after re-queueing the same offer',
+      before, after_;
+  end if;
+
+  raise notice 'PASS 79: queueing the same offer again does not message anybody twice';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 80. Nothing is ever queued about a seat that has already come and gone.
+--     A notification about a slot in the past is the thing that teaches people
+--     to stop opening them.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  who     uuid := 'a1111111-0000-0000-0000-00000000000a';
+  day     date := current_date + 404;
+  entry   uuid;
+  offer   uuid;
+  queued  integer;
+begin
+  perform auth.login_as(who);
+  set local role authenticated;
+  select w.entry_id into entry from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  -- Written directly: offer_next_for_slot() would not make this offer, so this
+  -- is the guard inside the queueing itself being tested, on a row that could
+  -- only arrive by a slot falling into the past while a hold was live.
+  insert into waitlist_offers (entry_id, starts_at, ends_at, expires_at)
+  values (entry, now() - interval '2 hours', now() - interval '75 minutes',
+          now() + interval '5 minutes')
+  returning id into offer;
+
+  perform enqueue_offer_notification(offer);
+
+  select count(*) into queued from notifications where offer_id = offer;
+  if queued <> 0 then
+    raise exception 'FAIL 80: queued a message about a seat that is already in the past';
+  end if;
+
+  raise notice 'PASS 80: a seat that has already passed is never messaged about';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 81. Somebody already pinged their fill this hour is passed over rather than
+--     pestered — and keeps their place, because no offer is spent on them.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  who     uuid := 'a1111111-0000-0000-0000-00000000000a';
+  day     date := current_date + 405;
+  at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  entry   uuid;
+  offered integer;
+  status_ waitlist_status;
+begin
+  perform auth.login_as(who);
+  set local role authenticated;
+  select w.entry_id into entry from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  -- This person has already been messaged about earlier seats in this run.
+  update notification_settings set rate_per_hour = 1;
+
+  perform offer_next_for_slot(salon, at_time, at_time + interval '45 minutes');
+
+  select count(*) into offered from waitlist_offers where entry_id = entry;
+  if offered <> 0 then
+    raise exception 'FAIL 81: offered a seat to somebody already at their message cap';
+  end if;
+
+  select status into status_ from waitlist_entries where id = entry;
+  if status_ <> 'waiting' then
+    raise exception 'FAIL 81: being passed over cost them their place (status %)', status_;
+  end if;
+
+  -- Raise the cap and the same seat reaches them normally.
+  update notification_settings set rate_per_hour = 20;
+  perform offer_next_for_slot(salon, at_time, at_time + interval '45 minutes');
+
+  select count(*) into offered from waitlist_offers where entry_id = entry;
+  if offered <> 1 then
+    raise exception 'FAIL 81: % offers once under the cap, expected exactly 1', offered;
+  end if;
+
+  update notification_settings set rate_per_hour = 4;
+
+  raise notice 'PASS 81: nobody is pestered past the cap, and being skipped costs them nothing';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 82. Quiet hours hold the seat rather than waking anybody. Suppressing the
+--     message alone would be the unfair version: the hold would lapse unseen
+--     and "never the same slot twice" would bar them from it forever.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  who     uuid := 'a1111111-0000-0000-0000-00000000000a';
+  day     date := current_date + 406;
+  at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  local_now time := (now() at time zone 'Asia/Riyadh')::time;
+  entry   uuid;
+  offer   waitlist_offers%rowtype;
+  n       notifications%rowtype;
+begin
+  perform auth.login_as(who);
+  set local role authenticated;
+  select w.entry_id into entry from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  -- A window that certainly contains this instant, whenever the suite is run,
+  -- and that wraps midnight if the hour happens to be near it.
+  update notification_settings
+     set quiet_from = local_now - interval '1 hour',
+         quiet_to   = local_now + interval '1 hour';
+
+  if notification_quiet_until(now()) is null then
+    raise exception 'FAIL 82: the quiet window does not contain the present moment';
+  end if;
+
+  perform offer_next_for_slot(salon, at_time, at_time + interval '45 minutes');
+
+  select * into offer from waitlist_offers where entry_id = entry;
+  if offer.id is null then
+    raise exception 'FAIL 82: quiet hours suppressed the offer instead of holding it';
+  end if;
+
+  -- The ordinary hold is 15 minutes; this one has to cover the silence.
+  if offer.expires_at < now() + interval '45 minutes' then
+    raise exception 'FAIL 82: the hold expires at %, before the quiet window even ends',
+      offer.expires_at;
+  end if;
+
+  select * into n from notifications where offer_id = offer.id;
+  if n.id is null then
+    raise exception 'FAIL 82: nothing queued at all — the message should wait, not vanish';
+  end if;
+  if n.send_after < now() + interval '30 minutes' then
+    raise exception 'FAIL 82: the message would go out at %, during the quiet window',
+      n.send_after;
+  end if;
+
+  -- And with quiet hours off, the ordinary 15-minute hold is back.
+  update notification_settings set quiet_from = null, quiet_to = null;
+  if notification_quiet_until(now()) is not null then
+    raise exception 'FAIL 82: quiet hours still apply after being switched off';
+  end if;
+
+  raise notice 'PASS 82: quiet hours stretch the hold instead of waking anybody';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 83. The outbox belongs to the sender. Draining it hands over the phone
+--     number and name of everybody with a message waiting, so an account
+--     reaching it would be a directory of who is waiting and how to call them.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine integer;
+  got  integer;
+begin
+  perform auth.login_as('a1111111-0000-0000-0000-00000000000a');
+  set local role authenticated;
+
+  begin
+    perform * from claim_pending_notifications(10);
+    raise exception 'FAIL 83a: an ordinary account drained the outbox';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    perform mark_notification_sent(gen_random_uuid());
+    raise exception 'FAIL 83b: an ordinary account marked a message as sent';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into notifications (profile_id, channel, template)
+    values ('a1111111-0000-0000-0000-00000000000a', 'whatsapp', 'forged');
+    raise exception 'FAIL 83c: an ordinary account queued a message';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update notifications set sent_at = now() where profile_id = auth.uid();
+    raise exception 'FAIL 83d: an ordinary account rewrote its own outbox rows';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Reading your own messages is still allowed: it is what a notification
+  -- centre in the app would be built on.
+  select count(*) into mine from notifications;
+  if mine = 0 then
+    raise exception 'FAIL 83e: an account cannot read the messages queued for it';
+  end if;
+  reset role;
+
+  -- The sender, holding the secret key, can do the job.
+  set local role service_role;
+  select count(*) into got from claim_pending_notifications(50);
+  if got = 0 then
+    raise exception 'FAIL 83f: the sender found nothing to send in a full outbox';
+  end if;
+  reset role;
+
+  raise notice 'PASS 83: only the sender drains the outbox; an account reads its own and writes none';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 84. No internal function is reachable from the browser.
+--
+--     This one is a guard against a mistake rather than a specific hole.
+--     Supabase grants execute on every new function to anon and authenticated
+--     by default, so "revoke ... from public" — written throughout these
+--     migrations — revokes nothing. Anything added later that forgets to name
+--     anon and authenticated fails here rather than shipping open.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  leaked text;
+begin
+  select string_agg(p.proname, ', ' order by p.proname) into leaked
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prosecdef
+    and (has_function_privilege('anon', p.oid, 'EXECUTE')
+      or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+    and p.proname not in (
+      -- Called by the app over PostgREST.
+      'available_slots', 'claim_waitlist_offer', 'create_booking',
+      'extend_waitlist_offer', 'join_waitlist', 'leave_waitlist', 'my_waitlist',
+      'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
+      'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
+      -- Called by row policies, which are evaluated as the querying role.
+      'is_admin', 'is_salon_owner', 'salon_is_public',
+      -- Trigger functions: a trigger fires without an execute check.
+      'handle_new_user', 'offer_cancelled_slot', 'enforce_booking_status_transition'
+    );
+
+  if leaked is not null then
+    raise exception 'FAIL 84: internal function(s) reachable from the browser: %', leaked;
+  end if;
+
+  raise notice 'PASS 84: no internal function is reachable from the browser';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;
