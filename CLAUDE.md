@@ -51,7 +51,8 @@ introduce Tailwind, Redux, Zustand or React Router without asking — their abse
 not an oversight.
 
 **Commands:** `npm run dev` · `npm run build` (runs `tsc -b` first, so a type error fails the
-deploy) · `npm run lint` · `./scripts/test-db.sh`
+deploy) · `npm run lint` · `./scripts/test-db.sh` · the browser checks in
+`scripts/browser-tests/` (see its README — Playwright is installed ad hoc, not a dependency)
 
 The hosted Postgres version is whatever Supabase provisioned for the project — check the
 dashboard rather than assuming. The local test harness runs against Postgres 16.
@@ -67,6 +68,7 @@ index.html                    fonts, favicon, meta
 scripts/
   test-db.sh                  applies migrations to a throwaway Postgres, runs assertions
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
+  browser-tests/              97 Chromium checks in both languages; see its README
 src/
   App.tsx                     screen router, tab bars, floating overlays
   theme.ts                    colour / type / placeholder-tile tokens
@@ -534,9 +536,15 @@ find out in time. Two consequences worth knowing:
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh`. UI changes are
-  driven in real Chromium via Playwright before being called done. Do not report something as
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (76 assertions);
+  UI changes with `scripts/browser-tests/` (97 checks, both languages). Do not report something as
   working because the code looks right.
+- **A security assertion that cannot fail is worse than none.** Every assertion from 53 onward was
+  run against a database with its own protection removed, and each fails there. Do the same for
+  any new one — it takes a minute and it is the difference between a test and a decoration.
+- **The two suites prove different halves.** The browser checks stub Supabase, so they can say
+  nothing about whether a grant or policy would really allow something; the database assertions are
+  the evidence for that. Neither substitutes for the other.
 - **Say what you could not verify.** Every claim in this document that could not be tested is
   marked as such. Keep it that way.
 - **Commit messages explain *why*,** and state known gaps honestly.
