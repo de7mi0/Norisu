@@ -57,7 +57,12 @@ if [ -z "$bindir" ]; then
   exit 1
 fi
 
-if pg_isready -q -h "$PGHOST" -p "$PGPORT" 2>/dev/null; then
+# Use the probe that ships beside the server we found, not whatever is on PATH:
+# on Debian the client tools and the server can be different installs.
+isready="$bindir/pg_isready"
+[ -x "$isready" ] || isready="pg_isready"
+
+if "$isready" -q -h "$PGHOST" -p "$PGPORT" 2>/dev/null; then
   echo "Postgres is already running on $PGHOST:$PGPORT."
   exit 0
 fi
@@ -74,7 +79,7 @@ fi
 echo "Starting Postgres on $PGHOST:$PGPORT…"
 as_postgres "'$bindir/pg_ctl' -D '$PGDATA' -o \"-k $PGHOST -p $PGPORT -c listen_addresses=''\" -l '$LOG' -w start" >/dev/null
 
-if ! pg_isready -q -h "$PGHOST" -p "$PGPORT"; then
+if ! "$isready" -q -h "$PGHOST" -p "$PGPORT"; then
   echo "Postgres did not come up. The last few lines of $LOG:" >&2
   tail -20 "$LOG" >&2 || true
   exit 1
