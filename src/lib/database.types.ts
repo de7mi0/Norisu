@@ -34,6 +34,8 @@ export interface SalonRow {
   is_verified?: boolean;
   /** Spacing between the times the booking screen offers. Added in 0003. */
   slot_step_minutes?: number;
+  /** Whether the salon takes a waitlist. Only read on the owner's own row. */
+  waitlist_enabled?: boolean;
 }
 
 export interface ServiceRow {
@@ -151,4 +153,41 @@ export interface SalonReviewRow {
   is_published: boolean;
   created_at: string;
   customer_name: string | null;
+}
+
+/** One row of my_waitlist() — see supabase/migrations/0009_waitlist.sql. */
+export interface MyWaitlistRow {
+  entry_id: string;
+  salon_id: string;
+  salon_name_en: string;
+  salon_name_ar: string;
+  requested_date: string;
+  earliest_time: string | null;
+  latest_time: string | null;
+  status: 'waiting' | 'offered' | 'claimed' | 'expired' | 'cancelled';
+  offer_id: string | null;
+  offer_starts_at: string | null;
+  offer_expires_at: string | null;
+  /** True when tapping would actually get them the seat. */
+  claimable: boolean;
+  service_names_en: string[] | null;
+  service_names_ar: string[] | null;
+}
+
+/** One row of salon_waitlist(). */
+export interface SalonWaitlistRow {
+  entry_id: string;
+  customer_name: string | null;
+  requested_date: string;
+  earliest_time: string | null;
+  latest_time: string | null;
+  status: 'waiting' | 'offered' | 'claimed' | 'expired' | 'cancelled';
+  waiting_since: string;
+  offer_id: string | null;
+  offer_starts_at: string | null;
+  offer_expires_at: string | null;
+  /** False when somebody is queued behind them. */
+  can_extend: boolean;
+  service_names_en: string[] | null;
+  service_names_ar: string[] | null;
 }

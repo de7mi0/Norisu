@@ -176,6 +176,17 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
 
   Still to do here: the "+ Add" pill, which needs a customer account for a walk-in to belong to,
   and the dashboard, which covers today only — no week, no month, no trend beyond yesterday.
+- ~~The waitlist~~ — **built (migration 0009), and it is the last simulated section gone.** Joining
+  is stored; a cancellation offers the freed seat to whoever waited longest and holds it for 15
+  minutes; a lapsed hold passes down the queue; once everybody has had a turn the slot opens to all
+  of them; claiming books it through the same priced path as any other appointment. The salon can
+  re-offer a lapsed slot, and extend a hold when nobody is queued behind.
+
+  **What is missing is step 6 of backlog item 3 below — the delivery.** Everything else in that
+  item is now real. Without push or WhatsApp a customer only finds out by opening the app, so most
+  15-minute holds lapse unseen, and nothing advances on a timer: lapsed holds are swept whenever
+  somebody reads the waitlist. The design does not change when notifications arrive; people just
+  find out in time.
 - ~~Vendor CRUD for services and team (backlog item 1)~~ — **built.** An owner adds, edits, hides
   and removes their own services and staff. Removing archives rather than deletes, because
   bookings reference the row and a past booking must keep meaning what it meant. What is still

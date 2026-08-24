@@ -3159,4 +3159,459 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- The waitlist (0009).
+--
+-- Holds are 15 minutes and nothing runs on a schedule, so these move
+-- expires_at directly rather than waiting — the behaviour under test is what
+-- happens when a hold has lapsed, not how long a minute is.
+-- ---------------------------------------------------------------------------
+
+-- 70. A cancellation offers the freed seat to whoever has waited longest.
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day      date := current_date + 300;
+  at_time  timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  booking  uuid;
+  first_e  uuid;
+  second_e uuid;
+  held     uuid;
+begin
+  -- Somebody has the slot, and two people are waiting for that day. The second
+  -- joins later, so the first must be asked first.
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-WL1', '44444444-4444-4444-4444-444444444444', salon,
+          'dddddddd-0000-0000-0000-000000000001',
+          at_time, at_time + interval '45 minutes', 'confirmed', 15000, 17250)
+  returning id into booking;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select w.entry_id into first_e from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  select w.entry_id into second_e from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  -- Make the order unambiguous rather than relying on clock resolution.
+  update waitlist_entries set created_at = now() - interval '2 hours' where id = first_e;
+  update waitlist_entries set created_at = now() - interval '1 hour'  where id = second_e;
+
+  -- The salon cancels, which is the real path — and the one 0006's status
+  -- trigger permits. Nothing in it knows the waitlist exists.
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  update bookings set status = 'cancelled', cancelled_at = now() where id = booking;
+  reset role;
+
+  select o.entry_id into held from waitlist_offers o where o.starts_at = at_time;
+  if held is distinct from first_e then
+    raise exception 'FAIL 70a: the seat went to the wrong person';
+  end if;
+  if (select count(*) from waitlist_offers where starts_at = at_time) <> 1 then
+    raise exception 'FAIL 70b: it was offered to more than one person at once';
+  end if;
+  if (select status from waitlist_entries where id = first_e) <> 'offered' then
+    raise exception 'FAIL 70c: the entry was not marked as holding the seat';
+  end if;
+  if (select status from waitlist_entries where id = second_e) <> 'waiting' then
+    raise exception 'FAIL 70d: the second person was disturbed';
+  end if;
+
+  perform set_config('saloni.wl_slot', at_time::text, false);
+  perform set_config('saloni.wl_first', first_e::text, false);
+  perform set_config('saloni.wl_second', second_e::text, false);
+
+  raise notice 'PASS 70: a cancellation offers the freed seat to whoever waited longest';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 71. A lapsed hold passes to the next person, and never back to the first.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  first_e  uuid := current_setting('saloni.wl_first')::uuid;
+  second_e uuid := current_setting('saloni.wl_second')::uuid;
+  at_time  timestamptz := current_setting('saloni.wl_slot')::timestamptz;
+  held     uuid;
+begin
+  -- The 15 minutes run out.
+  -- Wind the hold back rather than waiting out fifteen real minutes. Both
+  -- timestamps move, because offer_expires_after_offer keeps them in order.
+  update waitlist_offers
+     set offered_at = now() - interval '20 minutes',
+         expires_at = now() - interval '5 minutes'
+   where starts_at = at_time and claimed_at is null;
+
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  perform salon_waitlist(salon);          -- reading is what sweeps
+  reset role;
+
+  select o.entry_id into held from waitlist_offers o
+   where o.starts_at = at_time and o.expires_at > now();
+  if held is distinct from second_e then
+    raise exception 'FAIL 71a: the seat did not pass to the next in the queue';
+  end if;
+
+  -- The first person is back in the queue for other slots, but must not be
+  -- offered this one again.
+  if (select status from waitlist_entries where id = first_e) <> 'waiting' then
+    raise exception 'FAIL 71b: the lapsed holder was left marked as holding';
+  end if;
+  if (select count(*) from waitlist_offers where starts_at = at_time and entry_id = first_e) <> 1 then
+    raise exception 'FAIL 71c: the same slot was offered to the same person twice';
+  end if;
+
+  raise notice 'PASS 71: a lapsed hold passes on, and nobody gets the same slot twice';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 72. Once everybody has had a turn, the slot is open to all of them.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  first_e  uuid := current_setting('saloni.wl_first')::uuid;
+  at_time  timestamptz := current_setting('saloni.wl_slot')::timestamptz;
+  mine     record;
+begin
+  -- The second person's hold lapses too, so both have now been asked.
+  -- Wind the hold back rather than waiting out fifteen real minutes. Both
+  -- timestamps move, because offer_expires_after_offer keeps them in order.
+  update waitlist_offers
+     set offered_at = now() - interval '20 minutes',
+         expires_at = now() - interval '5 minutes'
+   where starts_at = at_time and claimed_at is null;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select * into mine from my_waitlist() where entry_id = first_e;
+  reset role;
+
+  if mine.offer_id is null then
+    raise exception 'FAIL 72a: the first person cannot see the slot at all';
+  end if;
+  if not mine.claimable then
+    raise exception 'FAIL 72b: nobody was left to ask, but the slot is not open to them';
+  end if;
+
+  raise notice 'PASS 72: when everybody has had a turn the slot opens to all of them';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 73. Claiming makes a real booking, and only once.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  first_e  uuid := current_setting('saloni.wl_first')::uuid;
+  second_e uuid := current_setting('saloni.wl_second')::uuid;
+  at_time  timestamptz := current_setting('saloni.wl_slot')::timestamptz;
+  offer_1  uuid;
+  offer_2  uuid;
+  got      record;
+  priced   record;
+begin
+  select id into offer_1 from waitlist_offers where entry_id = first_e and starts_at = at_time;
+  select id into offer_2 from waitlist_offers where entry_id = second_e and starts_at = at_time;
+
+  -- One chair, so the claim genuinely takes the last of them. With two free
+  -- the second claim below would rightly succeed and prove nothing.
+  update staff set is_active = false, is_archived = true
+   where id = 'dddddddd-0000-0000-0000-000000000002';
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select * into got from claim_waitlist_offer(offer_1);
+  reset role;
+
+  select b.reference, b.starts_at, b.customer_id, b.staff_id, b.total_halalas,
+         count(i.*) as items
+    into priced
+  from bookings b join booking_items i on i.booking_id = b.id
+  where b.id = got.booking_id
+  group by b.reference, b.starts_at, b.customer_id, b.staff_id, b.total_halalas;
+
+  if priced.starts_at <> at_time then
+    raise exception 'FAIL 73a: the booking is not at the offered time';
+  end if;
+  if priced.customer_id <> '11111111-1111-1111-1111-111111111111' then
+    raise exception 'FAIL 73b: the booking belongs to somebody else';
+  end if;
+  -- Priced and staffed like any other booking, not a lesser kind.
+  if priced.total_halalas <= 0 or priced.staff_id is null or priced.items < 1 then
+    raise exception 'FAIL 73c: the claimed booking is not a real one (% / % / %)',
+      priced.total_halalas, priced.staff_id, priced.items;
+  end if;
+  if (select status from waitlist_entries where id = first_e) <> 'claimed' then
+    raise exception 'FAIL 73d: the entry was not closed off';
+  end if;
+
+  -- Claiming the same offer again is refused outright.
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    perform claim_waitlist_offer(offer_1);
+    raise exception 'FAIL 73e: the same offer was claimed twice';
+  exception
+    when sqlstate 'SL012' then null;
+  end;
+  reset role;
+
+  -- And the second person is now too late: the chair is gone, so they are told
+  -- rather than the salon being double-booked.
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  begin
+    perform claim_waitlist_offer(offer_2);
+    raise exception 'FAIL 73f: a claim went through with no chair free';
+  exception
+    when sqlstate 'SL003' then null;
+  end;
+  reset role;
+
+  -- Put the team back for the assertions that follow.
+  update staff set is_active = true, is_archived = false
+   where id = 'dddddddd-0000-0000-0000-000000000002';
+
+  raise notice 'PASS 73: claiming makes a real, priced booking, and only the first one wins';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 74. Extending is offered only when nobody is queued behind.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day     date := current_date + 301;
+  at_time timestamptz := (day + time '16:00') at time zone 'Asia/Riyadh';
+  booking uuid;
+  e1      uuid;
+  e2      uuid;
+  offer   uuid;
+  before  timestamptz;
+  after_  timestamptz;
+  row_    record;
+begin
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-WL2', '44444444-4444-4444-4444-444444444444', salon,
+          'dddddddd-0000-0000-0000-000000000001',
+          at_time, at_time + interval '45 minutes', 'confirmed', 15000, 17250)
+  returning id into booking;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select w.entry_id into e1 from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  select w.entry_id into e2 from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+  update waitlist_entries set created_at = now() - interval '2 hours' where id = e1;
+  update waitlist_entries set created_at = now() - interval '1 hour'  where id = e2;
+
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  update bookings set status = 'cancelled', cancelled_at = now() where id = booking;
+  reset role;
+  select id, expires_at into offer, before from waitlist_offers where starts_at = at_time;
+
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+
+  -- Somebody is queued behind, so it passes on rather than being held longer.
+  begin
+    perform extend_waitlist_offer(offer, 15);
+    raise exception 'FAIL 74a: extended a hold while somebody was queued behind';
+  exception
+    when sqlstate 'SL013' then null;
+  end;
+
+  -- The screen must not offer a button that would be refused.
+  select * into row_ from salon_waitlist(salon) where entry_id = e1;
+  if row_.can_extend then
+    raise exception 'FAIL 74b: the screen offered Extend with a queue behind';
+  end if;
+  reset role;
+
+  -- The person behind leaves, so there is nobody left to pass it to.
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  perform leave_waitlist(e2);
+  reset role;
+
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  select extend_waitlist_offer(offer, 20) into after_;
+  select * into row_ from salon_waitlist(salon) where entry_id = e1;
+  reset role;
+
+  if after_ <= before then
+    raise exception 'FAIL 74c: the hold was not extended (% -> %)', before, after_;
+  end if;
+  if not row_.can_extend then
+    raise exception 'FAIL 74d: Extend is still hidden with nobody queued behind';
+  end if;
+
+  raise notice 'PASS 74: a hold can be extended only when nobody is waiting behind';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 75. The queue is not something a customer can write themselves into.
+--
+--     created_at decides position, so an account able to insert its own row
+--     could insert itself at the front of it. status is writable too, which
+--     would let it hold a seat nobody offered.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day     date := current_date + 302;
+  mine    uuid;
+  theirs  uuid;
+begin
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select w.entry_id into mine from join_waitlist(salon, array[service]::uuid[], day) w;
+
+  begin
+    insert into waitlist_entries (customer_id, salon_id, service_id, requested_date, created_at)
+    values ('11111111-1111-1111-1111-111111111111', salon, service,
+            current_date + 303, now() - interval '10 years');
+    raise exception 'FAIL 75a: a customer wrote themselves to the front of the queue';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update waitlist_entries set status = 'offered' where id = mine;
+    raise exception 'FAIL 75b: a customer marked themselves as holding a seat';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Joining twice for the same salon and day is refused, in its own words.
+  begin
+    perform join_waitlist(salon, array[service]::uuid[], day);
+    raise exception 'FAIL 75c: joined the same day twice';
+  exception
+    when sqlstate 'SL011' then null;
+  end;
+  reset role;
+
+  -- Somebody else's entry is invisible, and cannot be left on their behalf.
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  if exists (select 1 from my_waitlist() where entry_id = mine) then
+    raise exception 'FAIL 75d: another customer''s waitlist entry was visible';
+  end if;
+  begin
+    perform leave_waitlist(mine);
+    raise exception 'FAIL 75e: another customer removed somebody from the queue';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- And a rival salon cannot read the queue at all.
+  perform auth.login_as('44444444-4444-4444-4444-444444444444');
+  set local role authenticated;
+  begin
+    perform salon_waitlist(salon);
+    raise exception 'FAIL 75f: a rival salon read this salon''s waitlist';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 75: the queue is the database''s to order, not the customer''s';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 76. Who is not offered a freed seat: the wrong day, and outside the window
+--     the customer said they would accept.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day     date := current_date + 304;
+  at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  booking uuid;
+  evening uuid;
+  wrongday uuid;
+  gone     uuid;
+  offered  integer;
+begin
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-WL3', '44444444-4444-4444-4444-444444444444', salon,
+          'dddddddd-0000-0000-0000-000000000001',
+          at_time, at_time + interval '45 minutes', 'confirmed', 15000, 17250)
+  returning id into booking;
+
+  -- Only wants the evening.
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select w.entry_id into evening
+  from join_waitlist(salon, array[service]::uuid[], day, time '18:00', time '22:00') w;
+  reset role;
+
+  -- Wants a different day entirely.
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  select w.entry_id into wrongday
+  from join_waitlist(salon, array[service]::uuid[], day + 1) w;
+  reset role;
+
+  -- Joined, then changed their mind.
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  select w.entry_id into gone from join_waitlist(salon, array[service]::uuid[], day) w;
+  perform leave_waitlist(gone);
+  reset role;
+
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  update bookings set status = 'cancelled', cancelled_at = now() where id = booking;
+  reset role;
+
+  select count(*) into offered from waitlist_offers where starts_at = at_time;
+  if offered <> 0 then
+    raise exception 'FAIL 76: % offer(s) went to people who did not want that slot', offered;
+  end if;
+
+  raise notice 'PASS 76: a freed seat is not offered to people who did not ask for it';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

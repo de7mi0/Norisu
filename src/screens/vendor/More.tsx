@@ -7,9 +7,14 @@ import type { VendorScreen } from '../../types';
 
 /** Vendor settings hub. */
 export function More() {
-  const { t, state, dispatch, isArabic, chevron, owner } = useApp();
+  const { t, dispatch, isArabic, chevron, owner, salonWaitlist } = useApp();
 
   const go = (screen: VendorScreen) => () => dispatch({ type: 'go', screen });
+
+  const waitlistOn = owner.salon ? owner.salon.waitlistEnabled : true;
+  // The hub is reached before the waitlist screen has loaded its queue, so the
+  // count is only shown once it is genuinely known.
+  const waiting = salonWaitlist.source === 'live' ? salonWaitlist.entries.length : '·';
 
   const rows = [
     {
@@ -48,7 +53,14 @@ export function More() {
     },
     {
       label: isArabic ? 'قائمة الانتظار' : 'Waitlist',
-      value: state.waitlistOn ? (isArabic ? 'مفعّلة · 3' : 'On · 3') : isArabic ? 'موقوفة' : 'Off',
+      // The real count once we know the salon; the hub should not invent one.
+      value: waitlistOn
+        ? isArabic
+          ? `مفعّلة · ${waiting}`
+          : `On · ${waiting}`
+        : isArabic
+          ? 'موقوفة'
+          : 'Off',
       onSelect: go('v_waitlist'),
     },
     {

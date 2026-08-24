@@ -33,6 +33,7 @@ import {
   updateStaff,
   saveDayHours,
   saveSlotStep,
+  saveWaitlistEnabled,
   type DayHours,
   type OwnerState,
   type CatalogFailure,
@@ -43,6 +44,19 @@ import {
   type StaffDraft,
 } from '../data/owner';
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
+import {
+  claimOffer,
+  extendOffer,
+  joinWaitlist as joinWaitlistRow,
+  leaveWaitlist as leaveWaitlistRow,
+  loadMyWaitlist,
+  loadSalonWaitlist,
+  reofferSlot,
+  type MyWaitlist,
+  type SalonWaitlist,
+  type WaitlistFailure,
+  type WaitlistRequest,
+} from '../data/waitlist';
 import {
   loadSalonReviews,
   loadVendorDay,
@@ -363,6 +377,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [flash, session, t],
   );
 
+  const customerScreen = state.mode === 'customer' ? state.screen : null;
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !userId) {
+      setMyWaitlist({ entries: [], source: 'demo' });
+      return;
+    }
+    let cancelled = false;
+    setMyWaitlist({ entries: [], source: 'loading' });
+    void loadMyWaitlist().then((result) => {
+      if (!cancelled) setMyWaitlist(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Re-read on every screen change in customer mode: an offer can appear at
+    // any moment and there is no notification to announce it.
+  }, [userId, customerScreen]);
+
   const refreshOwner = useCallback(async () => {
     if (!isSupabaseConfigured || !userId) return;
     setOwner(await loadMySalon(userId));
@@ -377,6 +410,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [vendorReviews, setVendorReviews] = useState<VendorReviews>({
     reviews: [],
+    source: 'demo',
+  });
+
+  // The waitlist, both sides of it. Reading is also what advances a lapsed
+  // hold — there is no job runner, so the queue moves when somebody looks.
+  const [myWaitlist, setMyWaitlist] = useState<MyWaitlist>({ entries: [], source: 'demo' });
+  const [salonWaitlist, setSalonWaitlist] = useState<SalonWaitlist>({
+    entries: [],
     source: 'demo',
   });
 
@@ -407,6 +448,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [ownedSalonId, vendorDayOffset]);
+
+  useEffect(() => {
+    if (state.screen !== 'v_waitlist') return;
+    if (!ownedSalonId) {
+      setSalonWaitlist({ entries: [], source: 'demo' });
+      return;
+    }
+    let cancelled = false;
+    setSalonWaitlist({ entries: [], source: 'loading' });
+    void loadSalonWaitlist(ownedSalonId).then((result) => {
+      if (!cancelled) setSalonWaitlist(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownedSalonId, state.screen]);
 
   useEffect(() => {
     if (state.screen !== 'v_reviews') return;
@@ -533,6 +590,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       await refreshOwner();
       flash(isArabic ? 'تم حفظ المواعيد ✓' : 'Booking interval saved ✓');
+    },
+    [flash, isArabic, owner.salon, ownerFailureText, refreshOwner],
+  );
+
+  /** Turns the salon's waitlist on or off. */
+  const setWaitlistEnabled = useCallback(
+    async (enabled: boolean) => {
+      if (!owner.salon) return;
+      const failure = await saveWaitlistEnabled(owner.salon.id, enabled);
+      if (failure) {
+        flash(ownerFailureText(failure));
+        return;
+      }
+      await refreshOwner();
+      flash(
+        enabled
+          ? isArabic
+            ? 'قائمة الانتظار مفعّلة ✓'
+            : 'Waitlist on ✓'
+          : isArabic
+            ? 'قائمة الانتظار موقوفة'
+            : 'Waitlist off',
+      );
     },
     [flash, isArabic, owner.salon, ownerFailureText, refreshOwner],
   );
@@ -863,17 +943,137 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [later],
   );
 
-  const joinWaitlist = useCallback(() => {
-    dispatch({ type: 'joinWaitlist' });
-    flash(isArabic ? 'أضفناك لقائمة الانتظار ✓' : 'You’re on the waitlist ✓');
-    // A seat frees up shortly afterwards, demonstrating the notification.
-    // TODO(roadmap A3): simulated. Really this is a server-side reaction to a cancellation
-    // that offers the slot to the first matching entry and holds it for a fixed window.
-    later(() => {
-      dispatch({ type: 'seatOpened' });
-      flash(isArabic ? 'تفرّغ موعد! اضغط للحجز' : 'A spot opened! Tap to book');
-    }, REPLY_DELAY.seatOpens);
-  }, [flash, isArabic, later]);
+  const waitlistFailureText = useCallback(
+    (failure: WaitlistFailure): string => {
+      const messages: Record<WaitlistFailure, { en: string; ar: string }> = {
+        notConfigured: {
+          en: 'Not saved — no database is connected.',
+          ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.',
+        },
+        notSignedIn: { en: 'Sign in first.', ar: 'سجّل الدخول أولاً.' },
+        notOffered: {
+          en: 'Nothing is being held for you.',
+          ar: 'لا يوجد موعد محجوز لك.',
+        },
+        alreadyWaiting: {
+          en: 'You’re already on the waitlist for that day.',
+          ar: 'أنت بالفعل في قائمة الانتظار لذلك اليوم.',
+        },
+        noWaitlist: {
+          en: 'This salon isn’t taking a waitlist.',
+          ar: 'هذا الصالون لا يستقبل قائمة انتظار.',
+        },
+        badServices: {
+          en: 'One of those services isn’t bookable here.',
+          ar: 'إحدى الخدمات غير متاحة للحجز هنا.',
+        },
+        gone: {
+          en: 'That seat has gone. You’re still on the list.',
+          ar: 'ذهب هذا الموعد. ما زلت في القائمة.',
+        },
+        queueBehind: {
+          en: 'Someone else is waiting for that slot, so it passes on.',
+          ar: 'هناك شخص آخر ينتظر هذا الموعد، لذا ينتقل إليه.',
+        },
+        slotTaken: {
+          en: 'That time was just taken.',
+          ar: 'حُجز هذا الوقت للتو.',
+        },
+        network: {
+          en: 'Could not save. Check your connection and try again.',
+          ar: 'تعذّر الحفظ. تحقق من الاتصال وحاول مرة أخرى.',
+        },
+      };
+      return isArabic ? messages[failure].ar : messages[failure].en;
+    },
+    [isArabic],
+  );
+
+  const refreshMyWaitlist = useCallback(async () => {
+    if (!isSupabaseConfigured || !userId) return;
+    setMyWaitlist(await loadMyWaitlist());
+  }, [userId]);
+
+  const refreshSalonWaitlist = useCallback(async () => {
+    if (!ownedSalonId) return;
+    setSalonWaitlist(await loadSalonWaitlist(ownedSalonId));
+  }, [ownedSalonId]);
+
+  /** Puts the customer in the queue for a day, or a window within it. */
+  const joinWaitlist = useCallback(
+    async (request: WaitlistRequest) => {
+      const failure = await joinWaitlistRow(request);
+      if (failure) {
+        flash(waitlistFailureText(failure));
+        return;
+      }
+      dispatch({ type: 'closeWaitlistSheet' });
+      await refreshMyWaitlist();
+      flash(isArabic ? 'أضفناك لقائمة الانتظار ✓' : 'You’re on the waitlist ✓');
+    },
+    [flash, isArabic, refreshMyWaitlist, waitlistFailureText],
+  );
+
+  const leaveWaitlist = useCallback(
+    async (entryId: string) => {
+      const failure = await leaveWaitlistRow(entryId);
+      if (failure) {
+        flash(waitlistFailureText(failure));
+        return;
+      }
+      await refreshMyWaitlist();
+      flash(isArabic ? 'تمت إزالتك من القائمة' : 'Removed from the waitlist');
+    },
+    [flash, isArabic, refreshMyWaitlist, waitlistFailureText],
+  );
+
+  /**
+   * Takes the offered seat. This books it for real, through the same priced
+   * path as any other appointment — a slot claimed off the waitlist is not a
+   * lesser kind of booking.
+   */
+  const claimSeat = useCallback(
+    async (offerId: string) => {
+      const result = await claimOffer(offerId);
+      if ('error' in result) {
+        flash(waitlistFailureText(result.error));
+        await refreshMyWaitlist();
+        return;
+      }
+      setLastReference(result.reference);
+      await Promise.all([refreshMyWaitlist(), refreshBookings()]);
+      dispatch({ type: 'go', screen: 'bookings' });
+      flash(isArabic ? 'تم حجز الموعد ✓' : 'The seat is yours ✓');
+    },
+    [flash, isArabic, refreshBookings, refreshMyWaitlist, waitlistFailureText],
+  );
+
+  const extendHold = useCallback(
+    async (offerId: string) => {
+      const failure = await extendOffer(offerId);
+      if (failure) {
+        flash(waitlistFailureText(failure));
+      } else {
+        flash(isArabic ? 'تم تمديد المهلة ✓' : 'Given longer ✓');
+      }
+      await refreshSalonWaitlist();
+    },
+    [flash, isArabic, refreshSalonWaitlist, waitlistFailureText],
+  );
+
+  /** The salon sending a lapsed offer round again, to whoever is next. */
+  const reoffer = useCallback(
+    async (entryId: string) => {
+      const failure = await reofferSlot(entryId);
+      if (failure) {
+        flash(waitlistFailureText(failure));
+      } else {
+        flash(isArabic ? 'أُرسل الموعد للتالي في القائمة ✓' : 'Offered to the next in line ✓');
+      }
+      await refreshSalonWaitlist();
+    },
+    [flash, isArabic, refreshSalonWaitlist, waitlistFailureText],
+  );
 
   const bookingFailureText = useCallback(
     (failure: BookingFailure): string => {
@@ -1063,11 +1263,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       vendorDay,
       vendorReviews,
+      myWaitlist,
+      salonWaitlist,
+      leaveWaitlist,
+      claimSeat,
+      extendHold,
+      reoffer,
       setAppointment,
       reassignTo,
       answerReview,
       saveMyName,
       setSlotStep,
+      setWaitlistEnabled,
       setDayHours,
       registerSalon,
       saveBusinessProfile,
@@ -1121,11 +1328,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       owner,
       vendorDay,
       vendorReviews,
+      myWaitlist,
+      salonWaitlist,
+      leaveWaitlist,
+      claimSeat,
+      extendHold,
+      reoffer,
       setAppointment,
       reassignTo,
       answerReview,
       saveMyName,
       setSlotStep,
+      setWaitlistEnabled,
       setDayHours,
       registerSalon,
       saveBusinessProfile,

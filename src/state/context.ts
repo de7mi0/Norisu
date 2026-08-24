@@ -5,6 +5,7 @@ import type {
   VendorDay,
   VendorReviews,
 } from '../data/vendorBookings';
+import type { MyWaitlist, SalonWaitlist, WaitlistRequest } from '../data/waitlist';
 import type {
   DayHours,
   OwnerState,
@@ -92,6 +93,20 @@ export interface AppContextValue {
   reassignTo: (bookingId: string, staffId: string | null) => Promise<void>;
   /** Answers a review. True once stored, so the form can close on success only. */
   answerReview: (reviewId: string, reply: string) => Promise<boolean>;
+
+  /** What the signed-in customer is waiting for, and anything held for them. */
+  myWaitlist: MyWaitlist;
+  /** The owner's queue. `'demo'` when the viewer owns no salon. */
+  salonWaitlist: SalonWaitlist;
+  /** Puts the customer in the queue for a day, or a window inside it. */
+  joinWaitlist: (request: WaitlistRequest) => Promise<void>;
+  leaveWaitlist: (entryId: string) => Promise<void>;
+  /** Takes an offered seat, booking it for real. */
+  claimSeat: (offerId: string) => Promise<void>;
+  /** The salon giving somebody longer. Refused when others are queued behind. */
+  extendHold: (offerId: string) => Promise<void>;
+  /** The salon sending a lapsed offer round again. */
+  reoffer: (entryId: string) => Promise<void>;
   /**
    * Stores the signed-in customer's name on their profile. True once written;
    * the sheet stays open on false so nothing is typed twice.
@@ -99,6 +114,8 @@ export interface AppContextValue {
   saveMyName: (fullName: string) => Promise<boolean>;
   /** Changes the spacing between the times the booking screen offers. */
   setSlotStep: (minutes: number) => Promise<void>;
+  /** Turns the salon's waitlist on or off. */
+  setWaitlistEnabled: (enabled: boolean) => Promise<void>;
   /** Replaces one weekday's opening hours, or closes that day. */
   setDayHours: (day: DayHours) => Promise<void>;
   /** Registers a salon for the signed-in user. True once it exists. */
@@ -144,7 +161,6 @@ export interface AppContextValue {
   sendChat: () => void;
   sendBot: () => void;
   pickBotTopic: (key: BotTopicKey) => void;
-  joinWaitlist: () => void;
   confirmBooking: () => void | Promise<void>;
   openConversation: (target: 'chat' | 'bot') => void;
 }

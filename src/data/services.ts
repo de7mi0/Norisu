@@ -27,9 +27,6 @@ export const DISABLED_SLOTS = [2, 5];
 /** The date offset (from today) that is fully booked and offers a waitlist. */
 export const FULLY_BOOKED_DATE_INDEX = 4;
 
-/** The slot that frees up after joining the waitlist. */
-export const WAITLIST_RELEASED_SLOT_INDEX = 4;
-
 export const VAT_RATE = 0.15;
 
 /** Discounted price, rounded to whole riyals as the prototype does. */

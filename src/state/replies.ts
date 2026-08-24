@@ -94,5 +94,4 @@ export const REPLY_DELAY = {
   bot: 900,
   botTopic: 800,
   toast: 1700,
-  seatOpens: 3200,
 } as const;

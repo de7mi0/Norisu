@@ -102,10 +102,14 @@ export interface AppState {
   botMsgs: ChatMessage[];
   botInput: string;
 
-  waitlistOn: boolean;
-  waitlistJoined: boolean;
-  seatOpen: boolean;
-  /** Hides the released-seat banner while leaving the slot bookable. */
+  /**
+   * The waitlist sheet: null when shut, and otherwise carrying the time the
+   * customer tapped so it knows what window to suggest — `time: null` means
+   * they came from the fully-booked card and will take anything that day. The
+   * entries themselves are remote state and live in AppContext.
+   */
+  waitlistSheet: { time: string | null } | null;
+  /** Hides the offered-seat banner without giving the seat up. */
   seatBannerDismissed: boolean;
 
   /** The "your name" sheet. UI state only — the value itself lives on the profile. */
@@ -167,9 +171,7 @@ export const initialState: AppState = {
   botMsgs: [BOT_GREETING],
   botInput: '',
 
-  waitlistOn: true,
-  waitlistJoined: false,
-  seatOpen: false,
+  waitlistSheet: null,
   seatBannerDismissed: false,
 
   // Today. The strip used to be four fixed dates in July 2026, where 3 was the
@@ -229,11 +231,9 @@ export type Action =
   | { type: 'pushBot'; message: ChatMessage }
   | { type: 'sendChat' }
   | { type: 'sendBot' }
-  | { type: 'joinWaitlist' }
-  | { type: 'seatOpened' }
+  | { type: 'openWaitlistSheet'; time: string | null }
+  | { type: 'closeWaitlistSheet' }
   | { type: 'dismissSeatBanner' }
-  | { type: 'bookFromWaitlist' }
-  | { type: 'toggleWaitlistAcceptance' }
   | { type: 'openAppointment'; bookingId: string }
   | { type: 'closeAppointment' }
   | { type: 'openNameSheet'; current: string }
@@ -355,9 +355,7 @@ export function appReducer(state: AppState, action: Action): AppState {
         screen: 'confirm',
         reschedule: false,
         rescheduleId: null,
-        seatOpen: false,
         seatBannerDismissed: false,
-        waitlistJoined: false,
       };
 
     case 'setBookTab':
@@ -410,20 +408,14 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, botMsgs: [...state.botMsgs, { who: 'me', text }], botInput: '' };
     }
 
-    case 'joinWaitlist':
-      return { ...state, waitlistJoined: true };
+    case 'openWaitlistSheet':
+      return { ...state, waitlistSheet: { time: action.time } };
 
-    case 'seatOpened':
-      return { ...state, seatOpen: true, seatBannerDismissed: false };
+    case 'closeWaitlistSheet':
+      return { ...state, waitlistSheet: null };
 
     case 'dismissSeatBanner':
       return { ...state, seatBannerDismissed: true };
-
-    case 'bookFromWaitlist':
-      return { ...state, salonId: 'maison', screen: 'time', dateIdx: 4, slotTime: null };
-
-    case 'toggleWaitlistAcceptance':
-      return { ...state, waitlistOn: !state.waitlistOn };
 
     case 'openAppointment':
       return { ...state, apptSheet: action.bookingId };

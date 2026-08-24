@@ -1,5 +1,5 @@
 import { Screen } from '../../components/Screen';
-import { translateStatus } from '../../i18n';
+import { dayLabel, translateStatus } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -19,6 +19,9 @@ export function Bookings() {
     bookingsLoading,
     session,
     cancelBooking,
+    myWaitlist,
+    leaveWaitlist,
+    claimSeat,
   } = useApp();
 
   const showingUpcoming = state.bookTab === 'upcoming';
@@ -62,6 +65,76 @@ export function Bookings() {
           {t.past}
         </button>
       </div>
+
+      {showingUpcoming && myWaitlist.entries.length > 0 ? (
+        <div style={{ padding: '20px 24px 0' }}>
+          <div style={{ font: `600 13px ${font.sans}`, marginBottom: 10 }}>{t.waitlistMine}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {myWaitlist.entries.map((entry) => {
+              const services = isArabic ? entry.servicesAr : entry.services;
+              const offered = entry.claimable && entry.offerId;
+              return (
+                <div
+                  key={entry.id}
+                  style={{
+                    background: offered ? color.tealSoft : color.surface,
+                    border: `1px solid ${offered ? color.tealLine : color.lineWarm}`,
+                    borderRadius: 16,
+                    padding: 14,
+                  }}
+                >
+                  <div style={{ font: `600 13.5px ${font.sans}` }}>
+                    {isArabic ? entry.salonNameAr : entry.salonName}
+                  </div>
+                  <div
+                    style={{
+                      font: `500 11px ${font.sans}`,
+                      color: color.mutedSoft,
+                      marginTop: 3,
+                    }}
+                  >
+                    {dayLabel(new Date(`${entry.day}T12:00:00`), state.lang)}
+                    {services.length > 0 ? ` · ${services.join(' · ')}` : ''}
+                  </div>
+
+                  {offered ? (
+                    <button
+                      type="button"
+                      onClick={() => entry.offerId && void claimSeat(entry.offerId)}
+                      className="press"
+                      style={{
+                        marginTop: 11,
+                        width: '100%',
+                        textAlign: 'center',
+                        background: color.teal,
+                        color: '#fff',
+                        borderRadius: 12,
+                        padding: 12,
+                        font: `700 12.5px ${font.sans}`,
+                      }}
+                    >
+                      {t.waitlistClaim} · <span className="ltr-run">{entry.offerTime}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void leaveWaitlist(entry.id)}
+                      style={{
+                        marginTop: 9,
+                        font: `600 11px ${font.sans}`,
+                        color: color.danger,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {t.waitlistLeave}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Bookings only persist for a signed-in customer, so say so here rather
           than letting somebody book and quietly lose it. */}

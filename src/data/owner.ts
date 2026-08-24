@@ -35,6 +35,8 @@ export interface OwnerSalon {
   profile: SalonDraft;
   /** Spacing between the times the booking screen offers. */
   slotStepMinutes: number;
+  /** Whether the salon takes a waitlist at all. */
+  waitlistEnabled: boolean;
   /** Always seven entries, Sunday first, so the editor can render a full week. */
   hours: DayHours[];
   /**
@@ -150,7 +152,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
   try {
     const salonCall = supabase
       .from('salons')
-      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cr_number, phone, is_verified, is_published, slot_step_minutes')
+      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cr_number, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled')
       .eq('owner_id', userId)
       // One salon per owner for now; the schema permits more.
       .order('created_at', { ascending: true })
@@ -207,6 +209,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
           phone: row.phone ?? '',
         },
         slotStepMinutes: row.slot_step_minutes ?? 30,
+        waitlistEnabled: row.waitlist_enabled ?? true,
         hours: weekFrom((hours ?? []) as WorkingHoursRow[]),
         services: ((servicesResult.data ?? []) as ServiceRow[]).map(mapOwnerService),
         staff: ((staffResult.data ?? []) as StaffRow[]).map(mapOwnerStaff),
@@ -249,6 +252,20 @@ export async function saveSlotStep(
  * is what `available_slots()` reads as "not open" — distinct from a day whose
  * every slot is taken.
  */
+/** Turns the salon's waitlist on or off. 0004 grants this column to the owner. */
+export async function saveWaitlistEnabled(
+  salonId: string,
+  enabled: boolean,
+): Promise<OwnerWriteFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase
+    .from('salons')
+    .update({ waitlist_enabled: enabled })
+    .eq('id', salonId);
+  if (!error) return null;
+  return error.code === '42501' ? 'notOwner' : 'network';
+}
+
 export async function saveDayHours(
   salonId: string,
   day: DayHours,

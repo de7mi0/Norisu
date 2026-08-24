@@ -1,5 +1,5 @@
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
-import { WAITLIST_RELEASED_SLOT_INDEX } from '../../data/services';
+import { WaitlistSheet } from './WaitlistSheet';
 import { monthLabel, weekdayLabel } from '../../i18n';
 import { dateAtOffset, useApp } from '../../state/context';
 import { color, font } from '../../theme';
@@ -15,18 +15,30 @@ export function TimePicker() {
     isArabic,
     backIcon,
     staffName,
-    joinWaitlist,
     rescheduleBooking,
     availability,
+    salon,
+    myWaitlist,
+    session,
   } = useApp();
 
   const loading = availability.source === 'loading';
   const closed = availability.source === 'closed';
-  // Every offered time is gone. On live data this is a real full day; on the
-  // sample data it is still the scripted one, which the waitlist demo needs.
-  const dayIsFull =
-    !loading && !closed && availability.slots.every((slot) => !slot.free);
+  const dayIsFull = !loading && !closed && availability.slots.every((slot) => !slot.free);
   const slotChosen = state.slotTime != null;
+
+  const day = dateAtOffset(state.dateIdx);
+  // Only a real, signed-in customer can queue for a real salon: a sample
+  // catalogue row has no id the database could match.
+  const canWaitlist =
+    availability.source === 'live' &&
+    session.status === 'signedIn' &&
+    !state.reschedule;
+  const alreadyWaiting = myWaitlist.entries.some(
+    (entry) =>
+      entry.salonId === salon.id &&
+      entry.day === `${day.getFullYear()}-${`${day.getMonth() + 1}`.padStart(2, '0')}-${`${day.getDate()}`.padStart(2, '0')}`,
+  );
 
   return (
     <>
@@ -154,22 +166,24 @@ export function TimePicker() {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-              {availability.slots.map((slot, index) => {
-                // A seat released from the waitlist reopens exactly one slot.
-                // Scripted, and only meaningful on the sample data.
-                const released =
-                  state.seatOpen &&
-                  dayIsFull &&
-                  availability.source === 'demo' &&
-                  index === WAITLIST_RELEASED_SLOT_INDEX;
-                const disabled = released ? false : !slot.free;
+              {availability.slots.map((slot) => {
+                const taken = !slot.free;
                 const active = state.slotTime === slot.time;
+                // A taken time is no longer a dead button: tapping it offers to
+                // put the customer on the waitlist for around then, which is how
+                // people actually think — "I want Thursday evening".
+                const waitlistable = taken && canWaitlist;
                 return (
                   <button
                     key={slot.time}
                     type="button"
-                    disabled={disabled}
-                    onClick={() => dispatch({ type: 'pickSlot', time: slot.time })}
+                    disabled={taken && !waitlistable}
+                    onClick={() =>
+                      waitlistable
+                        ? dispatch({ type: 'openWaitlistSheet', time: slot.time })
+                        : dispatch({ type: 'pickSlot', time: slot.time })
+                    }
+                    title={waitlistable ? t.joinWaitlist : undefined}
                     aria-pressed={active}
                     className="press"
                     style={{
@@ -177,28 +191,39 @@ export function TimePicker() {
                       padding: '13px 0',
                       borderRadius: 13,
                       font: `600 13px ${font.sans}`,
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      background: disabled
+                      cursor: taken && !waitlistable ? 'not-allowed' : 'pointer',
+                      background: taken
                         ? color.surfaceSand
                         : active
                           ? color.gold
-                          : released
-                            ? color.tealSoft
-                            : color.surface,
+                          : color.surface,
                       border: `1.5px solid ${
-                        disabled
-                          ? color.lineFaint
+                        taken
+                          ? waitlistable
+                            ? color.lineDashed
+                            : color.lineFaint
                           : active
                             ? color.gold
-                            : released
-                              ? '#7fe0cf'
-                              : color.lineWarm
+                            : color.lineWarm
                       }`,
-                      color: disabled ? color.disabled : active ? color.goldInk : color.ink,
+                      color: taken ? color.disabled : active ? color.goldInk : color.ink,
                     }}
                   >
                     {/* Digits inside Arabic text reorder without this. */}
                     <span className="ltr-run">{slot.time}</span>
+                    {waitlistable ? (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          display: 'block',
+                          font: `600 8.5px ${font.sans}`,
+                          color: color.mutedSoft,
+                          marginTop: 1,
+                        }}
+                      >
+                        {t.waitShort}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
@@ -206,7 +231,7 @@ export function TimePicker() {
           )}
         </div>
 
-        {dayIsFull && !state.seatOpen ? (
+        {dayIsFull ? (
           <div
             style={{
               margin: '20px 24px 0',
@@ -238,8 +263,8 @@ export function TimePicker() {
               {t.waitlistDesc}
             </p>
 
-            {state.waitlistOn ? (
-              state.waitlistJoined ? (
+            {canWaitlist ? (
+              alreadyWaiting ? (
                 <div
                   style={{
                     marginTop: 12,
@@ -256,7 +281,7 @@ export function TimePicker() {
               ) : (
                 <button
                   type="button"
-                  onClick={joinWaitlist}
+                  onClick={() => dispatch({ type: 'openWaitlistSheet', time: null })}
                   className="press"
                   style={{
                     marginTop: 12,
@@ -280,25 +305,7 @@ export function TimePicker() {
           </div>
         ) : null}
 
-        {dayIsFull && state.seatOpen ? (
-          <div
-            style={{
-              margin: '20px 24px 0',
-              background: color.tealSoft,
-              border: `1px solid ${color.tealLine}`,
-              borderRadius: 16,
-              padding: '14px 16px',
-              font: `600 12.5px/1.5 ${font.sans}`,
-              color: color.teal,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span aria-hidden="true">🎉</span>
-            {t.seatOpenedNote}
-          </div>
-        ) : null}
+        <WaitlistSheet />
       </Screen>
 
       <BottomBar>

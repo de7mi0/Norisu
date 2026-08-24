@@ -157,15 +157,18 @@ function Navigation() {
 
 /** Floating overlays: waitlist banner, assistant button, and the toast. */
 function Overlays() {
-  const { t, state, dispatch, arrow, openConversation } = useApp();
+  const { t, state, dispatch, arrow, isArabic, openConversation, myWaitlist, claimSeat } =
+    useApp();
 
   const onCustomerTabScreen =
     state.mode === 'customer' && CUSTOMER_TAB_SCREENS.includes(state.screen as CustomerScreen);
+
+  // A real offer now, not a timer: the first seat actually being held for this
+  // customer. There is no push notification, so this banner is how they find
+  // out — which is why it is checked on every screen change rather than once.
+  const offered = myWaitlist.entries.find((entry) => entry.claimable && entry.offerId);
   const showSeatBanner =
-    state.mode === 'customer' &&
-    state.seatOpen &&
-    !state.seatBannerDismissed &&
-    state.screen !== 'time';
+    state.mode === 'customer' && Boolean(offered) && !state.seatBannerDismissed;
 
   return (
     <>
@@ -194,7 +197,7 @@ function Overlays() {
           </span>
           <button
             type="button"
-            onClick={() => dispatch({ type: 'bookFromWaitlist' })}
+            onClick={() => offered?.offerId && void claimSeat(offered.offerId)}
             className="press"
             style={{
               flex: 1,
@@ -211,7 +214,9 @@ function Overlays() {
                 {t.seatBannerTitle}
               </span>
               <span style={{ display: 'block', font: `500 10.5px ${font.sans}`, opacity: 0.85 }}>
-                {t.seatBannerSub}
+                {offered
+                  ? `${offered.offerTime} · ${isArabic ? offered.salonNameAr : offered.salonName}`
+                  : t.seatBannerSub}
               </span>
             </span>
             <span style={{ fontSize: 16 }} aria-hidden="true">

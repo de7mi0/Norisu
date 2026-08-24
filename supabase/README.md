@@ -15,6 +15,7 @@ supabase/
     0006_column_privileges.sql   which columns each side may write
     0007_review_reply.sql        the only way a salon can answer a review
     0008_create_booking.sql      the only way a booking is made, priced and staffed
+    0009_waitlist.sql            the queue, the holds, and claiming a freed seat
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -54,6 +55,8 @@ the app has a bug or someone calls the API directly:
   be completed leaves nothing behind.
 - **The salon cannot be oversold.** "Any professional" used to leave nobody
   attached to the appointment, so the database could not tell it was full.
+- **Nobody can jump the waitlist queue.** Position is decided by when somebody
+  joined, and that is not a value the app is allowed to set.
 
 All of the above are covered by assertions in `tests/01_policy_tests.sql`.
 
@@ -366,7 +369,7 @@ order by proname;
 
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
 `salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in, and
-`create_booking` means 0008 is.
+`create_booking` means 0008 is, and `join_waitlist` means 0009 is.
 
 **0008 is the one migration that must not be skipped once the site is
 redeployed.** From that version the app books by calling `create_booking()`, so

@@ -82,6 +82,7 @@ src/
     availability.ts         ★ asks the database which times are actually free
     owner.ts                ★ the salon the signed-in user owns; hours + interval writes
     vendorBookings.ts       ★ the owner's own day, figures and reviews
+    waitlist.ts             ★ the queue, both sides of it
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -112,11 +113,12 @@ supabase/
   migrations/0007_review_reply.sql  reply_to_review(); the only way to answer one
   migrations/0008_create_booking.sql  create_booking() / reschedule_booking();
                                       the only way a booking comes into existence
+  migrations/0009_waitlist.sql  the queue, the 15-minute holds, and claiming
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   69 assertions
+  tests/01_policy_tests.sql   76 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 ROADMAP.md                    backlog + the path to the app stores
 ```
@@ -285,9 +287,9 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 14 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications, reviews` —
-plus a `salon_ratings` view and the functions in 0003–0008 — `available_slots()`, `salon_day()`,
-`salon_stats()`, `salon_reviews()`, `reply_to_review()`, `create_booking()` and
-`reschedule_booking()`. 30 RLS policies. 69 assertions.
+plus a `salon_ratings` view and the functions in 0003–0009 — `available_slots()`, `salon_day()`,
+`salon_stats()`, `salon_reviews()`, `reply_to_review()`, `create_booking()`,
+`reschedule_booking()`, and 0009's waitlist set. 30 RLS policies. 76 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -341,6 +343,13 @@ which columns the policy is really meant to expose — the answer is rarely "all
 14. **Opening hours bound what can be booked, not just what is offered.** `create_booking()`
     checks the same window `available_slots()` steps across, so calling the API directly cannot
     take a time the salon never offered. Assertion 67.
+15. **A place in the queue is not something you can write yourself.** `waitlist_entries.created_at`
+    decides who is next, so `authenticated` has no INSERT or UPDATE on the table (0009) — joining
+    goes through `join_waitlist()`. Otherwise an account could insert itself at the front, or mark
+    itself as holding a seat nobody offered. Assertion 75.
+16. **A freed seat is offered to one person at a time.** A cancellation triggers
+    `offer_next_for_slot()`, which holds it for the longest-waiting match for 15 minutes; a lapsed
+    hold passes on, and nobody is offered the same slot twice. Assertions 70 and 71.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -358,7 +367,7 @@ shutting it; `create_booking()` (0008) assigns a chair at **write** time, which 
 to rows made before 0008 now, and stays correct.
 
 **Testing:** `./scripts/test-db.sh` creates a throwaway database, applies the migrations, runs all
-69 assertions, drops it. Each of 53–69 was checked against a database with its own protection
+76 assertions, drops it. Each of 53–76 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -395,7 +404,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Who you are** | **Real.** Profile screen shows the account, its role, and sign-out. |
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
-| Waitlist | Browser-only; seat release is a 3.2s `setTimeout`. |
+| **Waitlist** | **Real.** Joining is stored, a cancellation offers the freed seat to whoever waited longest, and claiming makes a real booking. **Not timely though** — with no push notification, an offer is only seen when the app is next opened. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
@@ -403,7 +412,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Vendor dashboard figures** | **Real.** Today's bookings, the value booked, occupancy and the rating, from `salon_stats()`. "Booked today" is **not revenue** — nothing is paid. |
 | **Vendor day calendar** | **Real, and the owner can act on it.** Appointments for any day in the coming week from `salon_day()`, cancellations included. Tapping one offers confirm, start, complete, no-show, cancel and reassign. |
 | **Vendor reviews** | **Real.** From `salon_reviews()`, unpublished rows included and marked. **Replying is real too**, through `reply_to_review()`. |
-| Vendor waitlist | Browser-only, and **the last section still labelled as sample on screen**. |
+| **Vendor waitlist** | **Real.** The owner's own queue, with re-offering and extending a hold. **No `SampleDataNotice` remains anywhere in the portal.** |
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
@@ -419,8 +428,9 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | File | Item | Gap |
 | --- | --- | --- |
 | `screens/vendor/Gallery.tsx` | A2 | The Upload button has **no handler at all** |
-| `screens/vendor/Waitlist.tsx` | A3 | "Notify" only toasts the owner's own screen |
-| `state/AppContext.tsx` | A3 | The waitlist seat release is a simulated timer |
+
+The two waitlist markers are gone: 0009 made it real. What is still missing there is the
+*notification*, not the mechanism — see below.
 
 **Authentication gaps:**
 - **Never tested against real Supabase.** The development sandbox cannot reach `supabase.co`, so
@@ -470,18 +480,29 @@ removed. Worth knowing they existed, because the same mistake is easy to repeat:
 browser — went with 0008: `authenticated` has no INSERT on `bookings`, and `create_booking()`
 prices from the salon's own rows.
 
+**The waitlist is real but not timely.** The queue, the 15-minute holds, passing a lapsed hold to
+the next person, opening the slot to everyone once they have all had a turn, and claiming — all
+genuine, all in the database. What is missing is the tap on the shoulder: with no push, no SMS and
+no WhatsApp, a customer only discovers an offer by opening the app, so most holds will lapse
+unseen. Nothing about the design changes when notifications land (ROADMAP Phase 3); people simply
+find out in time. Two consequences worth knowing:
+- **Nothing advances on a timer.** There is no job runner, so a lapsed hold is swept whenever
+  somebody next reads the waitlist — both read functions sweep before they answer.
+- **The salon can push it along.** "Notify" re-offers a lapsed slot to whoever is next, and
+  "Give longer" extends a hold — but only when nobody is queued behind, since holding a seat for
+  one person while others wait costs them their turn for nothing.
+
 **Structural gaps:**
-- The waitlist does not survive a refresh.
 - **Verification is a manual step.** A registered salon stays invisible to customers until someone
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
   constraint stops the order being skipped, but there is no admin screen and no notification telling
   the owner they went live.
 - **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
   and a second would silently never be shown. The schema permits more.
-- **The vendor portal is per-owner apart from the waitlist.** Registration, hours, interval,
-  services, team, the dashboard figures, the day calendar and reviews are all the owner's own. The
-  **waitlist** is the last sample section, and still says so on screen — it needs
-  `waitlist_entries` to be written by the customer side first, which nothing does yet.
+- **The vendor portal is now entirely per-owner.** Registration, hours, interval, services, team,
+  the dashboard figures, the day calendar, reviews and the waitlist are all the owner's own, and
+  **no `SampleDataNotice` remains** — a visitor who owns no salon still sees the bundled demo, with
+  the whole-portal notice explaining why.
 - **The "+ Add" pill on the calendar is still inert.** A walk-in booking needs a customer account
   to belong to, which is a different problem from acting on one that exists.
 - **The dashboard's today list is read-only** and links to the calendar instead. One place to act
@@ -498,10 +519,11 @@ prices from the salon's own rows.
 
 ## 11. Suggested next steps
 
-1. **Persist the waitlist** — the last sample section in the portal, and the one the ROADMAP calls
-   the most interesting feature. `waitlist_entries` and its policies already exist; nothing writes
-   to them. **This is the recommended next task** — it is the last simulated section in the portal.
-2. Photo upload with EXIF stripping (A2), waitlist notifications (A3).
+1. **Notifications (A3).** The waitlist works but nobody is told, which is the single thing that
+   would make it worth having. Push needs the Capacitor wrap for FCM/APNs; a WhatsApp Business
+   template can go sooner, and approval takes days, so submit it early. **This is the recommended
+   next task.**
+2. Photo upload with EXIF stripping (A2).
 3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
