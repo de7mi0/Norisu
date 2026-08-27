@@ -497,16 +497,28 @@ The worker does nothing until something calls it. Supabase has a scheduler with 
 3. Name it `send-notifications`.
 4. Set the schedule to every minute — the form takes cron syntax (`* * * * *`, or
    `*/1 * * * *`, which means the same thing) or plain English.
-5. **The "Supabase Edge Function" option will be greyed out the first time**, saying
-   `pg_net needs to be installed to use this type`. That is a prerequisite rather than a
-   fault: a cron job lives inside Postgres, and Postgres cannot make an HTTP call — which
-   is what invoking an Edge Function is — without it. Click **Install pg_net extension**
-   in the panel below and the option becomes selectable.
+5. **Two extensions have to be on first, and the form only tells you about one.**
 
-   `pg_net` is Supabase's own extension and this is the route their dashboard is built
-   around. Its documentation labels the API as beta and notes it caps out around 200
-   requests a second and keeps responses for six hours; at one call a minute that is
-   irrelevant.
+   - **`pg_cron`** is the scheduler itself. Without it the form fails on save with
+     `relation "cron.job" does not exist` — the extension is what creates the `cron`
+     schema the dashboard is looking in.
+   - **`pg_net`** lets Postgres make an HTTP call, which is what invoking an Edge
+     Function is. Without it the *Supabase Edge Function* option is greyed out, saying
+     `pg_net needs to be installed to use this type`. There is an **Install pg_net
+     extension** button in that same panel.
+
+   Both are enabled the same way if you prefer to do it up front — **Database →
+   Extensions**, search the name, toggle it on — or in the SQL Editor:
+
+   ```sql
+   create extension if not exists pg_cron;
+   create extension if not exists pg_net;
+   ```
+
+   Both are standard on Supabase and this is the route their own dashboard is built
+   around. `pg_net`'s documentation labels its API as beta and notes it caps out around
+   200 requests a second and keeps responses for six hours; at one call a minute neither
+   matters.
 6. Choose **Supabase Edge Function** and pick `send-notifications`.
 7. Save.
 
