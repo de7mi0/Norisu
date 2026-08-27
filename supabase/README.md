@@ -495,10 +495,24 @@ The worker does nothing until something calls it. Supabase has a scheduler with 
    `https://supabase.com/dashboard/project/nicdmspejrvruszlwhvm/integrations/cron/jobs`).
 2. Click **Create job**.
 3. Name it `send-notifications`.
-4. Set the schedule to every minute — the form takes cron syntax (`* * * * *`) or plain
-   English.
-5. For the action, choose **Supabase Edge Function** and pick `send-notifications`.
-6. Save.
+4. Set the schedule to every minute — the form takes cron syntax (`* * * * *`, or
+   `*/1 * * * *`, which means the same thing) or plain English.
+5. **The "Supabase Edge Function" option will be greyed out the first time**, saying
+   `pg_net needs to be installed to use this type`. That is a prerequisite rather than a
+   fault: a cron job lives inside Postgres, and Postgres cannot make an HTTP call — which
+   is what invoking an Edge Function is — without it. Click **Install pg_net extension**
+   in the panel below and the option becomes selectable.
+
+   `pg_net` is Supabase's own extension and this is the route their dashboard is built
+   around. Its documentation labels the API as beta and notes it caps out around 200
+   requests a second and keeps responses for six hours; at one call a minute that is
+   irrelevant.
+6. Choose **Supabase Edge Function** and pick `send-notifications`.
+7. Save.
+
+If you would rather not add the extension, the alternative is an external scheduler —
+a GitHub Actions workflow on a cron that POSTs to the function's URL with the service
+key in repository secrets. More moving parts, and nothing here needs it.
 
 Every minute rather than every ten, because a hold lasts fifteen and a notification that
 arrives after the seat has gone is worse than none.
