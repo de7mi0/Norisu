@@ -1,177 +1,171 @@
 // Saloni — the worker that drains the notifications outbox.
 //
-// NEVER RUN. Not once, not against a stub. The development sandbox cannot reach
-// supabase.co or graph.facebook.com, and there is no approved WhatsApp template
-// and no provider account to send through yet. Treat every line below as a
-// starting point to verify, not as working code — in particular sendWhatsApp(),
-// which is the only part shaped by somebody else's API.
+// Claims a batch of due messages, pushes each to every device its owner has
+// registered, and marks it sent or failed. All three steps go through database
+// functions granted to service_role alone (0010, 0011), because draining the
+// outbox means reading who is waiting and how to reach them.
 //
-// What it does: claims a batch of due messages, sends each, marks it sent or
-// failed. All three steps go through database functions granted to service_role
-// only (migration 0010), because draining the outbox means reading the phone
-// number and name of everybody with a message waiting.
+// HONESTY ABOUT WHAT IS TESTED. This file has never run: the sandbox it was
+// written in reaches neither supabase.co nor a push service. Two of its three
+// parts were checked properly and one was not:
+//
+//   * The words a customer reads are composed in ./message.ts, which is pure
+//     and is covered by scripts/test-notification-text.mjs — 17 checks in both
+//     languages, including the Gregorian calendar and Latin digits that have
+//     gone wrong in this project before.
+//   * The encryption and VAPID signing are web-push's, and its API was checked
+//     rather than recalled: generateRequestDetails() on a real P-256
+//     subscription returns a POST with Content-Encoding aes128gcm and a
+//     `vapid t=` Authorization header, which is the protocol.
+//   * The loop below — claiming, sending, marking, retiring dead devices — is
+//     the part that has only been reasoned about. Watch the first real run.
 //
 // Deploy:   supabase functions deploy send-notifications
-// Schedule: every minute or two, via pg_cron or an external scheduler. Holds
-//           are 15 minutes, so anything slower than a few minutes wastes them.
+// Schedule: every minute or two. Holds are 15 minutes, so anything slower
+//           wastes them.
 //
-// Secrets it needs (supabase secrets set NAME=value) — none of these belong in
-// .env, which is committed and inlined into the browser bundle:
+// Secrets (supabase secrets set NAME=value). None belong in .env, which is
+// committed and inlined into the browser bundle:
 //
-//   SUPABASE_URL                  the project URL
-//   SUPABASE_SERVICE_ROLE_KEY     the sb_secret_ key. This bypasses every
-//                                 policy. It lives here and nowhere else.
-//   WHATSAPP_PHONE_NUMBER_ID      from Meta's WhatsApp Manager
-//   WHATSAPP_TOKEN                the permanent access token for that number
-//
-// See docs/whatsapp-waitlist-template.md for the template this sends and how
-// to get it approved.
+//   SUPABASE_URL                the project URL
+//   SUPABASE_SERVICE_ROLE_KEY   the sb_secret_ key. Bypasses every policy.
+//   VAPID_PUBLIC_KEY            the public half — the same value as the app's
+//                               VITE_VAPID_PUBLIC_KEY, or nothing will decrypt
+//   VAPID_PRIVATE_KEY           the private half. Never anywhere else.
+//   VAPID_SUBJECT               a mailto: or https: URL identifying you, which
+//                               push services require so they can complain
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import webpush from 'npm:web-push@3';
+import { composeMessage, type Locale, type OfferPayload } from './message.ts';
 
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+const BATCH = 20;
 
-const BATCH = 20
+interface Device {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  platform: 'web' | 'ios' | 'android';
+}
 
-type Claimed = {
-  id: string
-  channel: 'push' | 'whatsapp' | 'sms'
-  template: string
-  locale: 'en' | 'ar'
-  payload: Record<string, unknown>
-  attempts: number
-  to_phone: string | null
-  to_name: string | null
+interface Claimed {
+  id: string;
+  channel: 'push' | 'whatsapp' | 'sms';
+  template: string;
+  locale: Locale;
+  payload: OfferPayload & { expires_at?: string };
+  attempts: number;
+  to_phone: string | null;
+  to_name: string | null;
+  devices: Device[];
 }
 
 const admin = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   { auth: { persistSession: false } },
-)
+);
 
-// The five template variables, in the order the approved template declares
-// them. Change one and the other must change with it, or Meta rejects the send.
-function templateVariables(n: Claimed): string[] {
-  const p = n.payload as {
-    salon?: Record<string, string>
-    services?: Record<string, string>
-    starts_at?: string
-    hold_minutes?: number
-  }
-  const locale = n.locale === 'ar' ? 'ar-SA' : 'en-GB'
-  const starts = p.starts_at ? new Date(p.starts_at) : new Date()
+webpush.setVapidDetails(
+  Deno.env.get('VAPID_SUBJECT') ?? 'mailto:hello@example.com',
+  Deno.env.get('VAPID_PUBLIC_KEY')!,
+  Deno.env.get('VAPID_PRIVATE_KEY')!,
+);
 
-  // Gregorian and Latin digits, for the same reasons src/i18n/index.ts forces
-  // them: every stored date is Gregorian, and the rest of the message is in
-  // Latin digits, so an Arabic locale would otherwise mix two numbering systems.
-  const opts = { timeZone: 'Asia/Riyadh' } as const
-  const date = starts.toLocaleDateString(`${locale}-u-ca-gregory-nu-latn`, {
-    ...opts, weekday: 'long', day: 'numeric', month: 'long',
-  })
-  const time = starts.toLocaleTimeString(`${locale}-u-nu-latn`, {
-    ...opts, hour: 'numeric', minute: '2-digit',
-  })
-
-  return [
-    p.salon?.[n.locale] ?? '',
-    p.services?.[n.locale] ?? '',
-    date,
-    time,
-    String(p.hold_minutes ?? 15),
-  ]
+/**
+ * How long the push service should keep trying, in seconds.
+ *
+ * Bounded by the hold: a notification delivered after the seat has passed to
+ * the next person is worse than none, because it is the kind that teaches
+ * people to stop opening them. A phone that has been off for the whole hold
+ * should simply never receive this.
+ */
+function ttlSeconds(payload: { expires_at?: string }): number {
+  if (!payload.expires_at) return 600;
+  const left = Math.floor((new Date(payload.expires_at).getTime() - Date.now()) / 1000);
+  return Math.max(60, Math.min(left, 3600));
 }
 
-// The claim token, which is the whole point of the button: one tap opens the
-// app at that seat. The database put the full URL in the payload; Meta wants
-// only the part after the template's fixed prefix.
-function claimSuffix(n: Claimed): string {
-  const url = String((n.payload as { claim_url?: string }).claim_url ?? '')
-  return url.split('claim=')[1] ?? ''
+/** True when the push service says this endpoint is gone for good. */
+function isDead(status: number): boolean {
+  return status === 404 || status === 410;
 }
 
-// VERIFY THIS AGAINST YOUR PROVIDER'S CURRENT DOCUMENTATION. The shape below is
-// Meta's Cloud API. Unifonic, Twilio and 360dialog each wrap it differently —
-// if you go through one of them, this function is the only one to rewrite.
-async function sendWhatsApp(n: Claimed): Promise<void> {
-  if (!n.to_phone) throw new Error('no phone number on the profile')
+async function pushToDevices(n: Claimed): Promise<void> {
+  if (n.devices.length === 0) throw new Error('no registered device');
 
-  const id = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')
-  const token = Deno.env.get('WHATSAPP_TOKEN')
-  if (!id || !token) throw new Error('WhatsApp credentials are not configured')
+  const message = JSON.stringify(composeMessage(n.payload, n.locale));
+  const ttl = ttlSeconds(n.payload);
 
-  const res = await fetch(`https://graph.facebook.com/v21.0/${id}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: n.to_phone,
-      type: 'template',
-      template: {
-        name: n.template,
-        language: { code: n.locale === 'ar' ? 'ar' : 'en' },
-        components: [
-          {
-            type: 'body',
-            parameters: templateVariables(n).map((text) => ({ type: 'text', text })),
-          },
-          {
-            type: 'button',
-            sub_type: 'url',
-            index: '0',
-            parameters: [{ type: 'text', text: claimSuffix(n) }],
-          },
-        ],
-      },
-    }),
-  })
+  let delivered = 0;
+  const problems: string[] = [];
 
-  if (!res.ok) {
-    throw new Error(`WhatsApp ${res.status}: ${(await res.text()).slice(0, 300)}`)
-  }
-}
-
-Deno.serve(async () => {
-  // Claims the batch and counts an attempt against each, so a worker that dies
-  // mid-send cannot spin on the same row forever. Rows whose hold has since
-  // lapsed, or whose seat has been taken, are skipped here rather than sent.
-  const { data, error } = await admin.rpc('claim_pending_notifications', { p_limit: BATCH })
-  if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500, headers: { 'Content-Type': 'application/json' },
-    })
-  }
-
-  const claimed = (data ?? []) as Claimed[]
-  let sent = 0
-  let failed = 0
-
-  for (const n of claimed) {
+  for (const device of n.devices) {
+    // Native devices will register here too once the Capacitor wrap exists,
+    // and they do not speak Web Push. Skipping rather than failing keeps one
+    // old iPhone from blocking the laptop that would have worked.
+    if (device.platform !== 'web') {
+      problems.push(`${device.platform}: no sender yet`);
+      continue;
+    }
     try {
-      if (n.channel === 'whatsapp') {
-        await sendWhatsApp(n)
-      } else {
-        // Push arrives with the Capacitor wrap and a device-token table; 0010
-        // does not queue it, so reaching here means somebody added a channel
-        // without adding a way to send it.
-        throw new Error(`no sender for channel ${n.channel}`)
-      }
-      await admin.rpc('mark_notification_sent', { p_id: n.id })
-      sent++
+      await webpush.sendNotification(
+        { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
+        message,
+        { TTL: ttl },
+      );
+      delivered += 1;
     } catch (e) {
-      // Recorded, retried after five minutes, and given up on after five
-      // attempts — a number that has been disconnected should stop costing
-      // requests.
-      await admin.rpc('mark_notification_failed', {
-        p_id: n.id,
-        p_error: e instanceof Error ? e.message : String(e),
-      })
-      failed++
+      const status = (e as { statusCode?: number }).statusCode ?? 0;
+      if (isDead(status)) {
+        // Uninstalled, or permission revoked. The browser never tells us, so
+        // this is the only moment we find out. Clear it out rather than
+        // retrying it every offer forever.
+        await admin.rpc('retire_push_device', { p_endpoint: device.endpoint });
+        problems.push(`${status} gone, retired`);
+      } else {
+        problems.push(`${status || 'error'}: ${(e as Error).message}`.slice(0, 120));
+      }
     }
   }
 
-  return new Response(JSON.stringify({ claimed: claimed.length, sent, failed }), {
-    headers: { 'Content-Type': 'application/json' },
-  })
-})
+  // One device reached is a notification delivered. Only a clean sweep of
+  // failures is a failure, or a customer with a dead old device would never be
+  // told anything.
+  if (delivered === 0) throw new Error(problems.join('; ') || 'no device accepted it');
+}
+
+Deno.serve(async () => {
+  // Rows whose hold has lapsed or whose seat has been taken are filtered out
+  // here rather than sent — see claim_pending_notifications().
+  const { data, error } = await admin.rpc('claim_pending_notifications', { p_limit: BATCH });
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  const claimed = (data ?? []) as Claimed[];
+  let sent = 0;
+  let failed = 0;
+
+  for (const n of claimed) {
+    try {
+      if (n.channel !== 'push') {
+        // WhatsApp is built in the database and switched off in
+        // notification_settings.channels. If it is ever switched back on, this
+        // is the branch to write — see docs/whatsapp-waitlist-template.md.
+        // Saying so beats retrying a row five times in silence.
+        throw new Error(`no sender for channel ${n.channel}`);
+      }
+      await pushToDevices(n);
+      await admin.rpc('mark_notification_sent', { p_id: n.id });
+      sent += 1;
+    } catch (e) {
+      await admin.rpc('mark_notification_failed', {
+        p_id: n.id,
+        p_error: e instanceof Error ? e.message : String(e),
+      });
+      failed += 1;
+    }
+  }
+
+  return Response.json({ claimed: claimed.length, sent, failed });
+});

@@ -16,8 +16,9 @@ supabase/
     0007_review_reply.sql        the only way a salon can answer a review
     0008_create_booking.sql      the only way a booking is made, priced and staffed
     0009_waitlist.sql            the queue, the holds, and claiming a freed seat
-    0010_notifications.sql       every offer queues a message; nothing sends one yet
-  functions/send-notifications/  the worker that would send them. NEVER RUN
+    0010_notifications.sql       every offer queues a message
+    0011_push_devices.sql        registered devices, and push instead of WhatsApp
+  functions/send-notifications/  the worker that sends them. NEVER RUN
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -372,7 +373,8 @@ order by proname;
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
 `salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in, and
 `create_booking` means 0008 is, and `join_waitlist` means 0009 is.
-`claim_pending_notifications` means 0010 is.
+`claim_pending_notifications` means 0010 is, and `register_push_device`
+means 0011 is.
 
 **0008 is the one migration that must not be skipped once the site is
 redeployed.** From that version the app books by calling `create_booking()`, so
@@ -389,19 +391,82 @@ select case
 end as migration_0006;
 ```
 
-## After 0010: what notifications do and do not do
+## Turning on notifications
 
-0010 makes every waitlist offer queue a message. **It does not send anything**, and
-nothing in Supabase will until three things are true:
+A freed seat is pushed to the customer's phone from Saloni itself. Three steps, and
+until all three are done the outbox fills and nothing leaves it.
 
-1. **The Meta template is approved.** `docs/whatsapp-waitlist-template.md` has the text
-   and the click-by-click. Approval takes days — submit it first.
-2. **Customers have phone numbers.** `profiles.phone` is filled in only when somebody
-   signs in by SMS, and phone sign-in has never been switched on. Until it is, almost
-   every profile has no number and nothing is queued for them at all. This is the step
-   most likely to be missed.
-3. **The worker is deployed** — `supabase/functions/send-notifications/`, holding the
-   provider's credentials as Supabase secrets, never in `.env`.
+### 1. Generate a VAPID key pair
+
+These are what a push service checks our messages against. One command, on your own
+machine:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+It prints a **Public Key** and a **Private Key**. Keep the terminal open.
+
+### 2. Give the private half to Supabase, and the public half to the app
+
+The private key must never be committed. In the Supabase dashboard, **Edge Functions →
+Secrets** (or `supabase secrets set`), add:
+
+| Name | Value |
+| --- | --- |
+| `VAPID_PUBLIC_KEY` | the public key from step 1 |
+| `VAPID_PRIVATE_KEY` | the private key from step 1 |
+| `VAPID_SUBJECT` | `mailto:` and your e-mail, e.g. `mailto:you@example.com` |
+
+Then put the **public** key — only the public one — into `.env`:
+
+```
+VITE_VAPID_PUBLIC_KEY=<the public key>
+```
+
+That one is safe to commit, exactly like the Supabase publishable key: it is inlined
+into the browser bundle by design. Until it is set, the app never asks anybody for
+permission and never promises to notify them.
+
+### 3. Deploy the worker
+
+```bash
+supabase functions deploy send-notifications
+```
+
+Then schedule it to run every minute or two. Holds last 15 minutes, so a worker that
+runs every ten wastes most of them.
+
+**It has never been run.** Watch the first real one: it returns
+`{"claimed":n,"sent":n,"failed":n}`, and anything that failed leaves its reason in
+`notifications.error`.
+
+### What customers have to do
+
+On **Android** and desktop, nothing — they are asked for permission the moment they join
+a waitlist, and that is the only time Saloni asks.
+
+On **iPhone**, Safari only allows notifications for a page added to the home screen. The
+waitlist sheet says so in both languages when it detects an iPhone in an ordinary tab.
+There is no way around that short of the native app.
+
+### To see what is waiting to go out
+
+```sql
+select channel, locale, template, created_at, send_after, attempts,
+       sent_at, failed_at, error
+from notifications
+order by created_at desc
+limit 50;
+```
+
+And which devices are registered:
+
+```sql
+select p.full_name, d.platform, d.label, d.created_at
+from push_subscriptions d join profiles p on p.id = d.profile_id
+order by d.created_at desc;
+```
 
 To see what is waiting to go out:
 

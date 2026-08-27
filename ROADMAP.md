@@ -69,24 +69,31 @@ added the queueing half of step 6 and all of step 7: every offer writes a row to
 `notifications` outbox, in the customer's language, with a claim link, honouring opt-outs
 and a rate cap, and holding rather than waking during quiet hours.
 
-**What is left is delivery.** Nothing drains the outbox. Three things are needed and none
-of them is code in this repository:
+**The channel is push, from Saloni itself** (migration 0011). It is free, instant, needs
+nobody's approval, and the notification opens the app it came from. Web Push to begin
+with — an installed page can be notified while closed — with native FCM/APNs registering
+in the same table through the same function once the Capacitor wrap exists, so only the
+worker's last hop changes. WhatsApp is switched off rather than deleted;
+`docs/whatsapp-waitlist-template.md` is parked with what turning it back on would take.
 
-1. **A Meta-approved template.** `docs/whatsapp-waitlist-template.md` is ready to submit
-   and approval is quoted in days. **This is the long pole — submit it before anything
-   else.**
-2. **A phone number to send to.** `profiles.phone` is only populated by SMS sign-in, and
-   phone OTP has never been switched on (`VITE_AUTH_PHONE_OTP`). Until it is, there is
-   nobody to message. Easy to miss and it blocks everything downstream.
-3. **A provider account and a running worker.**
-   `supabase/functions/send-notifications/` is written and has **never been run**.
+**What is left is switching it on.** Everything is built and nothing has been sent:
 
-Step 5 below — the one-tap deep link — is also still open. The token is queued in the
-payload and the template's button carries it, but the app reads no `claim` parameter yet,
-so the button opens Saloni rather than that seat. Two taps, not one.
+1. **A VAPID key pair**, the private half in Supabase secrets and the public half in
+   `.env`. Until it is set the app never asks permission and promises nobody anything.
+2. **The worker deployed and scheduled.**
+   `supabase/functions/send-notifications/` has **never been run**. Its message
+   composition is pure and tested in both languages, and web-push's API was verified
+   rather than recalled, but the claim-send-mark loop has only been reasoned about.
+3. **Somebody has to install it.** A push row is written only for a customer with a
+   registered device — the same shape as needing a phone number for WhatsApp. On iPhone,
+   Safari requires adding Saloni to the home screen first, which the waitlist sheet says
+   in both languages.
 
-Push remains for Phase 5 — it needs the Capacitor wrap and a device-token table, so 0010
-does not queue push at all rather than queue rows nothing could deliver.
+`supabase/README.md` § "Turning on notifications" is the click-by-click.
+
+Step 5 below — the one-tap deep link — is still open. The push carries a `?claim=<token>`
+URL and the app reads no such parameter, so tapping it opens Saloni rather than that seat.
+Two taps, not one, on a fifteen-minute hold.
 
 **How it should actually work:**
 
@@ -230,12 +237,12 @@ Two things worth knowing early:
   accountant.
 
 ### Phase 3 — Notifications
-Backlog item 3, partly built. The database side is done (migration 0010): offers queue
-messages, opt-outs and quiet hours are honoured, and only the sender role can drain the
-outbox. What remains is external — a WhatsApp Business API provider (Unifonic, Twilio,
-360dialog), the approved bilingual template in `docs/whatsapp-waitlist-template.md`, SMS
-sign-in switched on so customers have a number, and the worker deployed. FCM and APNs for
-push wait on the Capacitor wrap in Phase 5.
+Backlog item 3, built but never fired. Web Push carries it: offers queue, devices
+register, the worker composes and sends. What remains is a VAPID key pair, the worker
+deployed and scheduled, and the first real send watched. FCM and APNs are a Phase 5
+addition rather than a rewrite — a native device registers in `push_subscriptions`
+through the same function, and only the worker's last hop differs. A WhatsApp provider
+(Unifonic, Twilio, 360dialog) is now optional rather than the plan.
 
 ### Phase 3.5 — The security audit, and what it left open (now nothing)
 - ~~Column-level write privileges~~ — **built (migration 0006).** Row policies gate rows; only

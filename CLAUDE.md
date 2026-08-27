@@ -52,7 +52,8 @@ not an oversight.
 
 **Commands:** `npm run dev` · `npm run build` (runs `tsc -b` first, so a type error fails the
 deploy) · `npm run lint` · `./scripts/test-db.sh` · the browser checks in
-`scripts/browser-tests/` (see its README — Playwright is installed ad hoc, not a dependency)
+`scripts/browser-tests/` (see its README — Playwright is installed ad hoc, not a dependency) ·
+`node --experimental-strip-types scripts/test-notification-text.mjs`
 
 The hosted Postgres version is whatever Supabase provisioned for the project — check the
 dashboard rather than assuming. The local test harness runs against Postgres 16, and
@@ -71,7 +72,8 @@ scripts/
   pg-start.sh                 starts that Postgres, creating the cluster on the first run
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
-  browser-tests/              97 Chromium checks in both languages; see its README
+  browser-tests/              129 Chromium checks in both languages; see its README
+  test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
   theme.ts                    colour / type / placeholder-tile tokens
@@ -119,14 +121,16 @@ supabase/
   migrations/0008_create_booking.sql  create_booking() / reschedule_booking();
                                       the only way a booking comes into existence
   migrations/0009_waitlist.sql  the queue, the 15-minute holds, and claiming
-  migrations/0010_notifications.sql  every offer queues a message; nothing sends one yet.
+  migrations/0010_notifications.sql  every offer queues a message.
                                      Also closes a function-privilege hole — see §7
-  functions/send-notifications/  the worker that would drain the outbox. NEVER RUN
+  migrations/0011_push_devices.sql   registered devices; push replaces WhatsApp
+  functions/send-notifications/  the worker that drains the outbox. NEVER RUN
+                                 message.ts is pure and is tested
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   84 assertions
+  tests/01_policy_tests.sql   86 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -295,12 +299,13 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 ## 7. Database
 
-15 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
+16 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications,
-notification_settings, reviews` — plus a `salon_ratings` view and the functions in 0003–0010 —
+notification_settings, push_subscriptions, reviews` — plus a `salon_ratings` view and the
+functions in 0003–0011 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, and 0010's outbox set.
-30 RLS policies. 84 assertions.
+30 RLS policies. 86 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -398,7 +403,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-84 assertions, drops it. Each of 53–84 was checked against a database with its own protection
+86 assertions, drops it. Each of 53–86 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -436,7 +441,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
 | **Waitlist** | **Real.** Joining is stored, a cancellation offers the freed seat to whoever waited longest, and claiming makes a real booking. **Still not timely** — every offer now queues a WhatsApp message (0010), but nothing sends one, so an offer is still only seen when the app is next opened. |
-| **Notifications** | **Queued, never sent.** The outbox fills correctly — right person, right language, claim link, opt-outs honoured. There is no approved Meta template, no provider account and no worker running, so nothing leaves the database. See §10. |
+| **Notifications** | **Built end to end, never actually sent.** Push, not WhatsApp. The app is installable and registers the browser; every offer queues a message; the worker composes it and pushes it. It has never run against a real push service, and needs a VAPID key pair set first. See §10. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
@@ -536,28 +541,34 @@ deliberately:
 
 - **What is built.** Every offer queues a message in the `notifications` outbox — the customer's
   own language, the salon and services in both, a single-use claim link built from the
-  `claim_token` 0009 has been generating all along, opt-outs and missing phone numbers honoured, a
-  cap on how often one person is pinged, and quiet hours that stretch the hold rather than wake
-  anybody. Assertions 77–83.
-- **What is not.** Nothing sends. That needs three things this repo cannot produce: a Meta-approved
-  message template (`docs/whatsapp-waitlist-template.md` is the submission — **the long pole, days
-  of waiting, submit it first**), a WhatsApp provider account, and a running worker
-  (`supabase/functions/send-notifications/`, written and **never run**).
+  `claim_token` 0009 has been generating all along, opt-outs honoured, a cap on how often one
+  person is pinged, and quiet hours that stretch the hold rather than wake anybody. The app is
+  installable, registers the browser as a device, and asks permission at the one moment it makes
+  sense. The worker composes the words and pushes them. Assertions 77–86, 32 browser checks,
+  17 on the message text.
+- **The channel is push, not WhatsApp** (0011). Push is free, instant, needs nobody's approval and
+  opens the app it came from. WhatsApp is switched off rather than deleted —
+  `notification_settings.channels` decides, `docs/whatsapp-waitlist-template.md` is parked with
+  what turning it back on would take, and assertion 86 keeps that path honest.
+- **What is not done.** Nothing has actually been sent. The worker
+  (`supabase/functions/send-notifications/`) has **never been run** — the sandbox reaches no push
+  service. Its message composition is pure and tested, and web-push's API was verified rather than
+  recalled, but the claim-send-mark loop has only been reasoned about. It also needs a VAPID key
+  pair and `VITE_VAPID_PUBLIC_KEY` set; until then the app promises nobody anything and never
+  prompts. `supabase/README.md` § "Turning on notifications" is the three-step setup.
+- **iPhone needs installing first.** Safari only exposes push to a page added to the home screen,
+  so an iPhone in an ordinary tab is told exactly that, in both languages. There is no way round
+  it before the Capacitor wrap.
 - **The claim link is carried but not yet used.** The queued payload contains a
   `claim_url` with the offer's `claim_token`, and the WhatsApp template has the button —
   but the app reads no URL parameter, so tapping it opens Saloni rather than that seat.
   The seat is one further tap away on the Bookings screen, which already shows it. Closing
   this needs a lookup by token in the database and a parameter read on load; it is the
   smallest remaining piece of A3 and worth doing before anything actually sends.
-- **And nobody has a phone number.** `profiles.phone` is populated from `auth.users` only when
-  someone signs in by SMS, and phone OTP has never been switched on. So today the outbox stays
-  almost empty in production for a reason that has nothing to do with the outbox: there is nobody
-  to message. Turning on phone sign-in (`VITE_AUTH_PHONE_OTP`) is the prerequisite nobody notices
-  until they look.
-
-**Push is not queued at all**, on purpose. It needs a device-token table that does not exist
-because there is no native app yet, so a queued push row could never be delivered. An outbox that
-fills with undeliverable rows looks like progress and hides the gap.
+- **Nobody is queued for who has not installed it.** A push row is only written when the customer
+  has a registered device, exactly as a WhatsApp row needed a phone number. So the outbox stays
+  empty until people start adding Saloni to their home screens — which is a real adoption question,
+  not a bug, and the reason the native wrap still matters.
 
 Two older consequences still hold:
 - **Nothing advances on a timer.** There is no job runner, so a lapsed hold is swept whenever
@@ -593,26 +604,31 @@ Two older consequences still hold:
 
 ## 11. Suggested next steps
 
-1. **Finish notifications (A3).** Half done: the outbox fills, nothing drains it. In order —
-   **(a)** submit the Meta template, because the approval clock is the long pole
-   (`docs/whatsapp-waitlist-template.md`); **(b)** turn on phone sign-in so customers have a number
-   to be reached at, which is the real blocker and the easiest to miss; **(c)** open a WhatsApp
-   provider account and deploy `supabase/functions/send-notifications/`, verifying its send call
-   against the provider's own documentation — it has never been run. Push still needs the Capacitor
-   wrap. **This remains the recommended next task.**
-2. Photo upload with EXIF stripping (A2).
-3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+1. **Switch notifications on and watch the first send.** Everything is built; nothing has been
+   sent. Three steps in `supabase/README.md` § "Turning on notifications": generate a VAPID pair,
+   put the private half in Supabase secrets and the public half in `.env`, deploy the worker and
+   schedule it. Then join a waitlist, cancel a booking, and watch a real notification arrive —
+   that first run is the only thing that can confirm the claim-send-mark loop, which is the one
+   part of this that could not be tested here. **This is the recommended next task.**
+2. **The one-tap claim link.** The push carries a `?claim=<token>` URL and the app does not read
+   it, so tapping opens Saloni rather than that seat — two taps, not one, on a 15-minute hold.
+   Needs a lookup by token in the database and a parameter read on load.
+3. Photo upload with EXIF stripping (A2).
+4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-4. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5.
+5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
+   in the same table through the same function, so only the worker's last hop changes.
 
 ---
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (84 assertions);
-  UI changes with `scripts/browser-tests/` (97 checks, both languages). Do not report something as
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (86 assertions);
+  UI changes with `scripts/browser-tests/` (129 checks, both languages), and the words a
+  notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
+  (17 checks, both languages). Do not report something as
   working because the code looks right.
 - **A security assertion that cannot fail is worse than none.** Every assertion from 53 onward was
   run against a database with its own protection removed, and each fails there. Do the same for

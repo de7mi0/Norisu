@@ -1,12 +1,23 @@
 # The WhatsApp message that tells a customer a seat opened
 
-**Submit this now.** Meta reviews every message template before you may send it, and
-until this one is approved the waitlist cannot tell anybody anything. Approval is
-often quick but is quoted in days, and it costs nothing to have it sitting approved
-and unused. Everything else in this document can wait; the submission cannot.
+> **Parked — this is not the current plan.** A freed seat is now pushed to the
+> customer's phone from Saloni itself, which is free, instant, needs nobody's approval,
+> and opens the app it came from. `supabase/README.md` § "Turning on notifications" is
+> the route that is actually built.
+>
+> This document is kept because WhatsApp reaches somebody who never installs the app,
+> and because the work to switch it back on is one line rather than a rewrite:
+>
+> ```sql
+> update notification_settings set channels = '{push,whatsapp}';
+> ```
+>
+> The database side is still built and still under test (assertion 86). What is missing
+> is an approved template — the rest of this page — and a WhatsApp branch in
+> `supabase/functions/send-notifications/`, which currently records
+> "no sender for channel whatsapp" rather than pretending.
 
-The database already queues these messages — see `supabase/migrations/0010_notifications.sql`.
-What is missing is permission to send them and something to do the sending.
+Everything below applies if and when you want that second channel.
 
 ---
 
