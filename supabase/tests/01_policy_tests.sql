@@ -4053,7 +4053,7 @@ begin
       'extend_waitlist_offer', 'join_waitlist', 'leave_waitlist', 'my_waitlist',
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
-      'register_push_device', 'forget_push_device',
+      'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
       -- Trigger functions: a trigger fires without an execute check.
@@ -4193,6 +4193,128 @@ begin
   update notification_settings set channels = '{push}';
 
   raise notice 'PASS 86: WhatsApp still works when switched back on, and is off until it is';
+end
+$$;
+reset role;
+
+
+-- ---------------------------------------------------------------------------
+-- 87. The link in a notification claims that seat, for the person it was sent
+--     to and nobody else. A forwarded link is worth nothing, which is what
+--     makes it safe to put in a message that can be screenshotted.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  mine    uuid := 'a1111111-0000-0000-0000-00000000000a';
+  theirs  uuid := 'a2222222-0000-0000-0000-00000000000b';
+  day     date := current_date + 408;
+  at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  entry   uuid;
+  token   uuid;
+  got     record;
+  booked  integer;
+begin
+  perform auth.login_as(mine);
+  set local role authenticated;
+  select w.entry_id into entry from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  perform offer_next_for_slot(salon, at_time, at_time + interval '45 minutes');
+  select o.claim_token into token from waitlist_offers o where o.entry_id = entry;
+  if token is null then
+    raise exception 'FAIL 87: no offer was made, so there is no link to follow';
+  end if;
+
+  -- Somebody else holding the same link gets nowhere.
+  perform auth.login_as(theirs);
+  set local role authenticated;
+  begin
+    perform * from claim_offer_by_token(token);
+    raise exception 'FAIL 87a: a forwarded link claimed somebody else''s seat';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- And an invented token is refused the same way, so this cannot be used to
+  -- find out which tokens are real.
+  begin
+    perform * from claim_offer_by_token('11111111-2222-3333-4444-555555555555');
+    raise exception 'FAIL 87b: a made-up token was treated as a real one';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- The person it was sent to gets the seat, priced and referenced like any
+  -- other booking.
+  perform auth.login_as(mine);
+  set local role authenticated;
+  select * into got from claim_offer_by_token(token);
+  reset role;
+
+  if got.booking_id is null or got.reference is null then
+    raise exception 'FAIL 87c: the link did not produce a booking';
+  end if;
+
+  select count(*) into booked from bookings b
+   where b.id = got.booking_id and b.starts_at = at_time
+     and b.customer_id = mine and b.total_halalas > 0;
+  if booked <> 1 then
+    raise exception 'FAIL 87d: the claimed booking is not a real priced appointment';
+  end if;
+
+  raise notice 'PASS 87: the notification''s link claims that seat, and only for its owner';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 88. A link is good once. Tapping it twice — or tapping it after the seat has
+--     gone — books nothing a second time.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine  uuid := 'a1111111-0000-0000-0000-00000000000a';
+  token uuid;
+  before integer;
+  after_ integer;
+begin
+  select o.claim_token into token from waitlist_offers o
+   join waitlist_entries e on e.id = o.entry_id
+   where e.customer_id = mine and o.claimed_at is not null
+   order by o.offered_at desc limit 1;
+
+  if token is null then
+    raise exception 'FAIL 88: no claimed offer to try a second time';
+  end if;
+
+  select count(*) into before from bookings where customer_id = mine;
+
+  perform auth.login_as(mine);
+  set local role authenticated;
+  begin
+    perform * from claim_offer_by_token(token);
+    raise exception 'FAIL 88a: the same link claimed a second booking';
+  exception
+    when insufficient_privilege then
+      raise exception 'FAIL 88b: refused as not-yours rather than as already-taken';
+    when others then
+      if sqlstate <> 'SL012' then
+        raise exception 'FAIL 88c: refused with % rather than SL012', sqlstate;
+      end if;
+  end;
+  reset role;
+
+  select count(*) into after_ from bookings where customer_id = mine;
+  if before <> after_ then
+    raise exception 'FAIL 88d: % bookings before, % after re-using the link', before, after_;
+  end if;
+
+  raise notice 'PASS 88: a claim link is good once, and says so rather than booking twice';
 end
 $$;
 reset role;

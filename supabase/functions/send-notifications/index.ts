@@ -5,9 +5,11 @@
 // functions granted to service_role alone (0010, 0011), because draining the
 // outbox means reading who is waiting and how to reach them.
 //
-// HONESTY ABOUT WHAT IS TESTED. This file has never run: the sandbox it was
-// written in reaches neither supabase.co nor a push service. Two of its three
-// parts were checked properly and one was not:
+// HONESTY ABOUT WHAT IS TESTED. This is deployed and scheduled every minute,
+// and it runs green — but with no device registered it has only ever claimed an
+// empty queue. Nothing below sendNotification() has executed against a real
+// push service. Of its three parts, two were checked properly and one still
+// has not been:
 //
 //   * The words a customer reads are composed in ./message.ts, which is pure
 //     and is covered by scripts/test-notification-text.mjs — 17 checks in both
@@ -17,8 +19,9 @@
 //     rather than recalled: generateRequestDetails() on a real P-256
 //     subscription returns a POST with Content-Encoding aes128gcm and a
 //     `vapid t=` Authorization header, which is the protocol.
-//   * The loop below — claiming, sending, marking, retiring dead devices — is
-//     the part that has only been reasoned about. Watch the first real run.
+//   * Sending, marking sent, and retiring a dead endpoint have still never run.
+//     Claiming has, and returns cleanly on an empty queue. The first delivery to
+//     a real device is the outstanding evidence — watch that run.
 //
 // Deploy:   supabase functions deploy send-notifications
 // Schedule: every minute or two. Holds are 15 minutes, so anything slower

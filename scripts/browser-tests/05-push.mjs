@@ -27,7 +27,7 @@ function sess(id, email) {
   };
 }
 
-const db = { mine: [], rpc: [] };
+const db = { mine: [], rpc: [], claimFails: false };
 
 function slots() {
   const out = []; const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1);
@@ -71,6 +71,15 @@ async function install(page, session) {
         status: 'waiting', offer_id: null, offer_starts_at: null, offer_expires_at: null,
         claimable: false, service_names_en: ['Signature Haircut'], service_names_ar: ['قص شعر'] }];
       return ok(route, [{ entry_id: 'e1' }]);
+    }
+    if (url.includes('rpc/claim_offer_by_token')) {
+      db.rpc.push({ fn: 'claim_offer_by_token', body });
+      if (db.claimFails) {
+        return route.fulfill({ status: 400, contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' },
+          body: JSON.stringify({ code: 'SL012', message: 'that offer is no longer open' }) });
+      }
+      return ok(route, [{ booking_id: 'b1', reference: 'SL-7788' }]);
     }
     if (url.includes('rpc/my_waitlist')) return ok(route, db.mine);
     if (url.includes('rpc/available_slots')) return ok(route, slots());
@@ -134,6 +143,23 @@ async function stubPush(page, { permission = 'default', supported = true, ios = 
       }),
     });
   }, [permission, supported, ios, ENDPOINT]);
+}
+
+/**
+ * A toast lives for 1.7 seconds, so sleeping and then reading the page is a
+ * race that is lost about as often as it is won. Poll for it instead.
+ */
+async function sawToast(page, pattern, timeout = 9000) {
+  try {
+    await page.waitForFunction(
+      (src) => new RegExp(src).test(document.body.innerText),
+      pattern.source,
+      { timeout, polling: 100 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const results = [];
@@ -301,6 +327,64 @@ for (const arabic of [false, true]) {
         JSON.stringify(db.rpc.map((r) => r.fn)));
   check('a refusal still puts them on the list',
         db.rpc.some((r) => r.fn === 'join_waitlist'));
+  await page.close();
+}
+
+// -------------------------------------------------------------------------
+// Following the link in a notification lands on the seat, not the front door
+// -------------------------------------------------------------------------
+const TOKEN = '3f9a1c72-58d4-4a2e-9b61-0c7e5d2a8f14';
+
+for (const arabic of [false, true]) {
+  const L = arabic ? 'AR' : 'EN';
+  db.mine = []; db.rpc = []; db.claimFails = false;
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await install(page, sess(CUSTOMER, 'huda@example.com'));
+  await stubPush(page, { permission: 'granted' });
+
+  await page.goto(`${BASE}?claim=${TOKEN}${arabic ? '&lang=ar' : ''}`, { waitUntil: 'networkidle' });
+
+  // Caught while it is on screen rather than after it has faded.
+  const confirmed = await sawToast(page, /The seat is yours|تم حجز الموعد/);
+  check(`${L}: it confirms the seat is theirs`, confirmed);
+
+  const sent = db.rpc.find((r) => r.fn === 'claim_offer_by_token');
+  check(`${L}: the link claims through claim_offer_by_token()`, Boolean(sent));
+  check(`${L}: it sends the token from the URL`, sent?.body.p_token === TOKEN,
+        JSON.stringify(sent?.body));
+
+  // Landing on the chooser would be the old two-tap behaviour with extra steps.
+  const body = await page.locator('body').innerText();
+  check(`${L}: it lands in the app rather than on the chooser`,
+        !body.includes("I'm a customer") && !body.includes('أنا عميل'),
+        body.slice(0, 120).replace(/\n/g, ' '));
+  check(`${L}: and on the bookings screen, where the seat is`,
+        /My bookings|حجوزاتي/.test(body), body.slice(0, 120).replace(/\n/g, ' '));
+
+  // The token must not survive a reload, or tomorrow's refresh re-claims it.
+  const stillThere = await page.evaluate(() => window.location.search.includes('claim='));
+  check(`${L}: the token is stripped from the address bar`, stillThere === false);
+
+  const before = db.rpc.filter((r) => r.fn === 'claim_offer_by_token').length;
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  const after = db.rpc.filter((r) => r.fn === 'claim_offer_by_token').length;
+  check(`${L}: reloading does not claim a second time`, after === before, `${before} then ${after}`);
+
+  await page.close();
+}
+
+// A seat that has gone must say so, not fail silently.
+{
+  db.mine = []; db.rpc = []; db.claimFails = true;
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await install(page, sess(CUSTOMER, 'huda@example.com'));
+  await stubPush(page, { permission: 'granted' });
+  await page.goto(`${BASE}?claim=${TOKEN}`, { waitUntil: 'networkidle' });
+  const told = await sawToast(page, /no longer|gone|taken|Someone else/i);
+  check('a seat that has gone says so rather than failing silently', told);
+  check('and it still tried, rather than swallowing the link',
+        db.rpc.some((r) => r.fn === 'claim_offer_by_token'));
   await page.close();
 }
 

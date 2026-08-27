@@ -46,6 +46,7 @@ import {
 import { INITIAL_BOOKINGS, PAST_BOOKINGS } from '../data/reviews';
 import {
   claimOffer,
+  claimOfferByToken,
   extendOffer,
   joinWaitlist as joinWaitlistRow,
   leaveWaitlist as leaveWaitlistRow,
@@ -235,6 +236,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     void refreshBookings();
   }, [refreshBookings, userId]);
+
+  // ---------------------------------------------------------------------
+  // Arriving from a notification
+  // ---------------------------------------------------------------------
+
+  // The token from ?claim=, held until there is an account to claim it for.
+  const pendingClaim = useRef<string | null>(null);
+  const claimPrompted = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('claim');
+    if (!token || !/^[0-9a-f-]{36}$/i.test(token)) return;
+
+    pendingClaim.current = token;
+
+    // Strip it immediately. Otherwise a refresh — or the browser restoring the
+    // tab tomorrow — tries to claim a seat that was taken, or already theirs,
+    // and shows an error about something they did successfully yesterday.
+    params.delete('claim');
+    const rest = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`,
+    );
+  }, []);
 
   // The service worker is registered on every load, permission or not: it is
   // also what makes Saloni installable, and installing is the step an iPhone
@@ -1077,6 +1105,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [flash, isArabic, refreshBookings, refreshMyWaitlist, waitlistFailureText],
   );
+
+  /**
+   * The seat a notification was about, claimed from the token in its link.
+   *
+   * Same outcome as tapping "Take this seat" on the Bookings screen, which is
+   * the point: one tap from the notification instead of two, on a hold that
+   * only lasts fifteen minutes.
+   */
+  const claimByToken = useCallback(
+    async (token: string) => {
+      const result = await claimOfferByToken(token);
+      if ('error' in result) {
+        // Whatever went wrong, the Bookings screen is where the answer is: the
+        // seat is either still held, gone, or already theirs.
+        dispatch({ type: 'go', screen: 'bookings' });
+        flash(waitlistFailureText(result.error));
+        await refreshMyWaitlist();
+        return;
+      }
+      setLastReference(result.reference);
+      await Promise.all([refreshMyWaitlist(), refreshBookings()]);
+      dispatch({ type: 'go', screen: 'bookings' });
+      flash(isArabic ? 'تم حجز الموعد ✓' : 'The seat is yours ✓');
+    },
+    [flash, isArabic, refreshBookings, refreshMyWaitlist, waitlistFailureText],
+  );
+
+  useEffect(() => {
+    const token = pendingClaim.current;
+    if (!token || session.status === 'loading') return;
+
+    // A notification is a customer's, so a link should not land somebody on the
+    // chooser wondering which half of the app they are in.
+    if (state.mode === null) dispatch({ type: 'pickMode', mode: 'customer' });
+
+    if (!userId) {
+      // Keep the token: the sheet is in-app, so signing in lands back here with
+      // this effect running again and the seat still held.
+      if (!claimPrompted.current) {
+        claimPrompted.current = true;
+        dispatch({ type: 'openAuth', reason: 'booking' });
+      }
+      return;
+    }
+
+    pendingClaim.current = null;
+    void claimByToken(token);
+  }, [claimByToken, session.status, state.mode, userId]);
 
   const extendHold = useCallback(
     async (offerId: string) => {

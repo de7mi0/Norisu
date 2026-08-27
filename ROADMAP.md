@@ -76,24 +76,16 @@ in the same table through the same function once the Capacitor wrap exists, so o
 worker's last hop changes. WhatsApp is switched off rather than deleted;
 `docs/whatsapp-waitlist-template.md` is parked with what turning it back on would take.
 
-**What is left is switching it on.** Everything is built and nothing has been sent:
+**It is switched on.** VAPID keys are set, the worker is deployed, and pg_cron calls it
+every minute. Step 5 — the one-tap deep link — is built too (migration 0012): the push
+carries `?claim=<token>`, the app reads it on load and claims that seat, and ownership is
+still checked so a forwarded link is worthless.
 
-1. **A VAPID key pair**, the private half in Supabase secrets and the public half in
-   `.env`. Until it is set the app never asks permission and promises nobody anything.
-2. **The worker deployed and scheduled.**
-   `supabase/functions/send-notifications/` has **never been run**. Its message
-   composition is pure and tested in both languages, and web-push's API was verified
-   rather than recalled, but the claim-send-mark loop has only been reasoned about.
-3. **Somebody has to install it.** A push row is written only for a customer with a
-   registered device — the same shape as needing a phone number for WhatsApp. On iPhone,
-   Safari requires adding Saloni to the home screen first, which the waitlist sheet says
-   in both languages.
-
-`supabase/README.md` § "Turning on notifications" is the click-by-click.
-
-Step 5 below — the one-tap deep link — is still open. The push carries a `?claim=<token>`
-URL and the app reads no such parameter, so tapping it opens Saloni rather than that seat.
-Two taps, not one, on a fifteen-minute hold.
+**One thing is still unproven.** No push has been delivered to a real device, because
+nobody has registered one. The worker runs green on an empty queue, which exercises
+claiming and nothing else — sending, marking sent, and retiring a dead endpoint have never
+executed. Getting one notification onto one phone is the remaining work, and it is testing
+rather than building.
 
 **How it should actually work:**
 

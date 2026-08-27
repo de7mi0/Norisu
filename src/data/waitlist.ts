@@ -215,6 +215,24 @@ export async function claimOffer(
   return row?.reference ? { reference: row.reference } : { error: 'network' };
 }
 
+/**
+ * Takes the seat a notification was about, from the token in its link.
+ *
+ * The token names the offer; it does not authorise anything on its own, because
+ * `claim_offer_by_token()` still checks the offer belongs to whoever is signed
+ * in. A link forwarded to a friend claims nothing, which is what makes it safe
+ * to put in a message that can be screenshotted.
+ */
+export async function claimOfferByToken(
+  token: string,
+): Promise<{ reference: string } | { error: WaitlistFailure }> {
+  if (!supabase) return { error: 'notConfigured' };
+  const { data, error } = await supabase.rpc('claim_offer_by_token', { p_token: token });
+  if (error) return { error: waitlistFailure(error) };
+  const row = (data ?? [])[0] as { reference?: string } | undefined;
+  return row?.reference ? { reference: row.reference } : { error: 'network' };
+}
+
 /** The salon giving somebody longer. Refused when others are queued behind. */
 export async function extendOffer(offerId: string): Promise<WaitlistFailure | null> {
   if (!supabase) return 'notConfigured';

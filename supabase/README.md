@@ -18,7 +18,8 @@ supabase/
     0009_waitlist.sql            the queue, the holds, and claiming a freed seat
     0010_notifications.sql       every offer queues a message
     0011_push_devices.sql        registered devices, and push instead of WhatsApp
-  functions/send-notifications/  the worker that sends them. NEVER RUN
+    0012_claim_by_token.sql      the notification's link claims that seat
+  functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
 ```
@@ -373,8 +374,8 @@ order by proname;
 `available_slots` means 0003 is in. `salon_day`, `salon_stats` and
 `salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in, and
 `create_booking` means 0008 is, and `join_waitlist` means 0009 is.
-`claim_pending_notifications` means 0010 is, and `register_push_device`
-means 0011 is.
+`claim_pending_notifications` means 0010 is, `register_push_device`
+means 0011 is, and `claim_offer_by_token` means 0012 is.
 
 **0008 is the one migration that must not be skipped once the site is
 redeployed.** From that version the app books by calling `create_booking()`, so
@@ -529,7 +530,8 @@ key in repository secrets. More moving parts, and nothing here needs it.
 Every minute rather than every ten, because a hold lasts fifteen and a notification that
 arrives after the seat has gone is worse than none.
 
-**It has never been run.** Watch the first one: the function's **Logs** tab shows what it
+**It has never delivered anything.** It runs, and returns `{"claimed":0,...}` while no
+device is registered. Watch the first delivery: the function's **Logs** tab shows what it
 returned — `{"claimed":n,"sent":n,"failed":n}` — and anything that failed leaves its
 reason in `notifications.error`.
 
