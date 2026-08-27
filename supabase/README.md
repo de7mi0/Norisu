@@ -393,19 +393,37 @@ end as migration_0006;
 
 ## Turning on notifications
 
-A freed seat is pushed to the customer's phone from Saloni itself. Three steps, and
-until all three are done the outbox fills and nothing leaves it.
+A freed seat is pushed to the customer's phone from Saloni itself. Four steps, none of
+which needs a terminal, and until all four are done the outbox fills and nothing leaves
+it.
 
 ### 1. Generate a VAPID key pair
 
-These are what a push service checks our messages against. One command, on your own
-machine:
+These are what a push service checks our messages against. The private half must never
+leave your control, so generate them yourself rather than being sent a pair.
+
+**If you have a terminal**, one command:
 
 ```bash
 npx web-push generate-vapid-keys
 ```
 
-It prints a **Public Key** and a **Private Key**. Keep the terminal open.
+**If you do not**, your browser can do it, and nothing leaves the machine. Open Saloni
+(or any page), press **F12** for developer tools, click **Console**, paste this and press
+Enter:
+
+```js
+const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+const raw = await crypto.subtle.exportKey('raw', kp.publicKey);
+const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+const b64 = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+console.log('PUBLIC :', b64(raw));
+console.log('PRIVATE:', jwk.d);
+```
+
+Either way you get two strings: a **public** key of 87 characters and a **private** key
+of 43. Keep them in front of you for the next two steps. Checked rather than assumed —
+keys from that snippet were run through `web-push` and produce a valid signed request.
 
 ### 2. Give the private half to Supabase, and the public half to the app
 
@@ -433,28 +451,61 @@ supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=ma
 supabase secrets list
 ```
 
-Then put the **public** key — only the public one — into `.env`:
+**Then the public half goes into the app.** Open `.env` in this repository and put the
+public key — only the public one — after the `=`:
 
 ```
-VITE_VAPID_PUBLIC_KEY=<the public key>
+VITE_VAPID_PUBLIC_KEY=BOK7N--_HNJktgn3427W5NwRsU-...
 ```
 
-That one is safe to commit, exactly like the Supabase publishable key: it is inlined
-into the browser bundle by design. Until it is set, the app never asks anybody for
-permission and never promises to notify them.
+Commit and push that. It is safe to commit, exactly like the Supabase publishable key
+above it: Vite inlines it into the browser bundle at build time, so it is public no
+matter where it is kept. Pushing to the default branch redeploys the site, and until
+that deploy finishes the app still asks nobody for permission and promises nothing.
 
 ### 3. Deploy the worker
+
+**From the dashboard, with no tools installed.** `supabase/functions/send-notifications/`
+is three files, which is awkward to recreate by hand, so
+`scripts/build-function-bundle.sh` writes the whole worker as one file:
+`supabase/functions/send-notifications/bundled.ts`.
+
+1. Open **Edge Functions** in the left sidebar of your project.
+2. Click **Deploy a new function** → **Via Editor**.
+3. Name it exactly **`send-notifications`**.
+4. Select everything in the editor, delete it, and paste the entire contents of
+   `bundled.ts`.
+5. Click **Deploy function**. It takes 10–30 seconds.
+
+The dashboard editor keeps no version history, which is fine here: the repository is the
+history, and `bundled.ts` is regenerated from the originals rather than edited.
+
+**From the CLI, if you have it**, deploy the directory instead — `index.ts` and
+`message.ts` are the originals:
 
 ```bash
 supabase functions deploy send-notifications
 ```
 
-Then schedule it to run every minute or two. Holds last 15 minutes, so a worker that
-runs every ten wastes most of them.
+### 4. Run it every minute
 
-**It has never been run.** Watch the first real one: it returns
-`{"claimed":n,"sent":n,"failed":n}`, and anything that failed leaves its reason in
-`notifications.error`.
+The worker does nothing until something calls it. Supabase has a scheduler with a UI:
+
+1. Go to **Integrations → Cron** (or straight to
+   `https://supabase.com/dashboard/project/nicdmspejrvruszlwhvm/integrations/cron/jobs`).
+2. Click **Create job**.
+3. Name it `send-notifications`.
+4. Set the schedule to every minute — the form takes cron syntax (`* * * * *`) or plain
+   English.
+5. For the action, choose **Supabase Edge Function** and pick `send-notifications`.
+6. Save.
+
+Every minute rather than every ten, because a hold lasts fifteen and a notification that
+arrives after the seat has gone is worse than none.
+
+**It has never been run.** Watch the first one: the function's **Logs** tab shows what it
+returned — `{"claimed":n,"sent":n,"failed":n}` — and anything that failed leaves its
+reason in `notifications.error`.
 
 ### What customers have to do
 

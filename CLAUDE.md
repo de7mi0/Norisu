@@ -72,6 +72,7 @@ scripts/
   pg-start.sh                 starts that Postgres, creating the cluster on the first run
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
+  build-function-bundle.sh    inlines the worker into one pasteable file
   browser-tests/              129 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
@@ -125,7 +126,8 @@ supabase/
                                      Also closes a function-privilege hole — see §7
   migrations/0011_push_devices.sql   registered devices; push replaces WhatsApp
   functions/send-notifications/  the worker that drains the outbox. NEVER RUN
-                                 message.ts is pure and is tested
+                                 message.ts is pure and is tested;
+                                 bundled.ts is GENERATED, for the dashboard editor
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
