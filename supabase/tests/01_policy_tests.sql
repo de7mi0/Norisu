@@ -3621,12 +3621,28 @@ reset role;
 -- ---------------------------------------------------------------------------
 
 insert into auth.users (id, phone) values
-  ('a1111111-0000-0000-0000-00000000000a', '+966555000001'),  -- wants messages
-  ('a2222222-0000-0000-0000-00000000000b', '+966555000002'),  -- has opted out
-  ('a3333333-0000-0000-0000-00000000000c', null);             -- no number at all
+  ('a1111111-0000-0000-0000-00000000000a', '+966555000001'),  -- installed, wants notifying
+  ('a2222222-0000-0000-0000-00000000000b', '+966555000002'),  -- installed, then turned it off
+  ('a3333333-0000-0000-0000-00000000000c', '+966555000003');  -- willing, never installed
 
-update profiles set locale = 'ar'          where id = 'a1111111-0000-0000-0000-00000000000a';
-update profiles set allow_whatsapp = false where id = 'a2222222-0000-0000-0000-00000000000b';
+update profiles set locale = 'ar'      where id = 'a1111111-0000-0000-0000-00000000000a';
+update profiles set allow_push = false where id = 'a2222222-0000-0000-0000-00000000000b';
+
+-- Two of them have a browser registered. Through the function, as the app does.
+do $$
+begin
+  perform auth.login_as('a1111111-0000-0000-0000-00000000000a');
+  set local role authenticated;
+  perform register_push_device('https://push.example/aaa', 'key-a', 'auth-a', 'web', 'iPhone');
+  reset role;
+
+  perform auth.login_as('a2222222-0000-0000-0000-00000000000b');
+  set local role authenticated;
+  perform register_push_device('https://push.example/bbb', 'key-b', 'auth-b', 'web', 'Pixel');
+  reset role;
+end
+$$;
+reset role;
 
 -- ---------------------------------------------------------------------------
 -- 77. Making an offer queues a message the sender can act on: right channel,
@@ -3664,8 +3680,8 @@ begin
     raise exception 'FAIL 77: an offer was made and no message was queued';
   end if;
 
-  if n.channel <> 'whatsapp' or n.template <> 'waitlist_seat_offer' then
-    raise exception 'FAIL 77: queued as % / %, not a WhatsApp waitlist offer',
+  if n.channel <> 'push' or n.template <> 'waitlist_seat_offer' then
+    raise exception 'FAIL 77: queued as % / %, not a push waitlist offer',
       n.channel, n.template;
   end if;
 
@@ -3699,14 +3715,15 @@ begin
     raise exception 'FAIL 77: queued already marked as sent, with no sender running';
   end if;
 
-  raise notice 'PASS 77: an offer queues a real message, in the customer''s own language';
+  raise notice 'PASS 77: an offer queues a push to the customer''s own device, in their own language';
 end
 $$;
 reset role;
 
 -- ---------------------------------------------------------------------------
--- 78. Two people who must not be messaged: one who opted out, and one with no
---     number. Both still get the offer — they simply see it in the app.
+-- 78. Two people who must not be pushed to: one who turned notifications off,
+--     and one who never installed the app. Both still get the offer — they
+--     simply find it the next time they open Saloni.
 -- ---------------------------------------------------------------------------
 
 do $$
@@ -3714,7 +3731,7 @@ declare
   salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service  uuid := 'cccccccc-0000-0000-0000-000000000001';
   optedout uuid := 'a2222222-0000-0000-0000-00000000000b';
-  nophone  uuid := 'a3333333-0000-0000-0000-00000000000c';
+  nodevice uuid := 'a3333333-0000-0000-0000-00000000000c';
   day1     date := current_date + 402;
   day2     date := current_date + 403;
   t1 timestamptz := (day1 + time '15:00') at time zone 'Asia/Riyadh';
@@ -3729,7 +3746,7 @@ begin
   select w.entry_id into e1 from join_waitlist(salon, array[service]::uuid[], day1) w;
   reset role;
 
-  perform auth.login_as(nophone);
+  perform auth.login_as(nodevice);
   set local role authenticated;
   select w.entry_id into e2 from join_waitlist(salon, array[service]::uuid[], day2) w;
   reset role;
@@ -3744,12 +3761,12 @@ begin
   end if;
 
   select count(*) into queued from notifications
-   where profile_id in (optedout, nophone);
+   where profile_id in (optedout, nodevice);
   if queued <> 0 then
-    raise exception 'FAIL 78: % message(s) queued for people who cannot or will not be messaged', queued;
+    raise exception 'FAIL 78: % message(s) queued for people with nowhere to send them', queued;
   end if;
 
-  raise notice 'PASS 78: opting out, and having no number, both mean silence — not a lost seat';
+  raise notice 'PASS 78: turning it off, and never installing, both mean silence — not a lost seat';
 end
 $$;
 reset role;
@@ -4036,6 +4053,7 @@ begin
       'extend_waitlist_offer', 'join_waitlist', 'leave_waitlist', 'my_waitlist',
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
+      'register_push_device', 'forget_push_device',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
       -- Trigger functions: a trigger fires without an execute check.
@@ -4047,6 +4065,134 @@ begin
   end if;
 
   raise notice 'PASS 84: no internal function is reachable from the browser';
+end
+$$;
+reset role;
+
+
+-- ---------------------------------------------------------------------------
+-- 85. A device belongs to the person holding it. Endpoints are the address a
+--     push is delivered to, so registering one against somebody else's account
+--     would redirect their notifications onto your phone.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine   uuid := 'a1111111-0000-0000-0000-00000000000a';
+  theirs uuid := 'a2222222-0000-0000-0000-00000000000b';
+  seen   integer;
+  owner_ uuid;
+  gone   integer;
+begin
+  perform auth.login_as(mine);
+  set local role authenticated;
+
+  -- You see your own devices and nobody else's.
+  select count(*) into seen from push_subscriptions;
+  if seen <> 1 then
+    raise exception 'FAIL 85a: sees % devices, expected only its own', seen;
+  end if;
+
+  -- The table itself is not writable, so a row cannot be forged against
+  -- another profile.
+  begin
+    insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+    values (theirs, 'https://push.example/forged', 'k', 'a');
+    raise exception 'FAIL 85b: registered a device against another account';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update push_subscriptions set endpoint = 'https://push.example/hijacked';
+    raise exception 'FAIL 85c: re-pointed a device by writing the table';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Revoking somebody else's device is a no-op, not an error: an error would
+  -- say whether that endpoint exists.
+  select forget_push_device('https://push.example/bbb') into gone;
+  if gone <> 0 then
+    raise exception 'FAIL 85d: revoked another account''s device';
+  end if;
+  reset role;
+
+  select profile_id into owner_ from push_subscriptions
+   where endpoint = 'https://push.example/bbb';
+  if owner_ <> theirs then
+    raise exception 'FAIL 85e: another account''s device was taken away from them';
+  end if;
+
+  -- Re-registering an endpoint moves it, because it is the same browser and
+  -- whoever is signed in now is who should be notified on it.
+  perform auth.login_as(mine);
+  set local role authenticated;
+  perform register_push_device('https://push.example/bbb', 'key-b', 'auth-b', 'web', 'shared phone');
+  reset role;
+
+  select profile_id into owner_ from push_subscriptions
+   where endpoint = 'https://push.example/bbb';
+  if owner_ <> mine then
+    raise exception 'FAIL 85f: re-registering a shared browser did not move it';
+  end if;
+
+  -- Put it back, so later assertions see the fixture they expect.
+  update push_subscriptions set profile_id = theirs
+   where endpoint = 'https://push.example/bbb';
+
+  raise notice 'PASS 85: a device is its owner''s, and cannot be registered or moved by anyone else';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 86. WhatsApp is switched off, not removed. It stays under test so that
+--     turning it back on is one update rather than a rediscovery.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  who     uuid := 'a3333333-0000-0000-0000-00000000000c';  -- has a number, no device
+  day     date := current_date + 407;
+  at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
+  entry   uuid;
+  offer   uuid;
+  chans   integer;
+begin
+  -- Off by default, which is the point.
+  select count(*) into chans from notification_settings
+   where 'whatsapp' = any (channels);
+  if chans <> 0 then
+    raise exception 'FAIL 86: WhatsApp is switched on by default';
+  end if;
+
+  perform auth.login_as(who);
+  set local role authenticated;
+  select w.entry_id into entry from join_waitlist(salon, array[service]::uuid[], day) w;
+  reset role;
+
+  update notification_settings set channels = '{push,whatsapp}';
+  perform offer_next_for_slot(salon, at_time, at_time + interval '45 minutes');
+
+  select o.id into offer from waitlist_offers o where o.entry_id = entry;
+  if offer is null then
+    raise exception 'FAIL 86: no offer was made';
+  end if;
+
+  -- A number but no device: WhatsApp only.
+  if not exists (select 1 from notifications where offer_id = offer and channel = 'whatsapp') then
+    raise exception 'FAIL 86: WhatsApp switched on and still queued nothing';
+  end if;
+  if exists (select 1 from notifications where offer_id = offer and channel = 'push') then
+    raise exception 'FAIL 86: queued a push to somebody with no device';
+  end if;
+
+  update notification_settings set channels = '{push}';
+
+  raise notice 'PASS 86: WhatsApp still works when switched back on, and is off until it is';
 end
 $$;
 reset role;
