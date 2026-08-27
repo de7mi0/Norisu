@@ -27,8 +27,13 @@
 // Secrets (supabase secrets set NAME=value). None belong in .env, which is
 // committed and inlined into the browser bundle:
 //
-//   SUPABASE_URL                the project URL
-//   SUPABASE_SERVICE_ROLE_KEY   the sb_secret_ key. Bypasses every policy.
+//   SUPABASE_URL                the project URL — provided automatically
+//   SUPABASE_SERVICE_ROLE_KEY   the secret key. Bypasses every policy. Also
+//                               provided automatically, but Supabase now calls
+//                               this a "legacy" variable and plans to retire
+//                               it. If it ever comes back empty, set
+//                               SALONI_SERVICE_KEY yourself to the sb_secret_
+//                               value and this keeps working.
 //   VAPID_PUBLIC_KEY            the public half — the same value as the app's
 //                               VITE_VAPID_PUBLIC_KEY, or nothing will decrypt
 //   VAPID_PRIVATE_KEY           the private half. Never anywhere else.
@@ -59,11 +64,23 @@ interface Claimed {
   devices: Device[];
 }
 
-const admin = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  { auth: { persistSession: false } },
-);
+// SUPABASE_SERVICE_ROLE_KEY is injected by Supabase, but is now labelled a
+// legacy variable on its way out. Rather than guess at the shape of whatever
+// replaces it, fall back to a name we set ourselves — one secret to add on the
+// day it disappears, instead of a worker that stops sending and says 401.
+const serviceKey =
+  Deno.env.get('SALONI_SERVICE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+if (!serviceKey) {
+  throw new Error(
+    'No service key. Set SALONI_SERVICE_KEY in Edge Function secrets to the ' +
+      'project\'s sb_secret_ value.',
+  );
+}
+
+const admin = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey, {
+  auth: { persistSession: false },
+});
 
 webpush.setVapidDetails(
   Deno.env.get('VAPID_SUBJECT') ?? 'mailto:hello@example.com',

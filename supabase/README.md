@@ -409,14 +409,29 @@ It prints a **Public Key** and a **Private Key**. Keep the terminal open.
 
 ### 2. Give the private half to Supabase, and the public half to the app
 
-The private key must never be committed. In the Supabase dashboard, **Edge Functions →
-Secrets** (or `supabase secrets set`), add:
+The private key must never be committed. Go to the secrets page for your project —
+the sidebar only shows it once you are inside Edge Functions, so the direct link is
+easier:
+
+**https://supabase.com/dashboard/project/nicdmspejrvruszlwhvm/functions/secrets**
+
+Add each of these with **Add new secret**:
 
 | Name | Value |
 | --- | --- |
 | `VAPID_PUBLIC_KEY` | the public key from step 1 |
 | `VAPID_PRIVATE_KEY` | the private key from step 1 |
 | `VAPID_SUBJECT` | `mailto:` and your e-mail, e.g. `mailto:you@example.com` |
+
+`SUPABASE_URL` and the service key are injected automatically; you do not add those.
+Secrets take effect immediately — there is no need to redeploy after changing one.
+
+The same thing from the command line, if you prefer:
+
+```bash
+supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:you@example.com
+supabase secrets list
+```
 
 Then put the **public** key — only the public one — into `.env`:
 
