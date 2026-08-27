@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="theme-color" content="#1c1913" />
+
+    <!--
+      Installable, so a freed seat can reach the phone. iOS only exposes push
+      to a page added to the home screen, and only an installed page keeps a
+      service worker able to receive one while the app is closed.
+      Relative hrefs: the site is served from /Norisu/ on GitHub Pages and from
+      a domain root elsewhere, matching vite.config.ts's base: './'.
+    -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Saloni" />
     <meta name="description" content="Saloni — book the Kingdom's finest salons, or grow your own." />
     <title>Saloni · صالوني</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

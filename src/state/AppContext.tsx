@@ -57,6 +57,7 @@ import {
   type WaitlistFailure,
   type WaitlistRequest,
 } from '../data/waitlist';
+import { isPushConfigured, pushState, registerWorker, subscribe as subscribeToPush, syncExisting } from '../lib/push';
 import {
   loadSalonReviews,
   loadVendorDay,
@@ -234,6 +235,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     void refreshBookings();
   }, [refreshBookings, userId]);
+
+  // The service worker is registered on every load, permission or not: it is
+  // also what makes Saloni installable, and installing is the step an iPhone
+  // has to take before push is even offered. Registering does not ask for
+  // anything and shows nothing.
+  useEffect(() => {
+    void registerWorker();
+  }, []);
+
+  // A subscription made before signing in belongs to nobody, and push services
+  // rotate endpoints on their own schedule. Re-registering whenever an account
+  // appears is what keeps this browser attached to the right person;
+  // register_push_device() is idempotent, so it costs one request.
+  useEffect(() => {
+    if (!userId) return;
+    void syncExisting();
+  }, [userId]);
 
   const { upcomingBookings, pastBookings } = useMemo(() => {
     if (!persistBookings) {
@@ -1009,9 +1027,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       dispatch({ type: 'closeWaitlistSheet' });
       await refreshMyWaitlist();
+
+      // Permission is asked here and nowhere else. Joining a waitlist is the
+      // one moment being notified is obviously the point, so it is the moment
+      // most likely to be granted — and a refusal is close to permanent, since
+      // the browser stops asking and only site settings can undo it. Never on
+      // load.
+      if (isPushConfigured && pushState() === 'ask') {
+        const refused = await subscribeToPush();
+        flash(refused ? t.waitlistPushRefused : t.waitlistPushGranted);
+        return;
+      }
+
       flash(isArabic ? 'أضفناك لقائمة الانتظار ✓' : 'You’re on the waitlist ✓');
     },
-    [flash, isArabic, refreshMyWaitlist, waitlistFailureText],
+    [flash, isArabic, refreshMyWaitlist, t, waitlistFailureText],
   );
 
   const leaveWaitlist = useCallback(

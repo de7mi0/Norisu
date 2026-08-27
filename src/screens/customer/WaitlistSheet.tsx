@@ -1,6 +1,8 @@
 import { SheetModal } from '../../components/SheetModal';
+import { pushState } from '../../lib/push';
 import { dateAtOffset, useApp } from '../../state/context';
 import { color, font } from '../../theme';
+import type { Dictionary } from '../../i18n/en';
 
 /**
  * Joining the queue, from a taken time or from the fully-booked card.
@@ -63,9 +65,12 @@ export function WaitlistSheet() {
       </div>
 
       {/*
-        Said out loud rather than hidden: there is no push notification yet, so
-        a freed seat waits in the app instead of arriving on their phone.
-        Promising an alert we cannot send would be the worst version of this.
+        What we say here has to match what will actually happen, so it is driven
+        by the browser's own state rather than by hope. With no VAPID key
+        configured there is no sender, so it keeps the original wording and
+        promises nothing; on an iPhone in an ordinary tab it says the one thing
+        that would fix it. Promising an alert we cannot send would be the worst
+        version of this.
       */}
       <div
         style={{
@@ -74,7 +79,7 @@ export function WaitlistSheet() {
           marginBottom: 14,
         }}
       >
-        {t.waitlistNoPush}
+        {pushNote(t)}
       </div>
 
       <div style={{ font: `500 11px ${font.sans}`, color: color.mutedFaint, marginBottom: 14 }}>
@@ -84,6 +89,22 @@ export function WaitlistSheet() {
       </div>
     </SheetModal>
   );
+}
+
+/** The one line under the window note, matching what this browser can do. */
+function pushNote(t: Dictionary): string {
+  switch (pushState()) {
+    case 'on':
+      return t.waitlistPushOn;
+    case 'ask':
+      return t.waitlistPushAsk;
+    case 'denied':
+      return t.waitlistPushDenied;
+    case 'install':
+      return t.waitlistPushInstall;
+    default:
+      return t.waitlistNoPush;
+  }
 }
 
 /** "15:00" shifted by minutes, clamped to the day. */

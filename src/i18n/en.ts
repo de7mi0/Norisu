@@ -193,6 +193,14 @@ export const en = {
   waitlistWindowNote: 'We’ll only offer you a seat inside the window you choose.',
   waitlistJoinAction: 'Add me to the list',
   waitlistNoPush: 'We can’t message you yet — check back in the app and a freed seat will be waiting here.',
+  waitlistPushAsk: 'We’ll ask to send you a notification, so a freed seat reaches you straight away.',
+  waitlistPushOn: 'We’ll notify you the moment a seat opens.',
+  waitlistPushDenied:
+    'Notifications are turned off for Saloni, so a freed seat will be waiting in the app instead. You can turn them back on in your browser’s site settings.',
+  waitlistPushInstall:
+    'Add Saloni to your home screen to be notified the moment a seat opens. Until then a freed seat waits for you in the app.',
+  waitlistPushGranted: 'We’ll notify you ✓',
+  waitlistPushRefused: 'On the list ✓ — a freed seat will be waiting in the app.',
   waitlistMine: 'Waiting for a seat',
   waitlistLeave: 'Leave the list',
   waitlistHeld: 'Held for you',

@@ -39,6 +39,13 @@ const STATUS_TRANSLATIONS: Record<string, string> = {
 
 /** Translates a " · "-joined tag list, e.g. "Hair · Skin · Bridal". */
 export function translateTags(tags: string, lang: Lang): string {
+  // The guard is not defensive padding: without it a row missing its tags
+  // takes the whole app down in Arabic and is shrugged off in English, because
+  // the early return below never touches the value. Found by a browser check
+  // whose stub row omitted the column. salons.tags_en is `not null default ''`
+  // so real data cannot do this — but a renamed column or a narrowed select
+  // could, and a blank screen in one language only is the worst way to find out.
+  if (!tags) return '';
   if (lang !== 'ar') return tags;
   return tags
     .split(' · ')
