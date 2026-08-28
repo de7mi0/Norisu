@@ -445,7 +445,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
 | **Waitlist** | **Real.** Joining is stored, a cancellation offers the freed seat to whoever waited longest, and claiming makes a real booking. **Still not timely** — every offer now queues a WhatsApp message (0010), but nothing sends one, so an offer is still only seen when the app is next opened. |
-| **Notifications** | **Real, and delivered.** Push, not WhatsApp. A freed seat has reached a real Android phone: queued, composed in the customer's language, sent and marked sent. Two paths remain unexercised — retiring a dead endpoint, and iOS. See §10. |
+| **Notifications** | **Wired end to end; delivery still unproven.** Push, not WhatsApp. Offers queue, the worker is deployed and scheduled, and it now answers `200 {"claimed":0}` — which proves it is reachable, not that anything has been sent. No push has been confirmed on a device. See §10. |
 | **The claim link** | **Real.** `?claim=<token>` in the push claims that exact seat, checked for ownership so a forwarded link is worthless. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
@@ -555,11 +555,19 @@ deliberately:
   opens the app it came from. WhatsApp is switched off rather than deleted —
   `notification_settings.channels` decides, `docs/whatsapp-waitlist-template.md` is parked with
   what turning it back on would take, and assertion 86 keeps that path honest.
-- **It has delivered.** A freed seat reached a real Android phone: claimed from the outbox,
-  composed, sent through the push service and marked sent. That was the last untested code
-  in the feature and it is untested no longer. Two paths remain unexercised: retiring an
-  endpoint the push service reports as gone, which needs somebody to uninstall, and iOS,
-  which needs the page added to a home screen.
+- **Nothing has been delivered yet, and a claim to the contrary stood here for a while.**
+  It was written on a report that a notification had arrived. `net._http_response` later
+  showed the worker answering `401 UNAUTHORIZED_NO_AUTH_HEADER` once a minute for the whole
+  of that period: the cron job the dashboard created posted without a key, so the gateway
+  turned it away before the function ran. Whatever was seen on the phone, it did not come
+  through the push service. The lesson is the one §12 already states and this ignored —
+  a report of something working is not evidence of it working, and the server side was one
+  query away.
+- **Where it actually stands.** The 401 is fixed (see `supabase/README.md`), and the worker
+  now returns `200 {"claimed":0,"sent":0,"failed":0}` — which proves it is reachable and
+  that claiming an empty queue works. Sending, marking sent, and retiring a dead endpoint
+  have still never run. The evidence to look for is a row with `"sent":1`, and a
+  `notifications` row with `sent_at` filled.
 - **Messages are sent at high urgency**, and that is not a detail. web-push defaults to
   `normal`, which lets Android hold a message until the phone next leaves Doze — in practice
   until somebody unlocks it, which looks exactly like push "only working when the browser is
@@ -613,17 +621,22 @@ Two older consequences still hold:
 
 ## 11. Suggested next steps
 
-1. **Photographs (A2).** With notifications delivered, this is the largest thing still
+1. **Confirm one push actually lands.** The chain is built and the worker is finally
+   reachable, but nothing has been delivered. Book a slot at a one-chair salon, join the
+   waitlist for it, cancel the booking, then put the phone down for two minutes. The
+   evidence is `"sent":1` from the worker and `sent_at` filled on the row — not a
+   notification appearing while the app is open, which proves nothing.
+2. **Photographs (A2).** This is the largest thing still
    missing and the most visible: every salon, service and stylist is a coloured placeholder
    tile. Needs a storage bucket, size and dimension caps, and **EXIF stripping** — phone
    photos carry GPS coordinates, and publishing them raw would give away the exact location
    of the salon and of whoever took the picture. The upload button has no handler at all.
    **This is the recommended next task.**
-2. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-3. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
+4. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
    in the same table through the same function, so only the worker's last hop changes.
 
 ---
