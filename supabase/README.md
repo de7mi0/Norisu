@@ -584,6 +584,36 @@ On **iPhone**, Safari only allows notifications for a page added to the home scr
 waitlist sheet says so in both languages when it detects an iPhone in an ordinary tab.
 There is no way around that short of the native app.
 
+### If a notification only arrives while the browser is open
+
+That is not how push is meant to work — an installed service worker is woken by the push
+service whether or not any tab is open — so it means something is holding the message
+back. In order of likelihood:
+
+1. **Urgency.** The sender asks for `urgency: 'high'`, which tells the push service to
+   wake the device immediately. Without it the default is `normal`, and Android is free to
+   hold the message until the phone next leaves Doze — usually when somebody unlocks it,
+   which looks exactly like "it only works when I have the tab open". If you deployed the
+   worker before this was added, **redeploy it**.
+2. **Android battery optimisation.** Samsung, Xiaomi, Oppo and Huawei ship aggressive app
+   killers that stop Chrome being woken in the background. Settings → Apps → Chrome →
+   Battery → **Unrestricted**. This is the most common cause after urgency, and it is a
+   device setting rather than anything the app can fix.
+3. **Chrome swiped out of recents.** On some devices this stops it receiving anything until
+   next opened.
+4. **Data Saver or restricted background data** on Chrome.
+
+To tell a delivery problem from a sending problem, check whether the server thinks it sent:
+
+```sql
+select created_at, sent_at, failed_at, error
+from notifications order by created_at desc limit 5;
+```
+
+`sent_at` filled while your phone showed nothing means the push service accepted it and the
+device did not display it — that is items 2 to 4. `failed_at` with an error means the send
+itself failed, and the error says why.
+
 ### To see what is waiting to go out
 
 ```sql

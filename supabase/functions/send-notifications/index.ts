@@ -5,11 +5,11 @@
 // functions granted to service_role alone (0010, 0011), because draining the
 // outbox means reading who is waiting and how to reach them.
 //
-// HONESTY ABOUT WHAT IS TESTED. This is deployed and scheduled every minute,
-// and it runs green — but with no device registered it has only ever claimed an
-// empty queue. Nothing below sendNotification() has executed against a real
-// push service. Of its three parts, two were checked properly and one still
-// has not been:
+// HONESTY ABOUT WHAT IS TESTED. This has now delivered a real push to a real
+// Android phone: claiming, composing, sending and marking sent have all run
+// against a live push service. Two things still have not — retiring an endpoint
+// the service reports as gone, and any delivery to iOS. All three parts of the
+// file:
 //
 //   * The words a customer reads are composed in ./message.ts, which is pure
 //     and is covered by scripts/test-notification-text.mjs — 17 checks in both
@@ -19,9 +19,9 @@
 //     rather than recalled: generateRequestDetails() on a real P-256
 //     subscription returns a POST with Content-Encoding aes128gcm and a
 //     `vapid t=` Authorization header, which is the protocol.
-//   * Sending, marking sent, and retiring a dead endpoint have still never run.
-//     Claiming has, and returns cleanly on an empty queue. The first delivery to
-//     a real device is the outstanding evidence — watch that run.
+//   * Claiming, sending and marking sent have run for real. Retiring a dead
+//     endpoint has not: it needs a subscription the push service has forgotten,
+//     which only happens after somebody uninstalls or revokes permission.
 //
 // Deploy:   supabase functions deploy send-notifications
 // Schedule: every minute or two. Holds are 15 minutes, so anything slower
@@ -131,7 +131,19 @@ async function pushToDevices(n: Claimed): Promise<void> {
       await webpush.sendNotification(
         { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
         message,
-        { TTL: ttl },
+        {
+          TTL: ttl,
+          // web-push defaults this to "normal", which lets Android hold the
+          // message until the phone next leaves Doze — in practice, until
+          // somebody unlocks it. That is fine for a newsletter and useless for
+          // a seat held for fifteen minutes, and it is exactly what makes a
+          // push look like it "only works when the browser is open".
+          //
+          // "high" tells the push service to wake the device now. The Web Push
+          // spec reserves it for messages the user would want interrupting
+          // them for, which a seat about to be given away is.
+          urgency: 'high',
+        },
       );
       delivered += 1;
     } catch (e) {

@@ -48,6 +48,36 @@ values ('aaaaaaaa-0000-0000-0000-000000000001', 5, time '14:00', time '23:00');
 
 
 -- ---------------------------------------------------------------------------
+-- A day the salon is actually open at the times these assertions book.
+--
+-- The fixture above mirrors seed.sql, where Friday opens at 14:00 rather than
+-- 10:00. Most assertions below book a fixed clock time — 12:00, 15:00 — on a
+-- day expressed as an offset from today, which means they pass six days a week
+-- and fail on the seventh. Assertion 21 found this by failing on a Friday, five
+-- weeks after it was written.
+--
+-- Stepping over Friday keeps every offset stable and makes the suite give the
+-- same answer whichever day it is run. Assertion 25, which is specifically
+-- about Friday's late start, finds its own Friday and does not use this.
+-- ---------------------------------------------------------------------------
+
+-- The p_offset-th day from now that is not a Friday. Nudging a Friday forward
+-- by one is not enough: two adjacent offsets would then land on the same date,
+-- and these assertions rely on having a day each — one test's bookings would
+-- silently occupy another's slots. Counting non-Fridays keeps every offset
+-- distinct as well as open.
+create function test_day(p_offset integer) returns date
+language sql stable as $$
+  select d::date
+  from generate_series(current_date + 1,
+                       current_date + p_offset + (p_offset / 5) + 8,
+                       interval '1 day') d
+  where extract(dow from d) <> 5
+  offset greatest(p_offset, 1) - 1
+  limit 1;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 1. A staff member cannot be booked twice over the same period.
 --    This is the guarantee the UI cannot make.
 -- ---------------------------------------------------------------------------
@@ -503,7 +533,7 @@ declare
   net      integer;
   -- Far enough out that it cannot collide with the availability fixtures below,
   -- which all work a week ahead.
-  day      date := current_date + 200;
+  day      date := test_day(200);
   at_time  timestamptz := (day + time '14:30') at time zone 'Asia/Riyadh';
   made     record;
   readback record;
@@ -659,7 +689,7 @@ declare
   total_before integer;
   staff_before uuid;
   -- The day after the one assertion 17 booked, so nothing collides.
-  moved_to     timestamptz := ((current_date + 201) + time '16:00') at time zone 'Asia/Riyadh';
+  moved_to     timestamptz := ((test_day(201)) + time '16:00') at time zone 'Asia/Riyadh';
 begin
   perform set_config(
     'request.jwt.claims',
@@ -754,8 +784,8 @@ begin
   ) values (
     'SL-AFTERCANCEL', '22222222-2222-2222-2222-222222222222',
     'aaaaaaaa-0000-0000-0000-000000000001', 'dddddddd-0000-0000-0000-000000000001',
-    ((current_date + 201) + time '16:00') at time zone 'Asia/Riyadh',
-    ((current_date + 201) + time '16:45') at time zone 'Asia/Riyadh',
+    ((test_day(201)) + time '16:00') at time zone 'Asia/Riyadh',
+    ((test_day(201)) + time '16:45') at time zone 'Asia/Riyadh',
     'confirmed', 15000, 17250
   );
 
@@ -789,7 +819,7 @@ values ('dddddddd-0000-0000-0000-000000000002',
 
 do $$
 declare
-  day        date := current_date + 7;
+  day        date := test_day(7);
   layla      uuid := 'dddddddd-0000-0000-0000-000000000001';
   noura      uuid := 'dddddddd-0000-0000-0000-000000000002';
   salon      uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
@@ -834,7 +864,7 @@ $$;
 
 do $$
 declare
-  day   date := current_date + 7;
+  day   date := test_day(7);
   layla uuid := 'dddddddd-0000-0000-0000-000000000001';
   salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   free  boolean;
@@ -858,7 +888,7 @@ $$;
 
 do $$
 declare
-  day   date := current_date + 7;
+  day   date := test_day(7);
   layla uuid := 'dddddddd-0000-0000-0000-000000000001';
   salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   free  boolean;
@@ -881,7 +911,7 @@ $$;
 
 do $$
 declare
-  day   date := current_date + 7;
+  day   date := test_day(7);
   layla uuid := 'dddddddd-0000-0000-0000-000000000001';
   salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   free  boolean;
@@ -912,7 +942,7 @@ declare
   salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   noura    uuid := 'dddddddd-0000-0000-0000-000000000002';
   friday   date;
-  ordinary date := current_date + 7;
+  ordinary date := test_day(7);
   earliest time;
 begin
   -- The next Friday that is not today, so "already passed" cannot interfere.
@@ -947,7 +977,7 @@ do $$
 declare
   salon  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   noura  uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day    date := current_date + 7;
+  day    date := test_day(7);
   latest time;
 begin
   -- Four hours against a 23:00 close: nothing may start after 19:00.
@@ -971,7 +1001,7 @@ do $$
 declare
   salon  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   noura  uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day    date := current_date + 7;
+  day    date := test_day(7);
   half   bigint;
   hourly bigint;
 begin
@@ -1007,7 +1037,7 @@ declare
   salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   layla uuid := 'dddddddd-0000-0000-0000-000000000001';
   noura uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day   date := current_date + 7;
+  day   date := test_day(7);
   free  boolean;
   chairs integer;
 begin
@@ -1059,7 +1089,7 @@ do $$
 declare
   salon  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   noura  uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day    date := current_date + 7;
+  day    date := test_day(7);
   during boolean;
   after  boolean;
 begin
@@ -1101,7 +1131,7 @@ begin
   set local role anon;
 
   select count(*) into offered
-  from available_slots(salon, current_date + 7, 45, null);
+  from available_slots(salon, test_day(7), 45, null);
 
   if offered = 0 then
     raise exception 'FAIL 30a: an anonymous visitor was offered no times at all';
@@ -1209,8 +1239,8 @@ do $$
 declare
   salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   noura    uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day      date := current_date + 7;
-  dow      smallint := extract(dow from current_date + 7)::smallint;
+  day      date := test_day(7);
+  dow      smallint := extract(dow from test_day(7))::smallint;
   earliest time;
   offered  bigint;
 begin
@@ -1540,8 +1570,8 @@ begin
   ) values (
     gen_random_uuid(), 'SL-ARCHIVE1', '11111111-1111-1111-1111-111111111111',
     salon, null,
-    ((current_date + 9) + time '15:00') at time zone 'Asia/Riyadh',
-    ((current_date + 9) + time '15:20') at time zone 'Asia/Riyadh',
+    ((test_day(9)) + time '15:00') at time zone 'Asia/Riyadh',
+    ((test_day(9)) + time '15:20') at time zone 'Asia/Riyadh',
     'confirmed', 6000, 6900
   ) returning id into booking;
 
@@ -2755,7 +2785,7 @@ do $$
 declare
   salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service  uuid := 'cccccccc-0000-0000-0000-000000000001';
-  day      date := current_date + 210;
+  day      date := test_day(210);
   at_time  timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   taken    integer;
   who      uuid[];
@@ -2826,7 +2856,7 @@ declare
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   layla   uuid := 'dddddddd-0000-0000-0000-000000000001';
   noura   uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day     date := current_date + 211;
+  day     date := test_day(211);
   chosen  uuid;
 begin
   -- Layla already has one that morning; Noura has nothing.
@@ -2862,7 +2892,7 @@ declare
   salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service  uuid := 'cccccccc-0000-0000-0000-000000000001';
   layla    uuid := 'dddddddd-0000-0000-0000-000000000001';
-  day      date := current_date + 212;
+  day      date := test_day(212);
   at_time  timestamptz := (day + time '16:00') at time zone 'Asia/Riyadh';
   made     record;
   asked    boolean;
@@ -2916,8 +2946,8 @@ begin
     insert into bookings (reference, customer_id, salon_id, starts_at, ends_at,
                           subtotal_halalas, total_halalas)
     values ('SL-FREE', '11111111-1111-1111-1111-111111111111', salon,
-            (current_date + 213 + time '10:00') at time zone 'Asia/Riyadh',
-            (current_date + 213 + time '10:45') at time zone 'Asia/Riyadh',
+            (test_day(213) + time '10:00') at time zone 'Asia/Riyadh',
+            (test_day(213) + time '10:45') at time zone 'Asia/Riyadh',
             0, 0);
     raise exception 'FAIL 65a: a customer wrote their own booking, priced at zero';
   exception
@@ -2965,7 +2995,7 @@ begin
     perform create_booking(
       salon, null,
       array[service, '00000000-0000-0000-0000-000000000000']::uuid[],
-      (current_date + 214 + time '15:00') at time zone 'Asia/Riyadh', 'cash');
+      (test_day(214) + time '15:00') at time zone 'Asia/Riyadh', 'cash');
     raise exception 'FAIL 66a: a booking was made with a service that does not exist';
   exception
     when sqlstate 'SL001' then null;
@@ -2982,7 +3012,7 @@ begin
   set local role authenticated;
   begin
     perform create_booking(salon, null, array[service]::uuid[],
-      (current_date + 214 + time '16:00') at time zone 'Asia/Riyadh', 'cash');
+      (test_day(214) + time '16:00') at time zone 'Asia/Riyadh', 'cash');
     raise exception 'FAIL 66b: a hidden service was bookable';
   exception
     when sqlstate 'SL001' then null;
@@ -3021,7 +3051,7 @@ do $$
 declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
-  day     date := current_date + 215;
+  day     date := test_day(215);
 begin
   perform auth.login_as('11111111-1111-1111-1111-111111111111');
   set local role authenticated;
@@ -3070,7 +3100,7 @@ declare
   service  uuid := 'cccccccc-0000-0000-0000-000000000001';
   layla    uuid := 'dddddddd-0000-0000-0000-000000000001';
   noura    uuid := 'dddddddd-0000-0000-0000-000000000002';
-  day      date := current_date + 216;
+  day      date := test_day(216);
   target   timestamptz := (day + time '17:00') at time zone 'Asia/Riyadh';
   loose    record;
   firm     record;
@@ -3173,7 +3203,7 @@ do $$
 declare
   salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service  uuid := 'cccccccc-0000-0000-0000-000000000001';
-  day      date := current_date + 300;
+  day      date := test_day(300);
   at_time  timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   booking  uuid;
   first_e  uuid;
@@ -3403,7 +3433,7 @@ do $$
 declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
-  day     date := current_date + 301;
+  day     date := test_day(301);
   at_time timestamptz := (day + time '16:00') at time zone 'Asia/Riyadh';
   booking uuid;
   e1      uuid;
@@ -3491,7 +3521,7 @@ do $$
 declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
-  day     date := current_date + 302;
+  day     date := test_day(302);
   mine    uuid;
   theirs  uuid;
 begin
@@ -3502,7 +3532,7 @@ begin
   begin
     insert into waitlist_entries (customer_id, salon_id, service_id, requested_date, created_at)
     values ('11111111-1111-1111-1111-111111111111', salon, service,
-            current_date + 303, now() - interval '10 years');
+            test_day(303), now() - interval '10 years');
     raise exception 'FAIL 75a: a customer wrote themselves to the front of the queue';
   exception
     when insufficient_privilege then null;
@@ -3563,7 +3593,7 @@ do $$
 declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
-  day     date := current_date + 304;
+  day     date := test_day(304);
   at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   booking uuid;
   evening uuid;
@@ -3654,7 +3684,7 @@ declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   who     uuid := 'a1111111-0000-0000-0000-00000000000a';
-  day     date := current_date + 401;
+  day     date := test_day(401);
   at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   entry   uuid;
   offer   waitlist_offers%rowtype;
@@ -3732,8 +3762,8 @@ declare
   service  uuid := 'cccccccc-0000-0000-0000-000000000001';
   optedout uuid := 'a2222222-0000-0000-0000-00000000000b';
   nodevice uuid := 'a3333333-0000-0000-0000-00000000000c';
-  day1     date := current_date + 402;
-  day2     date := current_date + 403;
+  day1     date := test_day(402);
+  day2     date := test_day(403);
   t1 timestamptz := (day1 + time '15:00') at time zone 'Asia/Riyadh';
   t2 timestamptz := (day2 + time '15:00') at time zone 'Asia/Riyadh';
   e1 uuid;
@@ -3814,7 +3844,7 @@ declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   who     uuid := 'a1111111-0000-0000-0000-00000000000a';
-  day     date := current_date + 404;
+  day     date := test_day(404);
   entry   uuid;
   offer   uuid;
   queued  integer;
@@ -3854,7 +3884,7 @@ declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   who     uuid := 'a1111111-0000-0000-0000-00000000000a';
-  day     date := current_date + 405;
+  day     date := test_day(405);
   at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   entry   uuid;
   offered integer;
@@ -3907,7 +3937,7 @@ declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   who     uuid := 'a1111111-0000-0000-0000-00000000000a';
-  day     date := current_date + 406;
+  day     date := test_day(406);
   at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   local_now time := (now() at time zone 'Asia/Riyadh')::time;
   entry   uuid;
@@ -4156,7 +4186,7 @@ declare
   salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   who     uuid := 'a3333333-0000-0000-0000-00000000000c';  -- has a number, no device
-  day     date := current_date + 407;
+  day     date := test_day(407);
   at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   entry   uuid;
   offer   uuid;
@@ -4210,7 +4240,7 @@ declare
   service uuid := 'cccccccc-0000-0000-0000-000000000001';
   mine    uuid := 'a1111111-0000-0000-0000-00000000000a';
   theirs  uuid := 'a2222222-0000-0000-0000-00000000000b';
-  day     date := current_date + 408;
+  day     date := test_day(408);
   at_time timestamptz := (day + time '15:00') at time zone 'Asia/Riyadh';
   entry   uuid;
   token   uuid;

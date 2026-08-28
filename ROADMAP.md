@@ -81,11 +81,14 @@ every minute. Step 5 — the one-tap deep link — is built too (migration 0012)
 carries `?claim=<token>`, the app reads it on load and claims that seat, and ownership is
 still checked so a forwarded link is worthless.
 
-**One thing is still unproven.** No push has been delivered to a real device, because
-nobody has registered one. The worker runs green on an empty queue, which exercises
-claiming and nothing else — sending, marking sent, and retiring a dead endpoint have never
-executed. Getting one notification onto one phone is the remaining work, and it is testing
-rather than building.
+**It works.** A freed seat has reached a real Android phone — queued, composed in the
+customer's language, sent and marked sent. Two paths are still unexercised: retiring an
+endpoint the push service reports as gone, which needs somebody to uninstall, and iOS,
+which needs the page added to a home screen first.
+
+One lesson from that first real test, worth keeping: messages go out at **high urgency**.
+The default is `normal`, which lets Android hold a message until the phone leaves Doze,
+and a seat held for fifteen minutes cannot wait for somebody to unlock their screen.
 
 **How it should actually work:**
 

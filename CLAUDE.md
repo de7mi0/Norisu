@@ -445,7 +445,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Language preference** | **Real.** Stored on `profiles.locale`; follows the account, not the browser. |
 | **Bookings** | **Real.** Created, moved and cancelled against the database, prices snapshotted. Survive a refresh. Signing in is required to book. |
 | **Waitlist** | **Real.** Joining is stored, a cancellation offers the freed seat to whoever waited longest, and claiming makes a real booking. **Still not timely** — every offer now queues a WhatsApp message (0010), but nothing sends one, so an offer is still only seen when the app is next opened. |
-| **Notifications** | **Deployed and running; no push delivered yet.** Push, not WhatsApp. The app is installable and registers the browser, every offer queues a message, and the worker is live and scheduled every minute. It runs green — but with no device registered it has only ever claimed an empty queue, so delivery itself is unproven. See §10. |
+| **Notifications** | **Real, and delivered.** Push, not WhatsApp. A freed seat has reached a real Android phone: queued, composed in the customer's language, sent and marked sent. Two paths remain unexercised — retiring a dead endpoint, and iOS. See §10. |
 | **The claim link** | **Real.** `?claim=<token>` in the push claims that exact seat, checked for ownership so a forwarded link is worthless. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
@@ -555,12 +555,16 @@ deliberately:
   opens the app it came from. WhatsApp is switched off rather than deleted —
   `notification_settings.channels` decides, `docs/whatsapp-waitlist-template.md` is parked with
   what turning it back on would take, and assertion 86 keeps that path honest.
-- **Live, but delivery is still unconfirmed.** The VAPID pair is set, the worker is deployed
-  to Supabase and scheduled by pg_cron every minute, and it runs green. That proves the
-  claim-and-return path only: **no push has yet been delivered to a real device**, because
-  nobody has registered one. Sending, marking sent, and retiring a dead endpoint have still
-  never executed against a push service. The first real delivery is the outstanding
-  evidence — see §11.
+- **It has delivered.** A freed seat reached a real Android phone: claimed from the outbox,
+  composed, sent through the push service and marked sent. That was the last untested code
+  in the feature and it is untested no longer. Two paths remain unexercised: retiring an
+  endpoint the push service reports as gone, which needs somebody to uninstall, and iOS,
+  which needs the page added to a home screen.
+- **Messages are sent at high urgency**, and that is not a detail. web-push defaults to
+  `normal`, which lets Android hold a message until the phone next leaves Doze — in practice
+  until somebody unlocks it, which looks exactly like push "only working when the browser is
+  open". A seat held for fifteen minutes cannot afford that. Found by the owner testing on
+  his own phone, not by any test here.
 - **iPhone needs installing first.** Safari only exposes push to a page added to the home screen,
   so an iPhone in an ordinary tab is told exactly that, in both languages. There is no way round
   it before the Capacitor wrap.
@@ -609,19 +613,17 @@ Two older consequences still hold:
 
 ## 11. Suggested next steps
 
-1. **Get one real notification delivered.** Everything is switched on and the worker runs
-   green, but with no registered device it has only ever found an empty queue. On a phone:
-   open the live site, add it to the home screen (required on iPhone), join a waitlist so
-   the browser registers and permission is granted, then cancel a booking for that slot from
-   the vendor side. That single delivery is the only thing that can confirm sending, marking
-   sent, and retiring a dead endpoint — the last untested code in the feature.
-   **This is the recommended next task, and it is testing rather than building.**
-3. Photo upload with EXIF stripping (A2).
-4. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+1. **Photographs (A2).** With notifications delivered, this is the largest thing still
+   missing and the most visible: every salon, service and stylist is a coloured placeholder
+   tile. Needs a storage bucket, size and dimension caps, and **EXIF stripping** — phone
+   photos carry GPS coordinates, and publishing them raw would give away the exact location
+   of the salon and of whoever took the picture. The upload button has no handler at all.
+   **This is the recommended next task.**
+2. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
+3. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
    in the same table through the same function, so only the worker's last hop changes.
 
 ---

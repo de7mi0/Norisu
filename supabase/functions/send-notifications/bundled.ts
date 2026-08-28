@@ -245,7 +245,19 @@ async function pushToDevices(n: Claimed): Promise<void> {
       await webpush.sendNotification(
         { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
         message,
-        { TTL: ttl },
+        {
+          TTL: ttl,
+          // web-push defaults this to "normal", which lets Android hold the
+          // message until the phone next leaves Doze — in practice, until
+          // somebody unlocks it. That is fine for a newsletter and useless for
+          // a seat held for fifteen minutes, and it is exactly what makes a
+          // push look like it "only works when the browser is open".
+          //
+          // "high" tells the push service to wake the device now. The Web Push
+          // spec reserves it for messages the user would want interrupting
+          // them for, which a seat about to be given away is.
+          urgency: 'high',
+        },
       );
       delivered += 1;
     } catch (e) {
