@@ -523,6 +523,45 @@ The worker does nothing until something calls it. Supabase has a scheduler with 
 6. Choose **Supabase Edge Function** and pick `send-notifications`.
 7. Save.
 
+**Then check it is actually reaching the function**, because the dashboard's own
+Edge Function job type has produced a call with no key on it, and the failure is
+completely silent: `pg_cron` records "succeeded" every minute regardless, since `pg_net`
+posts asynchronously and never waits for the reply. The real answer lands here:
+
+```sql
+select created, status_code, left(coalesce(error_msg, content), 200) as reply
+from net._http_response order by created desc limit 5;
+```
+
+A `200` with `{"claimed":…}` is what you want. **`401 UNAUTHORIZED_NO_AUTH_HEADER`** means
+the request arrived without a key and the gateway turned it away before the function ran.
+A `NULL` status with "Timeout of 1000 ms reached" means the reply was discarded unread —
+`pg_net` defaults to a one-second timeout, which the worker can exceed while it is talking
+to a push service.
+
+Both are fixed by scheduling the job in SQL instead:
+
+```sql
+select cron.unschedule(jobid) from cron.job where command like '%send-notifications%';
+
+select cron.schedule('send-notifications', '* * * * *', $job$
+  select net.http_post(
+    url := 'https://nicdmspejrvruszlwhvm.supabase.co/functions/v1/send-notifications',
+    headers := jsonb_build_object(
+      'Content-Type',  'application/json',
+      'apikey',        'sb_publishable_eRn58Oq07-aEww1zsw5ztA_chwPRXY_',
+      'Authorization', 'Bearer sb_publishable_eRn58Oq07-aEww1zsw5ztA_chwPRXY_'
+    ),
+    body := jsonb_build_object('invoked_at', now()),
+    timeout_milliseconds := 10000
+  );
+$job$);
+```
+
+That is the **publishable** key — already public, already in the browser bundle, and only
+proving the request came from this project. The secret key stays in the function's own
+environment and never appears in a cron job, which is stored as plain text in the database.
+
 If you would rather not add the extension, the alternative is an external scheduler —
 a GitHub Actions workflow on a cron that POSTs to the function's URL with the service
 key in repository secrets. More moving parts, and nothing here needs it.
@@ -583,6 +622,24 @@ installed app is less likely to have its service worker evicted).
 On **iPhone**, Safari only allows notifications for a page added to the home screen. The
 waitlist sheet says so in both languages when it detects an iPhone in an ordinary tab.
 There is no way around that short of the native app.
+
+### If no notification arrives at all
+
+Work outwards from the database; each step rules out one place it can break.
+
+**Is the worker even being called?** `select created, status_code, left(coalesce(error_msg,
+content), 200) from net._http_response order by created desc limit 5;` — a `401` here means
+the cron job is being rejected before the function runs, and the section above fixes it.
+This one is worth checking first because every other symptom looks the same from the phone.
+
+**Did the worker find anything?** A `200` whose body says `{"claimed":0,...}` means it ran
+and the outbox was empty — so either no offer was made, or nobody has a device registered,
+or the seat was claimed in the app before the worker's next run. That last one is deliberate:
+a message about a seat you have already taken is worse than silence.
+
+**Did the send fail?** `sent_at`, `failed_at` and `error` on the `notifications` row say so
+directly. A `403` from the push service almost always means the `VAPID_PUBLIC_KEY` in Edge
+Function secrets does not match the `VITE_VAPID_PUBLIC_KEY` the browser subscribed with.
 
 ### If a notification only arrives while the browser is open
 
