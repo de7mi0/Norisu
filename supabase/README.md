@@ -535,10 +535,50 @@ device is registered. Watch the first delivery: the function's **Logs** tab show
 returned — `{"claimed":n,"sent":n,"failed":n}` — and anything that failed leaves its
 reason in `notifications.error`.
 
+### Testing the whole chain yourself
+
+The waitlist only appears when a time is **fully booked**, and a fresh database has no
+bookings at all — so every slot is free and there is no way in. That is correct behaviour
+and a trap when testing: nothing is broken, there is simply nothing to wait for.
+
+Three of the four demo salons have **one chair** — The Barber Atelier, Rose & Oud and
+Kingdom Cuts — so a single booking fills a slot. Maison Noir has three and would need
+three. Use a one-chair salon and the whole thing can be tested from one phone, on one
+account, without touching SQL:
+
+1. Open the app and sign in.
+2. Go to **Kingdom Cuts**, pick a service, choose **tomorrow**, and book a time — say
+   16:00.
+3. Go back into the same salon, service and day. That time now shows as taken.
+4. **Tap the taken time.** This is the waitlist entry point. Join the list — the app asks
+   permission to notify you at exactly this moment, so allow it.
+5. Open **Bookings** and cancel the appointment you made in step 2.
+
+Cancelling frees the chair, which offers it to the longest-waiting match — you — and
+queues a push. The cron job sends it within a minute.
+
+Yes, you are being offered a seat you freed yourself. That is fine: every step is the real
+one, and it saves needing a second person and a second account.
+
+To watch it happen from the database side:
+
+```sql
+-- The offer, and the message queued for it.
+select n.channel, n.locale, n.created_at, n.sent_at, n.failed_at, n.error,
+       n.payload ->> 'claim_url' as link
+from notifications n order by n.created_at desc limit 5;
+```
+
+`sent_at` filled in means the worker delivered it. `failed_at` with an `error` means it
+tried and could not — the reason is the useful part. Neither filled in means the worker
+has not picked it up yet; give it a minute.
+
 ### What customers have to do
 
 On **Android** and desktop, nothing — they are asked for permission the moment they join
-a waitlist, and that is the only time Saloni asks.
+a waitlist, and that is the only time Saloni asks. Chrome on Android delivers push to an
+ordinary tab, so adding it to the home screen is optional there (worth doing anyway: an
+installed app is less likely to have its service worker evicted).
 
 On **iPhone**, Safari only allows notifications for a page added to the home screen. The
 waitlist sheet says so in both languages when it detects an iPhone in an ordinary tab.
