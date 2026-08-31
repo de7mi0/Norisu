@@ -313,6 +313,29 @@ for (const arabic of [false, true]) {
   await page.close();
 }
 
+// The state a real phone got stuck in: permission granted in an earlier
+// attempt, no subscription ever saved, and every later join concluding there
+// was nothing to do. Six waitlist offers produced no notifications and no
+// error. Joining must register the device, not assume it already is.
+for (const arabic of [false, true]) {
+  const L = arabic ? 'AR' : 'EN';
+  db.mine = []; db.rpc = [];
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await install(page, sess(CUSTOMER, 'huda@example.com'));
+  // granted, but __subscribed is never set, so getSubscription() returns null.
+  await stubPush(page, { permission: 'granted' });
+  await toWaitlistSheet(page, arabic);
+  await page.getByRole('button', { name: arabic ? 'أضفني للقائمة' : 'Add me to the list' }).click();
+  await page.waitForTimeout(1200);
+
+  const reg = db.rpc.find((r) => r.fn === 'register_push_device');
+  check(`${L}: permission already granted but no device on file still registers one`,
+        Boolean(reg), JSON.stringify(db.rpc.map((r) => r.fn)));
+  check(`${L}: and it registers the real endpoint, not a placeholder`,
+        reg?.body.p_endpoint === ENDPOINT, JSON.stringify(reg?.body?.p_endpoint));
+  await page.close();
+}
+
 // A refusal must not promise anything, and must register nothing.
 {
   db.mine = []; db.rpc = [];

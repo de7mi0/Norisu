@@ -1061,9 +1061,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // most likely to be granted — and a refusal is close to permanent, since
       // the browser stops asking and only site settings can undo it. Never on
       // load.
-      if (isPushConfigured && pushState() === 'ask') {
-        const refused = await subscribeToPush();
-        flash(refused ? t.waitlistPushRefused : t.waitlistPushGranted);
+      // 'on' as well as 'ask'. Permission already granted does not mean a
+      // device is registered — a registration that failed once used to leave
+      // the browser stuck saying yes with nothing on file — so going through
+      // here on every join is what repairs it. It is one request when there is
+      // nothing to do, and no prompt: the browser only asks once.
+      const push = pushState();
+      if (isPushConfigured && (push === 'ask' || push === 'on')) {
+        const failure = await subscribeToPush();
+        flash(failure ? t.waitlistPushRefused : t.waitlistPushGranted);
         return;
       }
 

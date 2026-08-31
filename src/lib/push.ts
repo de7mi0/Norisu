@@ -138,7 +138,40 @@ async function saveSubscription(sub: PushSubscription): Promise<PushFailure | nu
 }
 
 /**
- * Asks permission and registers this browser to be notified.
+ * Get this browser's push subscription — creating one if it has none — and
+ * record it against the signed-in account.
+ *
+ * The "creating one if it has none" is the whole point, and its absence was a
+ * real bug: permission being granted does not mean a subscription exists.
+ * Granting permission and then failing to save the row — offline for a moment,
+ * signed out, the VAPID key not yet deployed — used to leave the browser
+ * permanently in a state where permission said yes and no device was ever
+ * registered, because every later attempt saw "granted" and concluded there
+ * was nothing to do. One customer, six waitlist offers, no notifications, and
+ * nothing anywhere reporting a problem.
+ */
+async function ensureSubscribed(
+  registration: ServiceWorkerRegistration,
+): Promise<PushFailure | null> {
+  const existing = await registration.pushManager.getSubscription();
+  const sub =
+    existing ??
+    (await registration.pushManager.subscribe({
+      // Required by every browser: we may only push something the customer
+      // actually sees. Silent background pushes are not on offer.
+      userVisibleOnly: true,
+      applicationServerKey: keyBytes(vapidPublicKey) as BufferSource,
+    }));
+  return saveSubscription(sub);
+}
+
+/**
+ * Asks permission if it has not been given, then makes sure this browser is
+ * registered to be notified.
+ *
+ * Safe to call when permission is already granted: `requestPermission()`
+ * resolves immediately in that case, and going through here anyway is what
+ * repairs a registration that failed the first time.
  *
  * Only ever call this from something the customer just did — joining the
  * waitlist — never on load. A permission prompt that arrives unprompted is the
@@ -163,36 +196,30 @@ export async function subscribe(): Promise<PushFailure | null> {
 
   try {
     await navigator.serviceWorker.ready;
-    const existing = await registration.pushManager.getSubscription();
-    const sub =
-      existing ??
-      (await registration.pushManager.subscribe({
-        // Required by every browser: we may only push something the customer
-        // actually sees. Silent background pushes are not on offer.
-        userVisibleOnly: true,
-        applicationServerKey: keyBytes(vapidPublicKey) as BufferSource,
-      }));
-    return await saveSubscription(sub);
+    return await ensureSubscribed(registration);
   } catch (e) {
     return { code: 'unknown', detail: e instanceof Error ? e.message : undefined };
   }
 }
 
 /**
- * Re-registers a subscription this browser already has.
+ * Makes sure an account that has already granted permission has a device on
+ * file, without ever prompting.
  *
- * Push services rotate endpoints, and a subscription made before the customer
- * signed in belongs to nobody. Calling this after sign-in is what attaches an
- * existing subscription to the right account; `register_push_device()` is
- * idempotent, so doing it on every load costs one request and nothing else.
+ * Runs when an account appears, because a subscription made before signing in
+ * belongs to nobody, push services rotate endpoints on their own schedule, and
+ * — the case that actually bit — a browser can hold permission without ever
+ * having completed a registration. `register_push_device()` is idempotent, so
+ * this costs one request.
  */
 export async function syncExisting(): Promise<void> {
   if (!isPushConfigured || !isPushSupported()) return;
   if (Notification.permission !== 'granted') return;
   try {
-    const registration = await navigator.serviceWorker.getRegistration();
-    const sub = await registration?.pushManager.getSubscription();
-    if (sub) await saveSubscription(sub);
+    const registration = (await navigator.serviceWorker.getRegistration()) ?? (await registerWorker());
+    if (!registration) return;
+    await navigator.serviceWorker.ready;
+    await ensureSubscribed(registration);
   } catch {
     // A browser that will not tell us is not worth an error on screen.
   }
