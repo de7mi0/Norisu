@@ -15,6 +15,11 @@ scrambled inside Arabic text.
 | `04-waitlist.mjs` | Joining from a taken slot, the offer banner, claiming, and the salon's queue |
 | `05-push.mjs` | Installability, the service worker, registering a device, and claiming a seat from a notification's link |
 
+`05-push.mjs` carries the only regression check in this directory written against a fault
+found in production rather than in review: a browser holding notification permission with
+no subscription ever saved, which left six waitlist offers producing nothing and no error
+anywhere. It was confirmed to fail against the code that had the bug before being trusted.
+
 ## Running them
 
 Playwright is **not** a dependency — it is installed ad hoc, because CI does not run

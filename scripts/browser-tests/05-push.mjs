@@ -317,6 +317,15 @@ for (const arabic of [false, true]) {
 // attempt, no subscription ever saved, and every later join concluding there
 // was nothing to do. Six waitlist offers produced no notifications and no
 // error. Joining must register the device, not assume it already is.
+//
+// Verified against the code that had the bug: with both halves of the fix
+// reverted — syncExisting() only saving a subscription that already exists,
+// and joining only subscribing when permission is still 'default' — these four
+// checks fail and the other 48 pass, with the RPC log showing join_waitlist
+// alone and no register_push_device. Reverting either half on its own is not
+// enough to fail them, because the other still registers the device; that
+// redundancy is deliberate on a path where one silent failure used to cost
+// every notification afterwards.
 for (const arabic of [false, true]) {
   const L = arabic ? 'AR' : 'EN';
   db.mine = []; db.rpc = [];
