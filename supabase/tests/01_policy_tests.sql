@@ -4349,4 +4349,124 @@ end
 $$;
 reset role;
 
+
+-- ---------------------------------------------------------------------------
+-- 89. A salon's photographs are its own. The path's first segment is the salon,
+--     so uploading into somebody else's folder is the attack this has to stop —
+--     a rival replacing a salon's cover photograph would be both trivial and
+--     humiliating.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';  -- owned by vendor A
+  theirs uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- owned by vendor B
+  seen   integer;
+begin
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');  -- vendor A
+  set local role authenticated;
+
+  -- Their own folder: allowed.
+  insert into storage.objects (bucket_id, name)
+  values ('salon-photos', mine || '/cover/one.jpg');
+
+  -- Somebody else's: refused.
+  begin
+    insert into storage.objects (bucket_id, name)
+    values ('salon-photos', theirs || '/cover/two.jpg');
+    raise exception 'FAIL 89a: uploaded into another salon''s folder';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- And a path that names no salon at all cannot be used to sidestep it.
+  begin
+    insert into storage.objects (bucket_id, name)
+    values ('salon-photos', 'cover/three.jpg');
+    raise exception 'FAIL 89b: uploaded outside any salon''s folder';
+  exception
+    when insufficient_privilege then null;
+    -- A single-segment path leaves foldername() empty, so the cast to uuid gets
+    -- null and the policy is simply false. Postgres may report either.
+    when others then
+      if sqlstate not in ('22P02', '42501') then
+        raise exception 'FAIL 89b: refused with % rather than a privilege error', sqlstate;
+      end if;
+  end;
+  reset role;
+
+  -- Vendor B may not take over the file vendor A just wrote, in either
+  -- direction: not by editing it, and not by moving it into their own folder.
+  perform auth.login_as('44444444-4444-4444-4444-444444444444');
+  set local role authenticated;
+
+  update storage.objects
+     set name = theirs || '/cover/stolen.jpg'
+   where name = mine || '/cover/one.jpg';
+  if found then
+    raise exception 'FAIL 89c: another salon moved a photograph into its own folder';
+  end if;
+
+  delete from storage.objects where name = mine || '/cover/one.jpg';
+  if found then
+    raise exception 'FAIL 89d: another salon deleted a photograph that was not theirs';
+  end if;
+  reset role;
+
+  select count(*) into seen from storage.objects
+   where name = mine || '/cover/one.jpg';
+  if seen <> 1 then
+    raise exception 'FAIL 89e: the photograph did not survive the attempts on it';
+  end if;
+
+  raise notice 'PASS 89: a salon writes photographs only into its own folder';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 90. Photographs are public to look at, because the catalogue renders for
+--     visitors who are not signed in — and the bucket says so out loud rather
+--     than relying on a flag nobody can see from here.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  visible integer;
+  bucket  record;
+begin
+  select public, file_size_limit, allowed_mime_types into bucket
+  from storage.buckets where id = 'salon-photos';
+
+  if bucket is null then
+    raise exception 'FAIL 90a: the bucket does not exist';
+  end if;
+  if not bucket.public then
+    raise exception 'FAIL 90b: the bucket is private, so the catalogue cannot show it';
+  end if;
+  if bucket.file_size_limit is null or bucket.file_size_limit > 5 * 1024 * 1024 then
+    raise exception 'FAIL 90c: no usable size limit (%), so a phone photo goes up raw',
+      bucket.file_size_limit;
+  end if;
+  if bucket.allowed_mime_types is null
+     or 'application/pdf' = any (bucket.allowed_mime_types)
+     or not ('image/jpeg' = any (bucket.allowed_mime_types)) then
+    raise exception 'FAIL 90d: the bucket accepts more than photographs: %',
+      bucket.allowed_mime_types;
+  end if;
+
+  -- A signed-out visitor can see the file the salon uploaded above.
+  set local role anon;
+  select count(*) into visible from storage.objects where bucket_id = 'salon-photos';
+  reset role;
+
+  if visible < 1 then
+    raise exception 'FAIL 90e: a visitor cannot see any photograph, so no salon has a picture';
+  end if;
+
+  raise notice 'PASS 90: photographs are public to read, capped in size, and images only';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;
