@@ -122,12 +122,12 @@ export function composeMessage(payload: OfferPayload, locale: Locale): PushMessa
 // functions granted to service_role alone (0010, 0011), because draining the
 // outbox means reading who is waiting and how to reach them.
 //
-// HONESTY ABOUT WHAT IS TESTED. This is deployed, scheduled, and reachable —
-// it answers 200 with {"claimed":0} on an empty queue. It has NOT yet delivered
-// anything: no push has been confirmed on a device. A note here once said
-// otherwise, on the strength of a report from a phone; the cron job was
-// answering 401 for that entire period and this function was never called.
-// Of its three parts:
+// HONESTY ABOUT WHAT IS TESTED. This has delivered a push to an Android phone:
+// claiming, composing, sending and marking sent have all run against a live
+// push service. A note here once claimed that prematurely, on a report alone,
+// while the cron job was answering 401 and this function was never being
+// called — so it is worth saying what makes the claim safe now: a registered
+// device exists, and the cron job gets a 200. Of its three parts:
 //
 //   * The words a customer reads are composed in ./message.ts, which is pure
 //     and is covered by scripts/test-notification-text.mjs — 17 checks in both
@@ -137,8 +137,9 @@ export function composeMessage(payload: OfferPayload, locale: Locale): PushMessa
 //     rather than recalled: generateRequestDetails() on a real P-256
 //     subscription returns a POST with Content-Encoding aes128gcm and a
 //     `vapid t=` Authorization header, which is the protocol.
-//   * Claiming has run for real, on an empty queue. Sending, marking sent, and
-//     retiring a dead endpoint have not run at all. Look for {"sent":1}.
+//   * Claiming, composing, sending and marking sent have run for real. Retiring
+//     a dead endpoint has not: it needs a subscription the push service has
+//     forgotten, which happens only after an uninstall or a revoked permission.
 //
 // Deploy:   supabase functions deploy send-notifications
 // Schedule: every minute or two. Holds are 15 minutes, so anything slower

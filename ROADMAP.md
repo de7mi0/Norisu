@@ -81,11 +81,15 @@ every minute. Step 5 — the one-tap deep link — is built too (migration 0012)
 carries `?claim=<token>`, the app reads it on load and claims that seat, and ownership is
 still checked so a forwarded link is worthless.
 
-**Not delivered yet.** The chain is built and the worker is finally reachable — it answers
-`200 {"claimed":0}` — but nothing has been sent to a device. For a while this said
-otherwise: the cron job the dashboard created was posting without a key, the gateway
-answered 401 every minute, and pg_cron reported success throughout because pg_net never
-waits for the reply. A green scheduler said nothing about a dead feature.
+**It works.** A freed seat has reached an Android phone through the push service. Getting
+there took three separate faults, none of which was visible from the phone and each of
+which looked exactly like the others: a cron job posting with no key (401 every minute,
+while pg_cron reported success, because pg_net never waits for the reply), pg_net's
+one-second default timeout discarding the answer, and a browser holding notification
+permission with no subscription ever saved and nothing that would ever create one.
+
+Two paths are still unexercised: retiring an endpoint the push service reports as gone,
+and iOS, which needs the page added to a home screen first.
 
 One lesson from that first real test, worth keeping: messages go out at **high urgency**.
 The default is `normal`, which lets Android hold a message until the phone leaves Doze,
