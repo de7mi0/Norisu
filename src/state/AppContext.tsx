@@ -60,6 +60,13 @@ import {
 } from '../data/waitlist';
 import { isPushConfigured, pushState, registerWorker, subscribe as subscribeToPush, syncExisting } from '../lib/push';
 import {
+  blockTime as blockTimeRow,
+  loadTimeOff,
+  unblockTime as unblockTimeRow,
+  type TimeBlock,
+  type TimeOffFailure,
+} from '../data/timeOff';
+import {
   loadSalonReviews,
   loadVendorDay,
   reassignAppointment,
@@ -547,6 +554,76 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!ownedSalonId || vendorDayOffset == null) return;
     setVendorDay(await loadVendorDay(ownedSalonId, dateAtOffset(vendorDayOffset)));
   }, [ownedSalonId, vendorDayOffset]);
+
+  // What the salon has taken off sale for the day being looked at. Remote
+  // state, so it lives here rather than in the reducer — the same split the
+  // catalogue, the session and the vendor day already follow.
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
+
+  const refreshTimeBlocks = useCallback(async () => {
+    if (!ownedSalonId || vendorDayOffset == null) {
+      setTimeBlocks([]);
+      return;
+    }
+    setTimeBlocks(await loadTimeOff(ownedSalonId, dateAtOffset(vendorDayOffset)));
+  }, [ownedSalonId, vendorDayOffset]);
+
+  useEffect(() => {
+    void refreshTimeBlocks();
+  }, [refreshTimeBlocks]);
+
+  const timeOffFailureText = useCallback(
+    (failure: TimeOffFailure): string =>
+      failure === 'invalidRange' ? t.blockBadRange
+      : failure === 'notOwner' ? t.blockNotOwner
+      : failure === 'notConfigured' ? t.blockNeedSalon
+      : t.blockFailed,
+    [t],
+  );
+
+  /** Takes a period off sale. The database stops offering it immediately. */
+  const blockTime = useCallback(
+    async (staffId: string | null, startsAt: Date, endsAt: Date, reason: string) => {
+      if (!ownedSalonId) {
+        flash(t.blockNeedSalon);
+        return;
+      }
+      dispatch({ type: 'setBlockSaving', saving: true });
+      const failure = await blockTimeRow({
+        salonId: ownedSalonId,
+        staffId,
+        startsAt,
+        endsAt,
+        reason,
+      });
+      dispatch({ type: 'setBlockSaving', saving: false });
+      if (failure) {
+        flash(timeOffFailureText(failure));
+        return;
+      }
+      dispatch({ type: 'closeBlockSheet' });
+      // The day is reloaded too: a block does not change appointments, but the
+      // figures it feeds — occupancy especially — are computed from the hours
+      // actually on sale.
+      await Promise.all([refreshTimeBlocks(), refreshVendorDay()]);
+      flash(t.blockSaved);
+    },
+    [flash, ownedSalonId, refreshTimeBlocks, refreshVendorDay, t, timeOffFailureText],
+  );
+
+  /** Puts it back on sale. */
+  const unblockTime = useCallback(
+    async (id: string) => {
+      const failure = await unblockTimeRow(id);
+      if (failure) {
+        flash(timeOffFailureText(failure));
+        return;
+      }
+      await Promise.all([refreshTimeBlocks(), refreshVendorDay()]);
+      flash(t.blockFreed);
+    },
+    [flash, refreshTimeBlocks, refreshVendorDay, t, timeOffFailureText],
+  );
 
   /**
    * Moves an appointment through the salon's lifecycle. Which moves are
@@ -1374,6 +1451,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       availability,
       owner,
       vendorDay,
+      timeBlocks,
+      blockTime,
+      unblockTime,
       vendorReviews,
       myWaitlist,
       salonWaitlist,
@@ -1439,6 +1519,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       availability,
       owner,
       vendorDay,
+      timeBlocks,
+      blockTime,
+      unblockTime,
       vendorReviews,
       myWaitlist,
       salonWaitlist,

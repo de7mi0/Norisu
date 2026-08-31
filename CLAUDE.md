@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              145 Chromium checks in both languages; see its README
+  browser-tests/              174 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -91,6 +91,7 @@ src/
     owner.ts                ★ the salon the signed-in user owns; hours + interval writes
     vendorBookings.ts       ★ the owner's own day, figures and reviews
     waitlist.ts             ★ the queue, both sides of it
+    timeOff.ts              ★ periods the salon has taken off sale
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -107,6 +108,7 @@ src/
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
   screens/customer/           12 screens
   screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
+                              BlockSheet.tsx (taking time off sale),
                               appointment.tsx (the row the dashboard and calendar share)
                               and status.ts (one status → label map for both)
   hooks/useDragScroll.ts      mouse-drag for horizontal rails
@@ -450,6 +452,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
+| **Blocking time out** | **Real.** From the calendar, an owner takes a period off sale — one stylist or the whole salon. `time_off` was already honoured by `available_slots()` and `create_booking()`, so a blocked hour vanishes from the customer's picker and cannot be booked even through the API. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
 | **Vendor dashboard figures** | **Real.** Today's bookings, the value booked, occupancy and the rating, from `salon_stats()`. "Booked today" is **not revenue** — nothing is paid. |
 | **Vendor day calendar** | **Real, and the owner can act on it.** Appointments for any day in the coming week from `salon_day()`, cancellations included. Tapping one offers confirm, start, complete, no-show, cancel and reassign. |
@@ -609,8 +612,13 @@ Two older consequences still hold:
   the dashboard figures, the day calendar, reviews and the waitlist are all the owner's own, and
   **no `SampleDataNotice` remains** — a visitor who owns no salon still sees the bundled demo, with
   the whole-portal notice explaining why.
-- **The "+ Add" pill on the calendar is still inert.** A walk-in booking needs a customer account
-  to belong to, which is a different problem from acting on one that exists.
+- **The calendar's "+ Add" is now "Block out time".** An owner takes a period off sale —
+  one stylist or the whole salon, with a reason only they see — and it disappears from the
+  customer's time picker immediately. The enforcement was already there: `time_off` has been
+  honoured by `available_slots()` since 0003 and `create_booking()` since 0008, so this is a
+  screen for a guarantee the database was already making. What it is *not* is a walk-in
+  booking, which still needs an answer to who a booking belongs to when the customer has no
+  account.
 - **The dashboard's today list is read-only** and links to the calendar instead. One place to act
   on an appointment is clearer than two.
 - **Occupancy is still capped at 100%**, though the cap should now be unreachable: every booking
@@ -643,7 +651,7 @@ Two older consequences still hold:
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (88 assertions);
-  UI changes with `scripts/browser-tests/` (145 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (174 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

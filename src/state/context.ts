@@ -5,6 +5,7 @@ import type {
   VendorDay,
   VendorReviews,
 } from '../data/vendorBookings';
+import type { TimeBlock } from '../data/timeOff';
 import type { MyWaitlist, SalonWaitlist, WaitlistRequest } from '../data/waitlist';
 import type {
   DayHours,
@@ -82,6 +83,12 @@ export interface AppContextValue {
    * viewer owns no salon, which is what keeps the portal browsable for demos.
    */
   vendorDay: VendorDay;
+  /** What the salon has taken off sale on the day being looked at. */
+  timeBlocks: TimeBlock[];
+  /** Marks a period unavailable. staffId null blocks the whole salon. */
+  blockTime: (staffId: string | null, startsAt: Date, endsAt: Date, reason: string) => Promise<void>;
+  /** Puts a blocked period back on sale. */
+  unblockTime: (id: string) => Promise<void>;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
   /**

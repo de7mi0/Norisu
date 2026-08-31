@@ -109,6 +109,19 @@ export interface AppState {
    * entries themselves are remote state and live in AppContext.
    */
   waitlistSheet: { time: string | null } | null;
+  /**
+   * The owner's "block this time out" sheet. Only the form lives here; the
+   * blocks themselves are remote state and live in AppContext, same split as
+   * the waitlist.
+   */
+  blockSheet: {
+    /** '' means the whole salon rather than one person. */
+    staffId: string;
+    from: string;
+    to: string;
+    reason: string;
+    saving: boolean;
+  } | null;
   /** Hides the offered-seat banner without giving the seat up. */
   seatBannerDismissed: boolean;
 
@@ -172,6 +185,7 @@ export const initialState: AppState = {
   botInput: '',
 
   waitlistSheet: null,
+  blockSheet: null,
   seatBannerDismissed: false,
 
   // Today. The strip used to be four fixed dates in July 2026, where 3 was the
@@ -250,6 +264,10 @@ export type Action =
   | { type: 'setStaffForm'; field: keyof StaffForm; value: string }
   | { type: 'saveStaff' }
   | { type: 'goOnboarding'; from: 'chooser' | 'v_more' }
+  | { type: 'openBlockSheet'; from: string; to: string }
+  | { type: 'setBlockField'; field: 'staffId' | 'from' | 'to' | 'reason'; value: string }
+  | { type: 'setBlockSaving'; saving: boolean }
+  | { type: 'closeBlockSheet' }
   | { type: 'openAuth'; reason?: 'booking' | 'vendor' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
@@ -413,6 +431,34 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'closeWaitlistSheet':
       return { ...state, waitlistSheet: null };
+
+    case 'openBlockSheet':
+      // Opens on the next hour, running an hour. The overwhelmingly common
+      // case is "I am running late, stop offering the rest of this morning",
+      // and a sheet that opens on something sensible is one less thing to set.
+      return {
+        ...state,
+        blockSheet: {
+          staffId: '',
+          from: action.from,
+          to: action.to,
+          reason: '',
+          saving: false,
+        },
+      };
+
+    case 'setBlockField':
+      return state.blockSheet
+        ? { ...state, blockSheet: { ...state.blockSheet, [action.field]: action.value } }
+        : state;
+
+    case 'setBlockSaving':
+      return state.blockSheet
+        ? { ...state, blockSheet: { ...state.blockSheet, saving: action.saving } }
+        : state;
+
+    case 'closeBlockSheet':
+      return { ...state, blockSheet: null };
 
     case 'dismissSeatBanner':
       return { ...state, seatBannerDismissed: true };

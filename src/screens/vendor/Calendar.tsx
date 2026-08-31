@@ -3,20 +3,38 @@ import { Screen } from '../../components/Screen';
 import { VENDOR_APPOINTMENTS } from '../../data/vendor';
 import type { SalonAppointment } from '../../data/vendorBookings';
 import { dayLabel, weekdayLabel } from '../../i18n';
+import { toRiyadhTime } from '../../data/availability';
+import type { TimeBlock } from '../../data/timeOff';
 import { useApp, dateAtOffset } from '../../state/context';
 import { bookingStatus, color, font } from '../../theme';
 import { AppointmentRow } from './appointment';
 import { AppointmentSheet } from './AppointmentSheet';
+import { BlockSheet } from './BlockSheet';
 
 /** A week from today. The strip used to be four dates in July 2026. */
 const DAY_COUNT = 7;
 
 /** Vendor day view: a week strip and that day's appointments. */
 export function Calendar() {
-  const { t, state, dispatch, isArabic, vendorDay } = useApp();
+  const { t, state, dispatch, isArabic, vendorDay, timeBlocks, unblockTime, owner } = useApp();
 
   const selected = dateAtOffset(state.vDay);
   const live = vendorDay.source === 'live';
+  const ownsSalon = owner.salon !== null;
+
+  // Opens on the next half hour, running an hour. "I am running late, take the
+  // rest of this hour off sale" is the reason this button exists, so it should
+  // already be most of the way filled in.
+  const openBlock = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setMinutes(now.getMinutes() > 30 ? 60 : 30, 0, 0);
+    const pad = (n: number) => `${n}`.padStart(2, '0');
+    const from = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const to = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+    dispatch({ type: 'openBlockSheet', from, to: to === '00:00' ? '23:30' : to });
+  };
 
   return (
     <>
@@ -30,18 +48,23 @@ export function Calendar() {
         }}
       >
         <h1 style={{ font: `600 26px ${font.serif}`, margin: 0 }}>{t.bookingsTitle}</h1>
-        <div
+        <button
+          type="button"
+          className="press"
+          onClick={openBlock}
+          disabled={!ownsSalon}
           style={{
             font: `600 11px ${font.sans}`,
-            color: color.goldLink,
+            color: ownsSalon ? color.goldLink : color.disabled,
             background: color.cream,
             border: `1px solid ${color.creamLine}`,
             padding: '6px 12px',
             borderRadius: 20,
+            cursor: ownsSalon ? 'pointer' : 'default',
           }}
         >
-          {t.add}
-        </div>
+          {t.blockTitle}
+        </button>
       </div>
 
       <div
@@ -90,6 +113,25 @@ export function Calendar() {
       <div style={{ padding: '20px 24px 0', font: `600 14px ${font.sans}`, color: color.ink }}>
         {dayLabel(selected, state.lang)}
       </div>
+
+      {timeBlocks.length > 0 ? (
+        <div
+          style={{
+            padding: '12px 24px 0',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          {timeBlocks.map((block) => (
+            <BlockedRow
+              key={block.id}
+              block={block}
+              onFree={() => void unblockTime(block.id)}
+            />
+          ))}
+        </div>
+      ) : null}
 
       <div style={{ padding: '12px 24px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {live ? (
@@ -142,7 +184,66 @@ export function Calendar() {
     </Screen>
 
       <AppointmentSheet />
+      <BlockSheet />
     </>
+  );
+}
+
+/** One period taken off sale, with the way to put it back. */
+function BlockedRow({ block, onFree }: { block: TimeBlock; onFree: () => void }) {
+  const { t, isArabic, owner } = useApp();
+
+  const member = (owner.salon?.staff ?? []).find((s) => s.id === block.staffId);
+  const who = block.staffId
+    ? (isArabic ? member?.nameAr : member?.name) ?? t.blockedLabel
+    : t.blockedAll;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: color.surfaceSand,
+        // Hatched rather than coloured: this is the absence of a booking, and
+        // it should not read as one more appointment in a different colour.
+        border: `1px dashed ${color.lineDashed}`,
+        borderRadius: 12,
+        padding: '11px 13px',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Times only: the day is already the heading above this list. The
+            ltr-run wrapper is what stops "10:00 – 11:00" reordering inside an
+            Arabic layout. */}
+        <div style={{ font: `600 12.5px ${font.sans}`, color: color.inkSoft }}>
+          <span className="ltr-run">
+            {toRiyadhTime(block.startsAt)} – {toRiyadhTime(block.endsAt)}
+          </span>
+        </div>
+        <div style={{ font: `500 11px ${font.sans}`, color: color.muted, marginTop: 3 }}>
+          {who}
+          {block.reason ? ` · ${block.reason}` : ''}
+        </div>
+      </div>
+      <button
+        type="button"
+        className="press"
+        onClick={onFree}
+        style={{
+          flex: 'none',
+          font: `600 10.5px ${font.sans}`,
+          color: color.goldLink,
+          background: color.surface,
+          border: `1px solid ${color.lineWarm}`,
+          borderRadius: 14,
+          padding: '6px 10px',
+          cursor: 'pointer',
+        }}
+      >
+        {t.blockRemove}
+      </button>
+    </div>
   );
 }
 

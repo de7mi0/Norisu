@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen, ScreenHeader } from '../../components/Screen';
+import { TimeSelect } from '../../components/TimeSelect';
 import { weekdayLabel } from '../../i18n';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
@@ -20,11 +21,6 @@ import type { DayHours } from '../../data/owner';
 const STEPS = [10, 15, 20, 30, 60];
 
 /** Every half hour of the day, which is as fine as opening times need to be. */
-const TIMES = Array.from({ length: 48 }, (_, i) => {
-  const hour = `${Math.floor(i / 2)}`.padStart(2, '0');
-  return `${hour}:${i % 2 ? '30' : '00'}`;
-});
-
 /** A date that falls on the given weekday, purely to get its localised name. */
 function dateForWeekday(dayOfWeek: number): Date {
   const date = new Date();
@@ -222,48 +218,3 @@ export function Hours() {
   );
 }
 
-interface TimeSelectProps {
-  label: string;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-}
-
-/** A plain select, so the phone's own time wheel is used on a real device. */
-function TimeSelect({ label, value, disabled, onChange }: TimeSelectProps) {
-  return (
-    <label style={{ flex: 1 }}>
-      <span
-        style={{
-          display: 'block',
-          font: `500 10px ${font.sans}`,
-          color: color.mutedFaint,
-          marginBottom: 3,
-        }}
-      >
-        {label}
-      </span>
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        style={{
-          width: '100%',
-          padding: '8px 9px',
-          borderRadius: 10,
-          border: `1.5px solid ${color.lineWarm}`,
-          background: color.surfaceWarm,
-          font: `600 12.5px ${font.sans}`,
-          color: color.ink,
-          direction: 'ltr',
-        }}
-      >
-        {TIMES.map((time) => (
-          <option key={time} value={time}>
-            {time}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}

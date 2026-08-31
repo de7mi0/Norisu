@@ -164,8 +164,13 @@ for (const arabic of [false, true]) {
         body.includes(arabic ? 'الانضمام لقائمة الانتظار' : 'Join the waitlist'));
   check(`${L}: the sheet suggests a window around that time`, body.includes('14:00–17:00'),
         body.slice(0, 240));
-  check(`${L}: it says no message can be sent yet`,
-        body.includes(arabic ? 'لا يمكننا مراسلتك بعد' : 'can’t message you yet'));
+  // What this line says follows the browser's own state — see 05-push.mjs for
+  // the full matrix. With a VAPID key built in and permission not yet asked,
+  // the true thing to say is that we will ask. It said "we cannot message you
+  // yet" until the key was configured, and that is no longer true.
+  check(`${L}: it says what will actually happen about notifying them`,
+        body.includes(arabic ? 'سنطلب إذنك بإرسال إشعار' : 'ask to send you a notification'),
+        body.slice(0, 240).replace(/\n/g, ' '));
   if (!arabic) await page.screenshot({ path: 'shots/waitlist-sheet.png' });
 
   await page.getByRole('button', { name: arabic ? 'أضفني للقائمة' : 'Add me to the list' }).click();
