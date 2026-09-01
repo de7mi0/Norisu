@@ -66,6 +66,8 @@ export interface AppContextValue {
   /** Services and staff offered by the salon currently being viewed. */
   salonServices: Service[];
   salonStaff: StaffMember[];
+  /** That salon's photographs, cover first. Empty for a salon with none. */
+  salonPhotos: SalonPhoto[];
 
   salon: Salon;
   selectedServices: Service[];

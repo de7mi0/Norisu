@@ -1,4 +1,5 @@
 import { Composer, MessageList } from '../../components/Conversation';
+import { Photo } from '../../components/Photo';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -45,15 +46,10 @@ export function Chat() {
         >
           {backIcon}
         </button>
-        <div
-          aria-hidden="true"
-          style={{
-            width: 40,
-            height: 40,
-            flex: 'none',
-            borderRadius: '50%',
-            background: salon.tile,
-          }}
+        <Photo
+          src={salon.photo}
+          tile={salon.tile}
+          style={{ width: 40, height: 40, flex: 'none', borderRadius: '50%' }}
         />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ font: `600 15px ${font.serif}` }}>{isArabic ? salon.ar : salon.name}</div>

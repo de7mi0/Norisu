@@ -1,3 +1,4 @@
+import { Photo } from '../../components/Photo';
 import { Screen } from '../../components/Screen';
 import { dayLabel, translateStatus } from '../../i18n';
 import { useApp } from '../../state/context';
@@ -26,6 +27,12 @@ export function Bookings() {
 
   const showingUpcoming = state.bookTab === 'upcoming';
   const list = showingUpcoming ? upcomingBookings : pastBookings;
+
+  // A booking carries the salon's name, not its picture — the snapshot is of
+  // what was bought, and a photograph is not part of that. So the catalogue is
+  // asked, and a salon that has since been unpublished simply has no entry and
+  // keeps the tile the booking was given.
+  const photoFor = (salonId: string | undefined) => salons.find((item) => item.id === salonId)?.photo;
 
   const tabStyle = (active: boolean) => ({
     padding: '8px 16px',
@@ -230,15 +237,10 @@ export function Bookings() {
             }}
           >
             <div style={{ display: 'flex', gap: 13, padding: 14 }}>
-              <div
-                aria-hidden="true"
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 14,
-                  background: booking.tile,
-                  flex: 'none',
-                }}
+              <Photo
+                src={photoFor(booking.salonId)}
+                tile={booking.tile}
+                style={{ width: 60, height: 60, borderRadius: 14, flex: 'none' }}
               />
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>

@@ -1,3 +1,4 @@
+import { Photo } from '../../components/Photo';
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
 import { PAY_METHODS } from '../../data/payments';
 import { priceNow } from '../../data/services';
@@ -59,9 +60,10 @@ export function Payment() {
               borderBottom: '1px dashed #e2dccb',
             }}
           >
-            <div
-              aria-hidden="true"
-              style={{ width: 48, height: 48, borderRadius: 12, background: salon.tile }}
+            <Photo
+              src={salon.photo}
+              tile={salon.tile}
+              style={{ width: 48, height: 48, borderRadius: 12, flex: 'none' }}
             />
             <div>
               <div style={{ font: `600 15px ${font.serif}` }}>

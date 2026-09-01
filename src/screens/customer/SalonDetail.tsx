@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Photo } from '../../components/Photo';
 import { BottomBar, Screen } from '../../components/Screen';
 import { ChatIcon, PhoneIcon } from '../../components/icons';
 import { SALON_PHONE } from '../../data/salons';
@@ -14,6 +16,7 @@ export function SalonDetail() {
     dispatch,
     isArabic,
     salon,
+    salonPhotos,
     salonServices,
     selectedServices,
     totals,
@@ -25,6 +28,13 @@ export function SalonDetail() {
 
   const saved = Boolean(state.saved[salon.id]);
   const hasSelection = selectedServices.length > 0;
+
+  // Which photograph the strip is showing. Only ever set by scrolling the strip
+  // itself, so it cannot disagree with what is on screen.
+  const [shown, setShown] = useState(0);
+  // Three dots over a placeholder is how the prototype drew "there would be
+  // photographs here". Over real ones they have to count the real ones.
+  const dots = salonPhotos.length || 3;
 
   const circleButton = {
     width: 38,
@@ -40,20 +50,58 @@ export function SalonDetail() {
     <>
       <Screen bottomInset={96}>
         <div style={{ position: 'relative', height: 270, background: salon.tile }}>
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#b7ad97',
-              font: `500 10px ${font.mono}`,
-              letterSpacing: '.12em',
-            }}
-          >
-            SALON GALLERY
-          </div>
+          {salonPhotos.length ? (
+            <div
+              className="scr"
+              // Swiping between them is the whole interaction, and it is the
+              // browser's own scrolling rather than anything this app tracks —
+              // `shown` only follows along so the dots below can say where you
+              // are. It reads right-to-left in Arabic for free, which is why
+              // the scroll position is measured as a distance from the start
+              // rather than from the left.
+              onScroll={(event) => {
+                const strip = event.currentTarget;
+                setShown(Math.round(Math.abs(strip.scrollLeft) / strip.clientWidth));
+              }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                scrollSnapType: 'x mandatory',
+              }}
+            >
+              {salonPhotos.map((photo, index) => (
+                <Photo
+                  key={photo.id}
+                  src={photo.url}
+                  tile={salon.tile}
+                  // The owner's own words when they wrote any; otherwise the
+                  // salon's name, once, on the photograph it leads with. The
+                  // rest are decoration — repeating the name five times tells a
+                  // screen reader nothing it did not hear the first time.
+                  alt={photo.alt || (index === 0 ? (isArabic ? salon.ar : salon.name) : '')}
+                  style={{ flex: '0 0 100%', height: '100%', scrollSnapAlign: 'start' }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#b7ad97',
+                font: `500 10px ${font.mono}`,
+                letterSpacing: '.12em',
+              }}
+            >
+              SALON GALLERY
+            </div>
+          )}
           <div
             style={{
               position: 'absolute',
@@ -110,9 +158,17 @@ export function SalonDetail() {
             aria-hidden="true"
             style={{ position: 'absolute', bottom: 16, insetInline: 20, display: 'flex', gap: 6 }}
           >
-            <span style={{ flex: 1, height: 3, borderRadius: 2, background: color.gold }} />
-            <span style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(255,255,255,.5)' }} />
-            <span style={{ flex: 1, height: 3, borderRadius: 2, background: 'rgba(255,255,255,.5)' }} />
+            {Array.from({ length: dots }, (_, index) => (
+              <span
+                key={index}
+                style={{
+                  flex: 1,
+                  height: 3,
+                  borderRadius: 2,
+                  background: index === shown ? color.gold : 'rgba(255,255,255,.5)',
+                }}
+              />
+            ))}
           </div>
         </div>
 

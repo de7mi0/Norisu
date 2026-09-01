@@ -180,6 +180,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [catalog.staffBySalon, salon],
   );
 
+  // The salon being viewed, not the salon being run: `photos` further down is
+  // the owner's own, loaded separately because an unpublished salon is not in
+  // the catalogue at all.
+  const salonPhotos = useMemo(
+    () => catalog.photosBySalon[salon?.id] ?? [],
+    [catalog.photosBySalon, salon],
+  );
+
   const selectedServices = useMemo(
     () => salonServices.filter((service) => state.selected[service.id]),
     [salonServices, state.selected],
@@ -1526,6 +1534,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       salons: catalog.salons,
       salonServices,
       salonStaff,
+      salonPhotos,
       salon,
       selectedServices,
       totals,
@@ -1599,6 +1608,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       salon,
       salonServices,
       salonStaff,
+      salonPhotos,
       selectedServices,
       sendBot,
       sendChat,

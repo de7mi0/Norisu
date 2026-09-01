@@ -20,6 +20,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { fileExtension, prepareImage, type ImageFailure } from '../lib/images';
+import type { SalonMediaRow } from '../lib/database.types';
 
 export const BUCKET = 'salon-photos';
 
@@ -38,12 +39,21 @@ export interface SalonPhoto {
 
 export type PhotoFailure = ImageFailure | 'notConfigured' | 'notOwner' | 'network';
 
-interface MediaRow {
-  id: string;
-  storage_path: string;
-  alt_text: string | null;
-  is_cover: boolean;
-  sort_order: number;
+type MediaRow = Omit<SalonMediaRow, 'salon_id'>;
+
+/**
+ * A row as the screens want it. The catalogue maps its rows through here too,
+ * so the customer's side and the owner's side agree on what a photograph is.
+ */
+export function mapPhoto(row: MediaRow): SalonPhoto {
+  return {
+    id: row.id,
+    path: row.storage_path,
+    url: publicUrl(row.storage_path),
+    isCover: row.is_cover,
+    alt: row.alt_text ?? '',
+    sortOrder: row.sort_order,
+  };
 }
 
 /** The public address of an object in a public bucket. */
@@ -65,14 +75,7 @@ export async function loadPhotos(salonId: string): Promise<SalonPhoto[]> {
 
   if (error || !data) return [];
 
-  return data.map((row) => ({
-    id: row.id,
-    path: row.storage_path,
-    url: publicUrl(row.storage_path),
-    isCover: row.is_cover,
-    alt: row.alt_text ?? '',
-    sortOrder: row.sort_order,
-  }));
+  return data.map(mapPhoto);
 }
 
 function writeFailure(error: { code?: string; message?: string } | null): PhotoFailure {
@@ -134,14 +137,7 @@ export async function uploadPhoto(
     return { error: writeFailure(error) };
   }
 
-  return {
-    id: data.id,
-    path: data.storage_path,
-    url: publicUrl(data.storage_path),
-    isCover: data.is_cover,
-    alt: data.alt_text ?? '',
-    sortOrder: data.sort_order,
-  };
+  return mapPhoto(data);
 }
 
 /** Removes the row and the file, in that order. */

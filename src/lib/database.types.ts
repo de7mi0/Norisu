@@ -38,6 +38,15 @@ export interface SalonRow {
   waitlist_enabled?: boolean;
 }
 
+export interface SalonMediaRow {
+  id: string;
+  salon_id: string;
+  storage_path: string;
+  alt_text: string | null;
+  is_cover: boolean;
+  sort_order: number;
+}
+
 export interface ServiceRow {
   id: string;
   salon_id: string;

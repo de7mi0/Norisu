@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 72 TypeScript files, ~15,400 lines. ~3,600 lines of migrations, ~8,400 including tests and seed.
+**Scale:** 73 TypeScript files, ~15,600 lines. ~3,600 lines of migrations, ~8,400 including tests and seed.
 
 ---
 
@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              200 Chromium checks in both languages; see its README
+  browser-tests/              232 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -106,7 +106,8 @@ src/
     account.ts                display name / label / initials for the signed-in user
     replies.ts                scripted chat + assistant content, delays, input caps
   components/                 PhoneFrame, Screen, TabBar, SheetModal, NameSheet,
-                              SampleDataNotice, Conversation, Toast, LangToggle, icons
+                              SampleDataNotice, Conversation, Toast, LangToggle, icons,
+                              Photo.tsx — a photograph where a placeholder tile was
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
   screens/customer/           12 screens
   screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
@@ -219,6 +220,12 @@ Supabase ──> repository.loadCatalog() ──> AppContext state ──> useAp
 the app's existing types so **screens never see database shapes**. Conversions: `price_halalas / 100
 → price`, `duration_minutes → "45 min"`, placeholder tiles assigned by index, and an
 `"any professional"` option appended to every salon's staff list (a UI affordance, not a row).
+
+`loadCatalog()` also reads `salon_media`, so a salon arrives with its photographs attached:
+`Salon.photo` is the cover for the cards, `photosBySalon` the strip on the salon's own page.
+That read is the one part of the catalogue allowed to fail on its own — a salon with no
+photographs is the ordinary case and looks deliberate, so losing the pictures must not lose
+the salons.
 
 `catalogSource` is `'demo' | 'loading' | 'live' | 'error'`. Anything other than `live` shows a small
 notice on the home screen and keeps the app fully usable on sample data.
@@ -464,7 +471,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
-| **Photos** | **Half real.** A salon owner can upload photographs from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device. They are stored in the `salon-photos` bucket and indexed in `salon_media`. **The customer side still shows placeholder tiles** — nothing reads these photographs back into the catalogue yet. That is the last piece. |
+| **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
 | **Availability** | **Real.** Times come from `working_hours`, the chosen services' length and the bookings already made, via `available_slots()`. Taken times are shown greyed rather than hidden. Falls back to the sample grid with no backend. |
 
 ---
@@ -601,10 +608,18 @@ Two older consequences still hold:
   "Give longer" extends a hold — but only when nobody is queued behind, since holding a seat for
   one person while others wait costs them their turn for nothing.
 
-**Photographs are three-quarters built.** Migration 0013 makes the `salon-photos` bucket
-and the rules for it; `lib/images.ts` prepares a file; `data/photos.ts` uploads it and
-records it in `salon_media`; the vendor Gallery does all of that from a real button. What
-is missing is the customer side — see §11.
+**Photographs are built end to end.** Migration 0013 makes the `salon-photos` bucket and
+the rules for it; `lib/images.ts` prepares a file; `data/photos.ts` uploads it and records
+it in `salon_media`; the vendor Gallery does all of that from a real button; and
+`loadCatalog()` reads the rows back so the customer's side shows them. 32 browser checks on
+the customer's half, confirmed to fail against the code before them.
+
+- **The placeholder tiles are still there, and still right.** Most salons have no
+  photographs, so `components/Photo.tsx` paints the tile and lays the photograph over it:
+  a slow image reveals the design rather than a white hole, and one that 404s — a stale
+  row pointing at a deleted object — falls back to it rather than to a broken-image icon.
+- **Staff and service pictures are still placeholders**, and nothing uploads them. Only
+  the salon has a bucket folder; `salon_media` is per salon, not per stylist.
 
 - **The path is the permission.** Every object is `<salon id>/<kind>/<file>`, and 0013's
   policies read the salon out of the first segment. `data/photos.ts` is the only place that
@@ -618,7 +633,9 @@ is missing is the customer side — see §11.
   photograph in the app lies on its side. `07-photos.mjs` proves the coordinates are gone
   by reading the bytes leaving the browser, not by trusting the function's name.
 - **`salon_media.alt_text` is a single string** in an app that is otherwise bilingual
-  throughout. It wants an `alt_ar` beside it, and a way for an owner to write both.
+  throughout. It wants an `alt_ar` beside it, and a way for an owner to write both — the
+  owner cannot write even the one today, so in practice the salon's name is the alt text on
+  the photograph it leads with and the rest are announced as decoration.
 - **Nothing moderates an upload.** These appear on a public salon profile, and the only
   limits are size, dimensions and MIME type.
 
@@ -653,20 +670,20 @@ is missing is the customer side — see §11.
 
 ## 11. Suggested next steps
 
-1. **Finish photographs: show them.** Three of the four pieces are done — the bucket and
-   its rules (0013), image preparation (`lib/images.ts`), and uploading from the vendor
-   Gallery. What is left is the customer side, which is the half that anybody sees: the
-   home screen, the salon card and the salon detail header all still render a coloured
-   placeholder tile. `loadCatalog()` in `data/repository.ts` needs to fetch each salon's
-   cover from `salon_media` and map it alongside the existing `tile`, and the screens need
-   to prefer a real photograph when there is one and keep the tile when there is not — a
-   salon with no pictures must still look deliberate rather than broken.
-   **This is the recommended next task, and it is the smallest of the four.**
-2. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
+1. **Photographs are finished** — both sides, see §10. What is worth doing next about them
+   is small and can wait: an `alt_ar` beside `alt_text` with a way for an owner to write
+   both, ordering the strip by dragging, and some answer to moderation before the app is
+   public. None of it blocks anything.
+2. **Confirm the live site, in a browser.** Nothing here can reach `supabase.co`, so every
+   photograph shown in this session was served by a stub. The one thing worth checking by
+   hand on https://de7mi0.github.io/Norisu/ is a real salon's real photograph appearing on
+   the home screen — the storage URL, the public bucket and the RLS read all have to line
+   up, and only a live page proves they do. **This is the recommended next task.**
+3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-3. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
+4. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
    in the same table through the same function, so only the worker's last hop changes.
 
 ---
@@ -674,7 +691,7 @@ is missing is the customer side — see §11.
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (90 assertions);
-  UI changes with `scripts/browser-tests/` (200 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (232 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

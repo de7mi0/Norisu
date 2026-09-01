@@ -15,6 +15,9 @@ const BASE = process.env.BASE || 'http://localhost:4173/';
 const REF = 'nicdmspejrvruszlwhvm';
 const USER = '33333333-3333-3333-3333-333333333333';
 const SALON = 'aaaaaaaa-0000-0000-0000-000000000001';
+// A second, published salon that has never uploaded anything. Half of what is
+// being checked here is that it still looks deliberate rather than broken.
+const BARE_SALON = 'aaaaaaaa-0000-0000-0000-000000000002';
 
 const session = {
   access_token: 'stub', refresh_token: 'stub', token_type: 'bearer',
@@ -224,6 +227,136 @@ for (const arabic of [false, true]) {
   check('an enormous file is refused before it is decoded',
         /enormous/i.test(body), body.slice(0, 200).replace(/\n/g, ' '));
   check('and still nothing was uploaded', db.uploads.length === 0);
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
+// The customer's side: photographs a salon uploaded actually being shown, and a
+// salon with none still looking like a design rather than a failure.
+// ---------------------------------------------------------------------------
+
+/** A real 1x1 PNG, so <img> loads rather than falling back to the tile. */
+const PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+const COVER = `${SALON}/cover/a1.jpg`;
+const GALLERY = [`${SALON}/gallery/b2.jpg`, `${SALON}/gallery/c3.jpg`];
+
+const salonRow = (id, en, ar) => ({
+  id, slug: en.toLowerCase().replace(/ /g, '-'), name_en: en, name_ar: ar,
+  tags_en: 'Hair', tags_ar: 'شعر', category_en: 'Salon', category_ar: 'صالون',
+  area_en: 'Al Olaya', area_ar: 'العليا', phone: null, city: 'Riyadh',
+  cr_number: '1010', is_published: true, is_verified: true, slot_step_minutes: 30,
+});
+
+async function installCustomer(page) {
+  page.on('pageerror', (e) => console.log(`      [page error] ${e.message.slice(0, 160)}`));
+  await page.route(`**/${REF}.supabase.co/**`, (route) => {
+    const url = route.request().url();
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: {
+      'access-control-allow-origin': '*', 'access-control-allow-headers': '*',
+      'access-control-allow-methods': '*' } });
+
+    // The bucket is public and these are ordinary image requests, so they have
+    // to answer with image bytes: a photograph that fails to load falls back to
+    // the tile, which would make this whole section pass for the wrong reason.
+    if (url.includes('/storage/v1/object/public/')) return route.fulfill({ status: 200,
+      contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: PIXEL });
+
+    if (url.includes('/rest/v1/salon_media')) return ok(route, [
+      { id: 'm1', salon_id: SALON, storage_path: COVER, alt_text: '', is_cover: true, sort_order: 0 },
+      { id: 'm2', salon_id: SALON, storage_path: GALLERY[0], alt_text: 'Styling chairs', is_cover: false, sort_order: 1 },
+      { id: 'm3', salon_id: SALON, storage_path: GALLERY[1], alt_text: '', is_cover: false, sort_order: 2 },
+    ]);
+    if (url.includes('/rest/v1/salons')) return ok(route, [
+      salonRow(SALON, 'Maison Noir', 'ميزون نوار'),
+      salonRow(BARE_SALON, 'Studio Rima', 'استوديو ريما'),
+    ]);
+    if (url.includes('/rest/v1/services')) return ok(route, [{ id: 's1', salon_id: SALON,
+      name_en: 'Cut & finish', name_ar: 'قص وتصفيف', duration_minutes: 45,
+      price_halalas: 15000, discount_percent: 0, is_active: true, is_archived: false,
+      sort_order: 0, category_en: 'Hair', category_ar: 'شعر' }]);
+    return ok(route, []);
+  });
+}
+
+const photoImages = (page) => page.locator('img[src*="/salon-photos/"]');
+const dots = (page) => page.locator('span[style*="height: 3px"]');
+
+for (const arabic of [false, true]) {
+  const L = arabic ? 'AR' : 'EN';
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await installCustomer(page);
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  if (arabic) { await page.getByRole('button', { name: 'العربية' }).click(); await page.waitForTimeout(300); }
+  await page.getByRole('button', { name: /I'm a customer|أنا عميل/i }).first().click();
+  await page.waitForTimeout(1200);
+
+  let body = await page.locator('body').innerText();
+  const srcs = await photoImages(page).evaluateAll((nodes) => nodes.map((n) => n.getAttribute('src')));
+
+  check(`${L}: home leads with the salon's own photograph`,
+        srcs.some((src) => src.includes(COVER)), JSON.stringify(srcs));
+  check(`${L}: the "SALON INTERIOR" placeholder is gone where there is one`,
+        !body.includes('SALON INTERIOR'), body.slice(0, 160).replace(/\n/g, ' '));
+  check(`${L}: the cover, not one of the others, is what the card shows`,
+        srcs.every((src) => src.includes(COVER)), JSON.stringify(srcs));
+  check(`${L}: a salon with no photographs keeps its tile and adds no image`,
+        srcs.length === 2, `${srcs.length} images for 2 salons, one of which has none`);
+
+  // The salon that has photographs.
+  await page.getByRole('button', { name: arabic ? /ميزون نوار/ : /Maison Noir/ }).first().click();
+  await page.waitForTimeout(900);
+  body = await page.locator('body').innerText();
+  const gallery = await photoImages(page).evaluateAll((nodes) =>
+    nodes.map((n) => ({ src: n.getAttribute('src'), alt: n.getAttribute('alt') })));
+
+  check(`${L}: the salon header shows every photograph, not just the cover`,
+        gallery.length === 3, JSON.stringify(gallery.map((g) => g.src)));
+  check(`${L}: cover first, in the order the owner arranged them`,
+        gallery[0]?.src.includes(COVER) && gallery[1]?.src.includes(GALLERY[0]),
+        JSON.stringify(gallery.map((g) => g.src)));
+  check(`${L}: the placeholder wording is gone from the header`,
+        !body.includes('SALON GALLERY'), body.slice(0, 160).replace(/\n/g, ' '));
+  check(`${L}: the dots count the photographs there are, not three`,
+        (await dots(page).count()) === 3, String(await dots(page).count()));
+  check(`${L}: the salon is named on the photograph it leads with`,
+        gallery[0]?.alt === (arabic ? 'ميزون نوار' : 'Maison Noir'), JSON.stringify(gallery[0]));
+  check(`${L}: the owner's own words win where they wrote any`,
+        gallery[1]?.alt === 'Styling chairs', JSON.stringify(gallery[1]));
+  check(`${L}: and the rest are decoration, not the name five times`,
+        gallery[2]?.alt === '', JSON.stringify(gallery[2]));
+
+  // Swiping to the second photograph. scrollIntoView rather than a scrollLeft
+  // of its own, because in Arabic the strip scrolls the other way and a raw
+  // number would be testing the test rather than the screen.
+  await page.evaluate(() => {
+    const image = document.querySelector('img[src*="/salon-photos/"]');
+    // Nothing to swipe if the photographs never arrived — the checks above have
+    // already said so, and throwing here would take the rest of them with it.
+    if (!image) return;
+    const strip = image.closest('span').parentElement;
+    strip.children[1].scrollIntoView({ inline: 'start', block: 'nearest' });
+  });
+  await page.waitForTimeout(600);
+  const lit = await dots(page).evaluateAll((nodes) =>
+    nodes.findIndex((n) => /245, 197, 66/.test(getComputedStyle(n).backgroundColor)));
+  check(`${L}: swiping to the next photograph moves the dot with it`,
+        lit === 1, `dot ${lit} is lit`);
+
+  // The salon that has none.
+  await page.getByRole('button', { name: /^(Back|رجوع)$/ }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: arabic ? /استوديو ريما/ : /Studio Rima/ }).first().click();
+  await page.waitForTimeout(900);
+  body = await page.locator('body').innerText();
+
+  check(`${L}: a salon with no photographs still shows the designed placeholder`,
+        body.includes('SALON GALLERY'), body.slice(0, 160).replace(/\n/g, ' '));
+  check(`${L}: and no image of somebody else's salon leaks onto its page`,
+        (await photoImages(page).count()) === 0, String(await photoImages(page).count()));
   await page.close();
 }
 

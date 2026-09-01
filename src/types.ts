@@ -48,6 +48,12 @@ export interface Salon {
   arArea: string;
   discount: number;
   priceFrom: number;
+  /**
+   * The salon's cover photograph, when it has uploaded one. Absent is the
+   * normal case, not a failure: `tile` is what stands in for it, and a salon
+   * with no pictures has to look deliberate rather than broken.
+   */
+  photo?: string;
   tile: string;
 }
 

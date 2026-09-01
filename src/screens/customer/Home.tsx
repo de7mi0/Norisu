@@ -1,4 +1,5 @@
 import { LangToggle } from '../../components/LangToggle';
+import { Photo } from '../../components/Photo';
 import { Screen } from '../../components/Screen';
 import { PinIcon } from '../../components/icons';
 import { CATEGORIES, matchesCategory } from '../../data/salons';
@@ -130,20 +131,31 @@ export function Home() {
           background: 'repeating-linear-gradient(125deg,#efe9dd 0 14px,#e7e0d2 14px 28px)',
         }}
       >
-        <span
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#b7ad97',
-            font: `500 10px ${font.mono}`,
-            letterSpacing: '.12em',
-          }}
-        >
-          SALON INTERIOR
-        </span>
+        {featured?.photo ? (
+          // The stripe on the button behind stays as the backdrop, so a
+          // photograph that is still loading looks like the salons that have
+          // none rather than like a hole.
+          <Photo
+            src={featured.photo}
+            tile="transparent"
+            style={{ position: 'absolute', inset: 0 }}
+          />
+        ) : (
+          <span
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#b7ad97',
+              font: `500 10px ${font.mono}`,
+              letterSpacing: '.12em',
+            }}
+          >
+            SALON INTERIOR
+          </span>
+        )}
         <span
           style={{
             position: 'absolute',
@@ -253,14 +265,10 @@ export function Home() {
             className="press"
             style={{ display: 'flex', gap: 13, alignItems: 'center', textAlign: 'start' }}
           >
-            <span
-              style={{
-                width: 78,
-                height: 78,
-                borderRadius: 16,
-                background: salon.tile,
-                flex: 'none',
-              }}
+            <Photo
+              src={salon.photo}
+              tile={salon.tile}
+              style={{ width: 78, height: 78, borderRadius: 16, flex: 'none' }}
             />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span

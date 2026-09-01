@@ -2,8 +2,8 @@
 
 Where the product goes from here. Today Saloni is a **front-end prototype**: it looks and
 behaves like the real thing. The catalogue, sign-in, bookings, availability and the salon owner's
-own dashboard, calendar and reviews are real and survive a refresh; payment, chat, the waitlist,
-photos and notifications are still simulated.
+own dashboard, calendar, reviews, waitlist, notifications and photographs are real and survive a
+refresh; payment and chat are still simulated.
 
 Two decisions are settled and shape everything below:
 
@@ -42,22 +42,30 @@ If a salon raises a haircut from 150 to 180, every past booking and receipt must
 
 ### 2. Photo upload
 
-**Mostly built.** Migration 0013 creates the `salon-photos` bucket and the policies that
-let an owner write only inside their own salon's folder — the path is the permission, and
-assertion 89 proves a rival cannot upload into, move out of, or delete from it.
+**Built, both sides.** Migration 0013 creates the `salon-photos` bucket and the policies
+that let an owner write only inside their own salon's folder — the path is the permission,
+and assertion 89 proves a rival cannot upload into, move out of, or delete from it.
 `src/lib/images.ts` applies orientation, resizes to 1600px and re-encodes through a canvas,
 which is what removes the EXIF; `src/data/photos.ts` uploads and records it in
 `salon_media`; the vendor Gallery does all of it from a button that used to have no
 handler at all.
 
-**What is left is the customer side.** The home screen, the salon card and the salon
-detail header still render coloured placeholder tiles — `loadCatalog()` does not read
-`salon_media` yet. That is the half anybody actually sees.
+**And the customer sees them.** `loadCatalog()` reads `salon_media` alongside the salons,
+so a salon arrives with its cover and its strip attached: the featured card, the salon
+cards, the salon page's header, checkout, chat and the booking list all prefer a real
+photograph. A salon with none keeps its placeholder tile, which is a design and not a gap —
+that path is checked as carefully as the other, because it is the one most salons are on.
+
+**Not confirmed live.** Every photograph in the browser checks came from a stub; this
+sandbox cannot reach Supabase storage. A real photograph on the deployed site still needs
+looking at by hand.
 
 **Still open beyond that:**
 
 - `salon_media.alt_text` is one string in a bilingual app, and no screen lets an owner
-  write it.
+  write it. Until one does, the salon's name is the alt text on the photograph it leads
+  with and the rest are marked decorative.
+- Nothing reorders the strip; it runs cover first, then `sort_order`, which no screen sets.
 - Nothing moderates an upload, and these appear on a public profile. Size, dimensions and
   MIME type are the only limits.
 - Photographs for individual services and stylists, which have their own placeholder tiles.
@@ -214,8 +222,8 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   find out in time.
 - ~~Vendor CRUD for services and team (backlog item 1)~~ — **built.** An owner adds, edits, hides
   and removes their own services and staff. Removing archives rather than deletes, because
-  bookings reference the row and a past booking must keep meaning what it meant. What is still
-  unbuilt: photo upload.
+  bookings reference the row and a past booking must keep meaning what it meant. What was still
+  unbuilt then — photo upload — is built now, on both sides.
 - ~~Business profile editing~~ — **built,** and it turned up a hole worth recording: `salons_update_own`
   plus 0002's blanket column grant let an owner set `is_verified` and `is_published` on their own
   salon, walking into the customer catalogue with nobody having checked their CR. Migration 0004

@@ -1,7 +1,14 @@
 import { LOAD_TIMEOUT_MS, supabase } from '../lib/supabase';
-import type { SalonRatingRow, SalonRow, ServiceRow, StaffRow } from '../lib/database.types';
+import type {
+  SalonMediaRow,
+  SalonRatingRow,
+  SalonRow,
+  ServiceRow,
+  StaffRow,
+} from '../lib/database.types';
 import type { Salon, Service, StaffMember } from '../types';
 import { tile } from '../theme';
+import { mapPhoto, type SalonPhoto } from './photos';
 import { SALONS } from './salons';
 import { SERVICES } from './services';
 import { ANY_PROFESSIONAL, STAFF } from './staff';
@@ -10,9 +17,11 @@ export interface Catalog {
   salons: Salon[];
   servicesBySalon: Record<string, Service[]>;
   staffBySalon: Record<string, StaffMember[]>;
+  /** Cover first, then in the order the owner arranged them. Empty is normal. */
+  photosBySalon: Record<string, SalonPhoto[]>;
 }
 
-/** Placeholder artwork, assigned per salon until real photos are uploaded. */
+/** Placeholder artwork, standing in for a salon that has uploaded no photographs. */
 const TILES = [tile.sand, tile.taupe, tile.blush, tile.stone];
 const STAFF_TILES = [tile.sandFine, tile.taupeFine, tile.blushFine];
 
@@ -70,6 +79,7 @@ function mapSalon(
   index: number,
   services: Service[],
   rating: SalonRatingRow | undefined,
+  photos: SalonPhoto[],
 ): Salon {
   // The salon-level badge and "from" price are derived from its live services.
   const discount = services.reduce((max, service) => Math.max(max, service.discount), 0);
@@ -93,6 +103,11 @@ function mapSalon(
     arArea: row.area_ar,
     discount,
     priceFrom,
+    // The photograph the salon leads with, when it has one. The rows arrive
+    // cover first, and a salon's first upload is made its cover, so the fallback
+    // to photos[0] only matters for a salon whose cover was deleted — better a
+    // real picture of the place than a stripe pretending to be one.
+    photo: photos.find((photo) => photo.isCover)?.url || photos[0]?.url,
     tile: TILES[index % TILES.length],
   };
 }
@@ -105,7 +120,9 @@ export function demoCatalog(): Catalog {
     servicesBySalon[salon.id] = SERVICES;
     staffBySalon[salon.id] = STAFF;
   }
-  return { salons: SALONS, servicesBySalon, staffBySalon };
+  // The bundled salons have no photographs — the placeholder tiles are the
+  // point of them — so every screen exercises the no-photograph path offline.
+  return { salons: SALONS, servicesBySalon, staffBySalon, photosBySalon: {} };
 }
 
 /**
@@ -139,7 +156,7 @@ export async function loadCatalog(): Promise<Catalog> {
 async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
   if (!supabase) throw new Error('Supabase is not configured');
 
-  const [salonsResult, servicesResult, staffResult, ratingsResult] = await Promise.all([
+  const [salonsResult, servicesResult, staffResult, ratingsResult, mediaResult] = await Promise.all([
     supabase
       .from('salons')
       .select('*')
@@ -164,6 +181,16 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
       .abortSignal(signal)
       .returns<StaffRow[]>(),
     supabase.from('salon_ratings').select('*').abortSignal(signal).returns<SalonRatingRow[]>(),
+    // No salon filter: salon_media_select (0002) already limits an anonymous
+    // visitor to published salons, so asking for more would return nothing more.
+    // Cover first, then the owner's order, which is the order the screens want.
+    supabase
+      .from('salon_media')
+      .select('id, salon_id, storage_path, alt_text, is_cover, sort_order')
+      .order('is_cover', { ascending: false })
+      .order('sort_order')
+      .abortSignal(signal)
+      .returns<SalonMediaRow[]>(),
   ]);
 
   const failure =
@@ -173,6 +200,10 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
   const serviceRows = servicesResult.data ?? [];
   const staffRows = staffResult.data ?? [];
   const ratingRows = ratingsResult.data ?? [];
+  // Photographs are the one part of the catalogue that is decoration: a salon
+  // with none looks deliberate already. So a failure here loses the pictures
+  // rather than the catalogue, unlike the four reads above.
+  const mediaRows = mediaResult.error ? [] : (mediaResult.data ?? []);
 
   const servicesBySalon: Record<string, Service[]> = {};
   for (const row of serviceRows) {
@@ -191,9 +222,20 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
 
   const ratingBySalon = new Map(ratingRows.map((row) => [row.salon_id, row]));
 
+  const photosBySalon: Record<string, SalonPhoto[]> = {};
+  for (const row of mediaRows) {
+    (photosBySalon[row.salon_id] ??= []).push(mapPhoto(row));
+  }
+
   const salons = (salonsResult.data ?? []).map((row, index) =>
-    mapSalon(row, index, servicesBySalon[row.id] ?? [], ratingBySalon.get(row.id)),
+    mapSalon(
+      row,
+      index,
+      servicesBySalon[row.id] ?? [],
+      ratingBySalon.get(row.id),
+      photosBySalon[row.id] ?? [],
+    ),
   );
 
-  return { salons, servicesBySalon, staffBySalon };
+  return { salons, servicesBySalon, staffBySalon, photosBySalon };
 }
