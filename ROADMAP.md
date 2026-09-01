@@ -42,25 +42,25 @@ If a salon raises a haircut from 150 to 180, every past booking and receipt must
 
 ### 2. Photo upload
 
-**Now:** the "+ Upload" button in `src/screens/vendor/Gallery.tsx` has **no click handler
-at all** — it is decorative. Every image in the app is a striped CSS placeholder
-(`tile.*` in `src/theme.ts`).
+**Mostly built.** Migration 0013 creates the `salon-photos` bucket and the policies that
+let an owner write only inside their own salon's folder — the path is the permission, and
+assertion 89 proves a rival cannot upload into, move out of, or delete from it.
+`src/lib/images.ts` applies orientation, resizes to 1600px and re-encodes through a canvas,
+which is what removes the EXIF; `src/data/photos.ts` uploads and records it in
+`salon_media`; the vendor Gallery does all of it from a button that used to have no
+handler at all.
 
-**To build:**
-- Wire the button to a file input (`accept="image/*"`, multiple).
-- Validate type and size on the client, then **resize and compress before uploading** —
-  phone photos are 3–8 MB each and salons will upload dozens.
-- Upload through a signed URL to object storage; store the returned URLs on the salon.
-- Set cover photo, reorder, delete.
-- Replace the placeholders in Gallery, Home and SalonDetail with real images, lazy-loaded,
-  with a blurred placeholder while loading.
+**What is left is the customer side.** The home screen, the salon card and the salon
+detail header still render coloured placeholder tiles — `loadCatalog()` does not read
+`salon_media` yet. That is the half anybody actually sees.
 
-**Security, and this one matters:**
-- Validate the real content type **server-side** — never trust the file extension.
-- Cap file size and pixel dimensions; reject anything absurd before it hits storage.
-- **Strip EXIF metadata.** Phone photos embed GPS coordinates. Uploading them raw would
-  publish the exact location of the salon and of whoever took the photo.
-- Moderate uploads — these are publicly visible on salon profiles.
+**Still open beyond that:**
+
+- `salon_media.alt_text` is one string in a bilingual app, and no screen lets an owner
+  write it.
+- Nothing moderates an upload, and these appear on a public profile. Size, dimensions and
+  MIME type are the only limits.
+- Photographs for individual services and stylists, which have their own placeholder tiles.
 
 ### 3. Notifying a customer when a seat opens
 

@@ -19,6 +19,7 @@ supabase/
     0010_notifications.sql       every offer queues a message
     0011_push_devices.sql        registered devices, and push instead of WhatsApp
     0012_claim_by_token.sql      the notification's link claims that seat
+    0013_salon_photos.sql        the bucket photographs live in, and who may write it
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
@@ -375,7 +376,9 @@ order by proname;
 `salon_reviews` mean 0005 is in. `reply_to_review` means 0007 is in, and
 `create_booking` means 0008 is, and `join_waitlist` means 0009 is.
 `claim_pending_notifications` means 0010 is, `register_push_device`
-means 0011 is, and `claim_offer_by_token` means 0012 is.
+means 0011 is, and `claim_offer_by_token` means 0012 is. 0013 leaves a bucket rather
+than a function — `select id from storage.buckets where id = 'salon-photos';` should
+return one row.
 
 **0008 is the one migration that must not be skipped once the site is
 redeployed.** From that version the app books by calling `create_booking()`, so

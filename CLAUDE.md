@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 66 TypeScript files, ~13,800 lines. ~3,100 lines of migrations, ~7,400 including tests and seed.
+**Scale:** 72 TypeScript files, ~15,400 lines. ~3,600 lines of migrations, ~8,400 including tests and seed.
 
 ---
 
@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              174 Chromium checks in both languages; see its README
+  browser-tests/              200 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -83,6 +83,7 @@ src/
   lib/
     supabase.ts               client; `isSupabaseConfigured` false ⇒ demo mode
     auth.ts                 ★ passcode sign-in, identifier normalisation, profile reads
+    images.ts               ★ resize, orientation, and removing a photograph's GPS
     database.types.ts         row types for the tables the app reads
   data/
     repository.ts           ★ loads the catalogue from Supabase, maps rows → app types
@@ -92,6 +93,7 @@ src/
     vendorBookings.ts       ★ the owner's own day, figures and reviews
     waitlist.ts             ★ the queue, both sides of it
     timeOff.ts              ★ periods the salon has taken off sale
+    photos.ts               ★ the bucket, salon_media, and the path that is the permission
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -128,6 +130,7 @@ supabase/
                                      Also closes a function-privilege hole — see §7
   migrations/0011_push_devices.sql   registered devices; push replaces WhatsApp
   migrations/0012_claim_by_token.sql  the notification's link lands on the seat
+  migrations/0013_salon_photos.sql    the bucket photographs live in, and who may write it
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -135,7 +138,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   88 assertions
+  tests/01_policy_tests.sql   90 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -311,7 +314,7 @@ functions in 0003–0012 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set, and
 0012's `claim_offer_by_token()`.
-30 RLS policies. 88 assertions.
+30 RLS policies (plus four on storage.objects). 90 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -409,7 +412,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-88 assertions, drops it. Each of 53–88 was checked against a database with its own protection
+90 assertions, drops it. Each of 53–90 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -461,18 +464,15 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
-| Photos | CSS placeholder tiles. |
+| **Photos** | **Half real.** A salon owner can upload photographs from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device. They are stored in the `salon-photos` bucket and indexed in `salon_media`. **The customer side still shows placeholder tiles** — nothing reads these photographs back into the catalogue yet. That is the last piece. |
 | **Availability** | **Real.** Times come from `working_hours`, the chosen services' length and the bookings already made, via `available_slots()`. Taken times are shown greyed rather than hidden. Falls back to the sample grid with no backend. |
 
 ---
 
 ## 10. Pending issues and known gaps
 
-**Three `TODO(roadmap …)` markers in the code**, each cross-referenced to `ROADMAP.md`:
-
-| File | Item | Gap |
-| --- | --- | --- |
-| `screens/vendor/Gallery.tsx` | A2 | The Upload button has **no handler at all** |
+**No `TODO(roadmap …)` markers are left in the code.** The last of them was the Gallery's
+upload button, which now works.
 
 The two waitlist markers are gone: 0009 made it real. What is still missing there is the
 *notification*, not the mechanism — see below.
@@ -601,6 +601,27 @@ Two older consequences still hold:
   "Give longer" extends a hold — but only when nobody is queued behind, since holding a seat for
   one person while others wait costs them their turn for nothing.
 
+**Photographs are three-quarters built.** Migration 0013 makes the `salon-photos` bucket
+and the rules for it; `lib/images.ts` prepares a file; `data/photos.ts` uploads it and
+records it in `salon_media`; the vendor Gallery does all of that from a real button. What
+is missing is the customer side — see §11.
+
+- **The path is the permission.** Every object is `<salon id>/<kind>/<file>`, and 0013's
+  policies read the salon out of the first segment. `data/photos.ts` is the only place that
+  builds a path, on purpose: construct one anywhere else and the policies stop applying
+  while still appearing to be there. Assertion 89 is the guard — a rival salon can neither
+  upload into your folder, move your photograph into theirs, nor delete it.
+- **EXIF is removed by re-encoding, not by editing.** A canvas holds pixels and nothing
+  else, so the output has no metadata rather than metadata that was tidied. Orientation is
+  applied *before* that, because a portrait phone photograph is usually stored landscape
+  with a tag saying "rotate me" — strip the tag without acting on it and every portrait
+  photograph in the app lies on its side. `07-photos.mjs` proves the coordinates are gone
+  by reading the bytes leaving the browser, not by trusting the function's name.
+- **`salon_media.alt_text` is a single string** in an app that is otherwise bilingual
+  throughout. It wants an `alt_ar` beside it, and a way for an owner to write both.
+- **Nothing moderates an upload.** These appear on a public salon profile, and the only
+  limits are size, dimensions and MIME type.
+
 **Structural gaps:**
 - **Verification is a manual step.** A registered salon stays invisible to customers until someone
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
@@ -625,7 +646,6 @@ Two older consequences still hold:
   made since 0008 holds a chair, so a day cannot be oversold. Rows created before it can still
   exceed the hours, which is the case the cap now covers.
 - **The dashboard is today only.** No week, no month, no trend beyond yesterday's count.
-- No storage bucket exists for photo upload.
 - Open signup: anyone visiting the public demo can create an account. Accepted for now — a
   signed-in visitor sees exactly what a guest sees.
 
@@ -633,12 +653,15 @@ Two older consequences still hold:
 
 ## 11. Suggested next steps
 
-1. **Photographs (A2).** With notifications delivered, this is the largest thing still
-   missing and the most visible: every salon, service and stylist is a coloured placeholder
-   tile. Needs a storage bucket, size and dimension caps, and **EXIF stripping** — phone
-   photos carry GPS coordinates, and publishing them raw would give away the exact location
-   of the salon and of whoever took the picture. The upload button has no handler at all.
-   **This is the recommended next task.**
+1. **Finish photographs: show them.** Three of the four pieces are done — the bucket and
+   its rules (0013), image preparation (`lib/images.ts`), and uploading from the vendor
+   Gallery. What is left is the customer side, which is the half that anybody sees: the
+   home screen, the salon card and the salon detail header all still render a coloured
+   placeholder tile. `loadCatalog()` in `data/repository.ts` needs to fetch each salon's
+   cover from `salon_media` and map it alongside the existing `tile`, and the screens need
+   to prefer a real photograph when there is one and keep the tile when there is not — a
+   salon with no pictures must still look deliberate rather than broken.
+   **This is the recommended next task, and it is the smallest of the four.**
 2. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
@@ -650,8 +673,8 @@ Two older consequences still hold:
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (88 assertions);
-  UI changes with `scripts/browser-tests/` (174 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (90 assertions);
+  UI changes with `scripts/browser-tests/` (200 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.
