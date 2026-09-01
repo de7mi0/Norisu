@@ -1,6 +1,6 @@
 # Browser checks
 
-174 checks that drive the built app in real Chromium, in **both languages**, against a
+200 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -15,6 +15,7 @@ scrambled inside Arabic text.
 | `04-waitlist.mjs` | Joining from a taken slot, the offer banner, claiming, and the salon's queue |
 | `05-push.mjs` | Installability, the service worker, registering a device, and claiming a seat from a notification's link |
 | `06-block-time.mjs` | The owner taking a period off sale, and putting it back |
+| `07-photos.mjs` | Uploading a salon photograph, and that its GPS coordinates do not go with it |
 
 `05-push.mjs` carries the only regression check in this directory written against a fault
 found in production rather than in review: a browser holding notification permission with
@@ -59,4 +60,10 @@ into `localStorage` so the app believes somebody is signed in.
 **That is also their limit, and it matters.** A stub answers whatever it is told to, so
 these prove the app *sends the right thing and renders the answer correctly* — they can
 say nothing about whether a grant or a policy would really allow it. The database
-assertions in `supabase/tests/` are the evidence for that half, and there are 88 of them.
+assertions in `supabase/tests/` are the evidence for that half, and there are 90 of them.
+
+`07-photos.mjs` is the exception to that limit, and worth knowing about: it builds a real
+JPEG carrying a fake EXIF GPS tag, feeds it through the actual file picker, and reads the
+bytes leaving the browser. Nothing is stubbed between the file and the wire, so it is a
+genuine proof that the coordinates are gone rather than a check that we called something
+named `stripExif`.

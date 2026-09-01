@@ -60,6 +60,14 @@ import {
 } from '../data/waitlist';
 import { isPushConfigured, pushState, registerWorker, subscribe as subscribeToPush, syncExisting } from '../lib/push';
 import {
+  deletePhoto as deletePhotoRow,
+  loadPhotos,
+  makeCover as makeCoverRow,
+  uploadPhoto as uploadPhotoRow,
+  type PhotoFailure,
+  type SalonPhoto,
+} from '../data/photos';
+import {
   blockTime as blockTimeRow,
   loadTimeOff,
   unblockTime as unblockTimeRow,
@@ -571,6 +579,82 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refreshTimeBlocks();
   }, [refreshTimeBlocks]);
+
+  // A salon's photographs. Remote state, like everything else the database owns.
+  const [photos, setPhotos] = useState<SalonPhoto[]>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  const refreshPhotos = useCallback(async () => {
+    if (!ownedSalonId) {
+      setPhotos([]);
+      return;
+    }
+    setPhotos(await loadPhotos(ownedSalonId));
+  }, [ownedSalonId]);
+
+  useEffect(() => {
+    void refreshPhotos();
+  }, [refreshPhotos]);
+
+  const photoFailureText = useCallback(
+    (failure: PhotoFailure): string =>
+      failure === 'notAnImage' ? t.photoNotAnImage
+      : failure === 'tooLarge' ? t.photoTooLarge
+      : failure === 'unreadable' ? t.photoUnreadable
+      : failure === 'tooBigAfterAll' ? t.photoTooBigAfterAll
+      : failure === 'notOwner' ? t.photoNotOwner
+      : failure === 'notConfigured' ? t.photoNeedSalon
+      : t.photoFailed,
+    [t],
+  );
+
+  /**
+   * Adds a photograph. The first one a salon has becomes its cover, because a
+   * salon with pictures and no cover would still show a placeholder tile in the
+   * catalogue, which is the whole thing this is meant to fix.
+   */
+  const addPhoto = useCallback(
+    async (file: File) => {
+      if (!ownedSalonId) {
+        flash(t.photoNeedSalon);
+        return;
+      }
+      setPhotoBusy(true);
+      const result = await uploadPhotoRow(ownedSalonId, file, photos.length === 0 ? 'cover' : 'gallery');
+      setPhotoBusy(false);
+      if ('error' in result) {
+        flash(photoFailureText(result.error));
+        return;
+      }
+      await refreshPhotos();
+    },
+    [flash, ownedSalonId, photoFailureText, photos.length, refreshPhotos, t],
+  );
+
+  const removePhoto = useCallback(
+    async (photo: SalonPhoto) => {
+      const failure = await deletePhotoRow(photo);
+      if (failure) {
+        flash(photoFailureText(failure));
+        return;
+      }
+      await refreshPhotos();
+    },
+    [flash, photoFailureText, refreshPhotos],
+  );
+
+  const setCoverPhoto = useCallback(
+    async (photoId: string) => {
+      if (!ownedSalonId) return;
+      const failure = await makeCoverRow(ownedSalonId, photoId);
+      if (failure) {
+        flash(photoFailureText(failure));
+        return;
+      }
+      await refreshPhotos();
+    },
+    [flash, ownedSalonId, photoFailureText, refreshPhotos],
+  );
 
   const timeOffFailureText = useCallback(
     (failure: TimeOffFailure): string =>
@@ -1454,6 +1538,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       timeBlocks,
       blockTime,
       unblockTime,
+      photos,
+      photoBusy,
+      addPhoto,
+      removePhoto,
+      setCoverPhoto,
       vendorReviews,
       myWaitlist,
       salonWaitlist,
@@ -1522,6 +1611,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       timeBlocks,
       blockTime,
       unblockTime,
+      photos,
+      photoBusy,
+      addPhoto,
+      removePhoto,
+      setCoverPhoto,
       vendorReviews,
       myWaitlist,
       salonWaitlist,

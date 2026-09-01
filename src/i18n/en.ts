@@ -239,6 +239,19 @@ export const en = {
 
   seatBannerTitle: 'A spot opened at Maison Noir!',
   seatBannerSub: "Tap to book before it's gone",
+  photoUploading: 'Preparing…',
+  photoSetCover: 'Make this the cover',
+  photoRemove: 'Remove',
+  photoEmpty: 'No photographs yet. The first one you add becomes the cover.',
+  photoStripped:
+    'Location data is removed from every photograph before it is uploaded, and each one is resized.',
+  photoNotAnImage: 'That is not a photograph. Choose a JPEG, PNG or WebP.',
+  photoTooLarge: 'That file is enormous. Choose one under 20 MB.',
+  photoUnreadable: 'That photograph could not be read. Try another.',
+  photoTooBigAfterAll: 'That photograph is too detailed to store. Try another.',
+  photoNotOwner: 'Only the salon’s owner can add photographs.',
+  photoFailed: 'The upload did not finish. Check your connection and try again.',
+  photoNeedSalon: 'Register your salon first — then you can add photographs.',
   blockTitle: 'Block out time',
   blockHelp:
     'Nothing can be booked in this period. Use it when you are running late, or closing early.',

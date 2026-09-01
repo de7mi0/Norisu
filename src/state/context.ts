@@ -5,6 +5,7 @@ import type {
   VendorDay,
   VendorReviews,
 } from '../data/vendorBookings';
+import type { SalonPhoto } from '../data/photos';
 import type { TimeBlock } from '../data/timeOff';
 import type { MyWaitlist, SalonWaitlist, WaitlistRequest } from '../data/waitlist';
 import type {
@@ -89,6 +90,13 @@ export interface AppContextValue {
   blockTime: (staffId: string | null, startsAt: Date, endsAt: Date, reason: string) => Promise<void>;
   /** Puts a blocked period back on sale. */
   unblockTime: (id: string) => Promise<void>;
+  /** The salon's photographs, cover first. */
+  photos: SalonPhoto[];
+  /** True while one is being prepared and uploaded. */
+  photoBusy: boolean;
+  addPhoto: (file: File) => Promise<void>;
+  removePhoto: (photo: SalonPhoto) => Promise<void>;
+  setCoverPhoto: (photoId: string) => Promise<void>;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
   /**
