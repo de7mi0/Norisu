@@ -319,6 +319,55 @@ error instead.
 | `permission denied for schema auth` | You're running as a restricted role. Use the dashboard SQL Editor, which runs with the right privileges. |
 | `No accounts exist yet` (from `seed.sql`) | Step 4 hasn't happened — create your account first. |
 
+### If photographs upload but never appear to a customer
+
+The picture shows in the vendor Gallery, and the customer's side still shows a
+striped tile. Four things have to line up, and each one fails silently, so check
+them in this order — the first two are the common ones.
+
+**1. Is the salon published?** An unpublished salon is not in the customer
+catalogue *at all*, photographs or not, and its `salon_media` rows are hidden
+from a signed-out visitor by the same rule. A salon that registered itself
+starts unpublished on purpose — see "Approving a salon that has registered"
+above.
+
+```sql
+select id, name_en, is_verified, is_published from salons;
+```
+
+**2. Is the bucket public?** Reading a photograph is an ordinary image request
+with no key on it, so the bucket has to be public. Migration 0013 creates it
+that way; a bucket made by hand in the dashboard is private unless the box was
+ticked, and then uploading works fine while every picture 404s.
+
+```sql
+select id, public, file_size_limit from storage.buckets where id = 'salon-photos';
+```
+
+`public` must be `true`. If it is not:
+
+```sql
+update storage.buckets set public = true where id = 'salon-photos';
+```
+
+**3. Is there a row?** The file and the row are written separately, and the app
+shows what the rows say.
+
+```sql
+select salon_id, storage_path, is_cover from salon_media order by salon_id, sort_order;
+```
+
+**4. Does the file itself load?** Take a `storage_path` from above and open
+
+```
+https://<your project ref>.supabase.co/storage/v1/object/public/salon-photos/<storage_path>
+```
+
+in a browser tab. If the photograph appears there but not in the app, the
+problem is in the app. If that URL 404s or says the bucket was not found, it is
+step 2 — the app is doing the right thing and falling back to the placeholder
+tile rather than showing a broken image.
+
 **Starting over.** Nothing here is precious while you're setting up. Run this in
 the SQL Editor to wipe the schema, then re-run `setup.sql`:
 
@@ -761,13 +810,13 @@ will run in production. That file is never applied to Supabase.
 
 - **Money is stored in halalas** as integers — `15000` is 150.00 SAR. Never use
   floats for money.
-- **"Any professional" bookings are not covered by the no-double-booking
-  constraint at the moment they are written.** With `staff_id` null there is
-  nobody to compare against. `available_slots()` (0003) does count the salon's
-  free chairs when it offers times, so a full salon stops offering them — but
-  two people racing the last chair can still both be accepted. Assigning a staff
-  member as the booking is made is the real fix.
-- **Storage buckets are not created here.** Photo upload (ROADMAP item A2) needs a
-  bucket plus its own access policies.
+- **"Any professional" bookings were outside the no-double-booking constraint
+  until 0008**, because with `staff_id` null there was nobody to compare
+  against. `create_booking()` now assigns a chair before it inserts, so the
+  constraint applies and a salon cannot be oversold. Rows written before 0008
+  are the only ones still unprotected.
+- **The `salon-photos` bucket is created by 0013**, public to read and writable
+  only inside a folder named after a salon you own. Nothing moderates what goes
+  into it.
 - **VAT is stored per booking** (`vat_rate`, default 0.150) rather than assumed,
   so a rate change doesn't rewrite historical invoices.
