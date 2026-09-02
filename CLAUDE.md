@@ -485,9 +485,12 @@ The two waitlist markers are gone: 0009 made it real. What is still missing ther
 *notification*, not the mechanism — see below.
 
 **Authentication gaps:**
-- **Never tested against real Supabase.** The development sandbox cannot reach `supabase.co`, so
-  the flow was driven against stubbed HTTP endpoints. Only the unreachable-backend path was
-  exercised for real. Live behaviour still needs confirming in a browser.
+- **Never tested from here, but it does work.** The development sandbox cannot reach
+  `supabase.co`, so every run of the sign-in flow in this repo was against stubbed HTTP
+  endpoints. What proves the real one is the owner's own use of the deployed site: writing
+  a photograph into their salon's folder requires a session whose user owns that salon, and
+  the policies would have refused it otherwise. So e-mail passcode sign-in is exercised;
+  every claim about it here still comes from stubs plus that, not from a test.
 - **Phone OTP has never sent anything** — no SMS provider has been configured.
 - **`profiles.full_name` is written now**, but only ever by the account itself, and only a name —
   there is still no wider "edit your details" screen, and `profiles.phone` is never set.
@@ -614,6 +617,12 @@ it in `salon_media`; the vendor Gallery does all of that from a real button; and
 `loadCatalog()` reads the rows back so the customer's side shows them. 32 browser checks on
 the customer's half, confirmed to fail against the code before them.
 
+- **It works on the live site**, confirmed by the owner rather than by a stub: a photograph
+  uploaded from the vendor Gallery shows on the customer's side of the deployed app. The
+  first attempt showed nothing, and the reason is worth keeping: the work was committed to
+  a feature branch, and **the site is built from the default branch**. The code was right
+  and the page had none of it. "Committed" is not "deployed" — see §12.
+
 - **The placeholder tiles are still there, and still right.** Most salons have no
   photographs, so `components/Photo.tsx` paints the tile and lays the photograph over it:
   a slow image reveals the design rather than a white hole, and one that 404s — a stale
@@ -674,11 +683,12 @@ the customer's half, confirmed to fail against the code before them.
    is small and can wait: an `alt_ar` beside `alt_text` with a way for an owner to write
    both, ordering the strip by dragging, and some answer to moderation before the app is
    public. None of it blocks anything.
-2. **Confirm the live site, in a browser.** Nothing here can reach `supabase.co`, so every
-   photograph shown in this session was served by a stub. The one thing worth checking by
-   hand on https://de7mi0.github.io/Norisu/ is a real salon's real photograph appearing on
-   the home screen — the storage URL, the public bucket and the RLS read all have to line
-   up, and only a live page proves they do. **This is the recommended next task.**
+2. ~~Confirm the live site.~~ **Done, by the owner, in their own browser** — a photograph
+   uploaded through the vendor Gallery appears on the customer's side of
+   https://de7mi0.github.io/Norisu/. That is the first end-to-end proof against real
+   Supabase rather than a stub, and it settles four things at once: the bucket is public,
+   the anonymous read policy on `salon_media` works, the storage URL the app builds is the
+   right one, and an owner really can sign in and write through the policies.
 3. **Payments** — deliberately deferred until closer to launch; see `ROADMAP.md` Part B, Phase 2.
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the

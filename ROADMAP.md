@@ -56,9 +56,10 @@ cards, the salon page's header, checkout, chat and the booking list all prefer a
 photograph. A salon with none keeps its placeholder tile, which is a design and not a gap —
 that path is checked as carefully as the other, because it is the one most salons are on.
 
-**Not confirmed live.** Every photograph in the browser checks came from a stub; this
-sandbox cannot reach Supabase storage. A real photograph on the deployed site still needs
-looking at by hand.
+**Confirmed live.** A photograph uploaded through the vendor Gallery appears on the
+customer's side of the deployed site — checked by the owner in their own browser, which is
+the only place it can be checked, since the development sandbox cannot reach Supabase
+storage at all.
 
 **Still open beyond that:**
 
