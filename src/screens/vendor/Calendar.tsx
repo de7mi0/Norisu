@@ -10,6 +10,7 @@ import { bookingStatus, color, font } from '../../theme';
 import { AppointmentRow } from './appointment';
 import { AppointmentSheet } from './AppointmentSheet';
 import { BlockSheet } from './BlockSheet';
+import { WalkInSheet } from './WalkInSheet';
 
 /** A week from today. The strip used to be four dates in July 2026. */
 const DAY_COUNT = 7;
@@ -36,6 +37,17 @@ export function Calendar() {
     dispatch({ type: 'openBlockSheet', from, to: to === '00:00' ? '23:30' : to });
   };
 
+  // Opens on now, rounded down to the half hour: the walk-in worth writing up
+  // is usually the one already in the chair, which started a few minutes ago.
+  const openWalkIn = () => {
+    const now = new Date();
+    const pad = (n: number) => `${n}`.padStart(2, '0');
+    dispatch({
+      type: 'openWalkInSheet',
+      at: `${pad(now.getHours())}:${now.getMinutes() >= 30 ? '30' : '00'}`,
+    });
+  };
+
   return (
     <>
       <Screen bottomInset={88}>
@@ -48,23 +60,47 @@ export function Calendar() {
         }}
       >
         <h1 style={{ font: `600 26px ${font.serif}`, margin: 0 }}>{t.bookingsTitle}</h1>
-        <button
-          type="button"
-          className="press"
-          onClick={openBlock}
-          disabled={!ownsSalon}
-          style={{
-            font: `600 11px ${font.sans}`,
-            color: ownsSalon ? color.goldLink : color.disabled,
-            background: color.cream,
-            border: `1px solid ${color.creamLine}`,
-            padding: '6px 12px',
-            borderRadius: 20,
-            cursor: ownsSalon ? 'pointer' : 'default',
-          }}
-        >
-          {t.blockTitle}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            className="press"
+            onClick={openBlock}
+            disabled={!ownsSalon}
+            style={{
+              font: `600 11px ${font.sans}`,
+              color: ownsSalon ? color.goldLink : color.disabled,
+              background: color.cream,
+              border: `1px solid ${color.creamLine}`,
+              padding: '6px 12px',
+              borderRadius: 20,
+              cursor: ownsSalon ? 'pointer' : 'default',
+            }}
+          >
+            {t.blockTitle}
+          </button>
+          {/*
+            The darker of the two, because writing a booking down is the thing
+            an owner reaches for while somebody waits at the counter, and taking
+            an hour off sale is the rarer, quieter act.
+          */}
+          <button
+            type="button"
+            className="press"
+            onClick={openWalkIn}
+            disabled={!ownsSalon}
+            style={{
+              font: `600 11px ${font.sans}`,
+              color: ownsSalon ? '#fff' : color.mutedFaint,
+              background: ownsSalon ? color.ink : color.surfaceSand,
+              border: `1px solid ${ownsSalon ? color.ink : color.lineSand}`,
+              padding: '6px 12px',
+              borderRadius: 20,
+              cursor: ownsSalon ? 'pointer' : 'default',
+            }}
+          >
+            {t.walkInTitle}
+          </button>
+        </div>
       </div>
 
       <div
@@ -185,6 +221,7 @@ export function Calendar() {
 
       <AppointmentSheet />
       <BlockSheet />
+      <WalkInSheet />
     </>
   );
 }

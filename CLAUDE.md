@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 73 TypeScript files, ~15,600 lines. ~3,600 lines of migrations, ~8,400 including tests and seed.
+**Scale:** 74 TypeScript files, ~16,100 lines. ~4,000 lines of migrations, ~9,000 including tests and seed.
 
 ---
 
@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              232 Chromium checks in both languages; see its README
+  browser-tests/              279 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -112,6 +112,7 @@ src/
   screens/customer/           12 screens
   screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
                               BlockSheet.tsx (taking time off sale),
+                              WalkInSheet.tsx (the salon's own booking),
                               appointment.tsx (the row the dashboard and calendar share)
                               and status.ts (one status → label map for both)
   hooks/useDragScroll.ts      mouse-drag for horizontal rails
@@ -132,6 +133,8 @@ supabase/
   migrations/0011_push_devices.sql   registered devices; push replaces WhatsApp
   migrations/0012_claim_by_token.sql  the notification's link lands on the seat
   migrations/0013_salon_photos.sql    the bucket photographs live in, and who may write it
+  migrations/0014_walkin_bookings.sql the salon's own diary: a booking with a name
+                                      instead of an account. Also widens salon_day()
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -319,9 +322,9 @@ time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notificati
 notification_settings, push_subscriptions, reviews` — plus a `salon_ratings` view and the
 functions in 0003–0012 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
-`create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set, and
-0012's `claim_offer_by_token()`.
-30 RLS policies (plus four on storage.objects). 90 assertions.
+`create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
+0012's `claim_offer_by_token()` and 0014's `create_walkin_booking()`.
+30 RLS policies (plus four on storage.objects). 94 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -372,25 +375,38 @@ which columns the policy is really meant to expose — the answer is rarely "all
 13. **A booking and its items are written together or not at all**, because they are one function
     call and therefore one transaction. A booking with no services on it is unreachable.
     Assertion 66.
-14. **Opening hours bound what can be booked, not just what is offered.** `create_booking()`
+14. **A booking belongs to an account or to a name the salon typed — never neither, and
+    never both.** 0014 made `customer_id` nullable so a salon can write down the walk-in in
+    front of it, and a check constraint stops that becoming "a booking attached to nobody".
+    Only the salon's own owner may write one (`create_walkin_booking()` is guarded by
+    `is_salon_owner()`), it is priced from the salon's own services like any other, and a
+    chair is assigned before the insert so the no-double-booking constraint applies to it
+    too. **The customer-facing gate is untouched**: `authenticated` still has no INSERT on
+    `bookings`, and `create_booking()` still books for `auth.uid()` alone. Assertions 91,
+    93 and 94.
+15. **A customer's phone number still never reaches the salon.** 0014 gave `salon_day()` a
+    phone column, and it returns `guest_phone` only — a number the salon typed itself while
+    taking the booking. Coalescing `profiles.phone` beside it is the one-word change that
+    would break guarantee 9, so assertion 92 fails if anybody makes it.
+16. **Opening hours bound what can be booked, not just what is offered.** `create_booking()`
     checks the same window `available_slots()` steps across, so calling the API directly cannot
     take a time the salon never offered. Assertion 67.
-15. **A place in the queue is not something you can write yourself.** `waitlist_entries.created_at`
+17. **A place in the queue is not something you can write yourself.** `waitlist_entries.created_at`
     decides who is next, so `authenticated` has no INSERT or UPDATE on the table (0009) — joining
     goes through `join_waitlist()`. Otherwise an account could insert itself at the front, or mark
     itself as holding a seat nobody offered. Assertion 75.
-16. **A freed seat is offered to one person at a time.** A cancellation triggers
+18. **A freed seat is offered to one person at a time.** A cancellation triggers
     `offer_next_for_slot()`, which holds it for the longest-waiting match for 15 minutes; a lapsed
     hold passes on, and nobody is offered the same slot twice. Assertions 70 and 71.
-17. **A queued message belongs to the sender, not to the browser.** `authenticated` has no INSERT,
+19. **A queued message belongs to the sender, not to the browser.** `authenticated` has no INSERT,
     UPDATE or DELETE on `notifications` (0010), so an account cannot queue a message to anybody,
     mark its own as sent, or rewrite a queued payload so the link points elsewhere. It reads its
     own and nothing more. Assertion 83.
-18. **Nobody is messaged who did not ask, and nobody twice.** Queueing honours `allow_whatsapp`,
+20. **Nobody is messaged who did not ask, and nobody twice.** Queueing honours `allow_whatsapp`,
     skips a profile with no phone number, refuses a slot already in the past, caps how often one
     person is pinged, and a unique index on `(offer_id, channel)` makes the three code paths that
     reach an offer unable to double-send. Assertions 78–81.
-19. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
+21. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
     if a function added later forgets to.**
@@ -465,6 +481,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Blocking time out** | **Real.** From the calendar, an owner takes a period off sale — one stylist or the whole salon. `time_off` was already honoured by `available_slots()` and `create_booking()`, so a blocked hour vanishes from the customer's picker and cannot be booked even through the API. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
 | **Vendor dashboard figures** | **Real.** Today's bookings, the value booked, occupancy and the rating, from `salon_stats()`. "Booked today" is **not revenue** — nothing is paid. |
+| **Walk-ins and phone bookings** | **Real.** From the calendar, an owner writes a booking for somebody with no account: a name, an optional number only the salon sees, a specialist or "whoever is free", and services the price comes from. It holds a chair like any other appointment, so the customer's picker stops offering that time. **The customer-facing gate is unchanged** — nobody can book without signing in; this is the salon writing its own diary, and only its owner may. |
 | **Vendor day calendar** | **Real, and the owner can act on it.** Appointments for any day in the coming week from `salon_day()`, cancellations included. Tapping one offers confirm, start, complete, no-show, cancel and reassign. |
 | **Vendor reviews** | **Real.** From `salon_reviews()`, unpublished rows included and marked. **Replying is real too**, through `reply_to_review()`. |
 | **Vendor waitlist** | **Real.** The owner's own queue, with re-offering and extending a hold. **No `SampleDataNotice` remains anywhere in the portal.** |
@@ -648,6 +665,38 @@ the customer's half, confirmed to fail against the code before them.
 - **Nothing moderates an upload.** These appear on a public salon profile, and the only
   limits are size, dimensions and MIME type.
 
+**Walk-ins close the biggest hole a real salon would have hit**, and it is worth being
+precise about what did and did not change. A salon's day is mostly people at the counter
+and on the phone. Until 0014 there was nowhere to put them: `create_booking()` takes no
+customer parameter, so a booking could only belong to `auth.uid()`. The owner's choices
+were to tell the app nothing — and have it sell an hour somebody was already sitting in —
+or to block the time out, which stopped the slot being sold but recorded no customer, no
+service and no value, leaving "Booked today", occupancy and the day list all wrong.
+
+- **What did not change: the customer-facing gate.** `authenticated` still has no INSERT on
+  `bookings`, `create_booking()` still books for the caller alone, and no visitor can create
+  a booking under any name. `create_walkin_booking()` refuses anybody who is not the salon's
+  own owner (assertion 93), and what it writes belongs to the salon: the person named on it
+  has no account, never sees it, and cannot cancel it.
+- **Three checks are deliberately relaxed, all because this records what happened rather
+  than offering what has not.** A time in the past is allowed — the walk-in worth writing up
+  is the one already in the chair. Opening hours are not checked; a salon that stayed late is
+  describing its own day, and refusing the entry would not make the day shorter. Time off is
+  not checked for a named stylist, because reality beats the salon's own earlier note.
+- **What is not relaxed is the chair.** A staff member is assigned before the insert, so the
+  exclusion constraint applies exactly as it does to a customer's booking. Assertion 91
+  covers both halves: the customer's picker stops offering that person, and the salon cannot
+  double-book them either.
+- **A walk-in earns nobody a review**, because a review needs a completed booking of the
+  reviewer's own and this belongs to no account. Correct rather than missing — there is
+  nobody to attribute it to.
+- **`reschedule_booking()` refuses walk-ins**, to the owner as well, because it checks the
+  caller owns the booking. Moving one is a plain UPDATE of its times, which the owner already
+  has, and widening that function looked like more risk than it removed.
+- **What is still missing: nothing tells the person.** No push, no reminder, no confirmation
+  — the salon has their number and that is the whole channel. Fine for somebody standing at
+  the counter; thinner for a booking taken by phone a week ahead.
+
 **Structural gaps:**
 - **Verification is a manual step.** A registered salon stays invisible to customers until someone
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
@@ -663,9 +712,8 @@ the customer's half, confirmed to fail against the code before them.
   one stylist or the whole salon, with a reason only they see — and it disappears from the
   customer's time picker immediately. The enforcement was already there: `time_off` has been
   honoured by `available_slots()` since 0003 and `create_booking()` since 0008, so this is a
-  screen for a guarantee the database was already making. What it is *not* is a walk-in
-  booking, which still needs an answer to who a booking belongs to when the customer has no
-  account.
+  screen for a guarantee the database was already making. What it is *not* is a booking —
+  that is the walk-in sheet beside it, added in 0014.
 - **The dashboard's today list is read-only** and links to the calendar instead. One place to act
   on an appointment is clearer than two.
 - **Occupancy is still capped at 100%**, though the cap should now be unreachable: every booking
@@ -700,8 +748,8 @@ the customer's half, confirmed to fail against the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (90 assertions);
-  UI changes with `scripts/browser-tests/` (232 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (94 assertions);
+  UI changes with `scripts/browser-tests/` (279 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

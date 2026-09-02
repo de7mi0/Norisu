@@ -29,7 +29,17 @@ export function AppointmentRow({
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
         {appointment.customerName ? (
-          <span style={{ font: `600 14px ${font.sans}` }}>{appointment.customerName}</span>
+          /*
+            <bdi> rather than a plain span, and rather than .ltr-run. A name is
+            the one string here whose script is unknown: "Huda A." set loose in
+            an Arabic paragraph renders as ".Huda A", the trailing full stop
+            reordered onto the front — and .ltr-run would fix that by forcing
+            LTR, which is then wrong for "ليلى ع." beside it. <bdi> isolates the
+            run and takes its direction from the text itself, which is exactly
+            the question being asked. Walk-ins made this everyday: the owner
+            types the name, in either script, on a screen in either language.
+          */
+          <bdi style={{ font: `600 14px ${font.sans}` }}>{appointment.customerName}</bdi>
         ) : (
           /*
             No name given, so the booking reference stands in for one. It is
@@ -73,6 +83,12 @@ export function AppointmentRow({
       ) : null}
       <div style={{ font: `500 10.5px ${font.sans}`, color: color.mutedSoft, marginTop: 4 }}>
         {staff ?? t.anyProfessional}
+        {/*
+          Worth marking. The salon wrote this one itself, so nobody is coming
+          through the app for it: no push, no reminder, and no cancelling from a
+          phone — the salon is the only party that knows about it.
+        */}
+        {appointment.isWalkIn ? ` · ${t.walkInBadge}` : ''}
       </div>
     </>
   );

@@ -131,6 +131,14 @@ export interface SalonDayRow {
   staff_name_ar: string | null;
   /** Null when the customer has not given a name. Nothing else about them crosses. */
   customer_name: string | null;
+  /**
+   * Only ever a number the salon typed itself, on a booking it wrote at the
+   * counter. A customer's own phone number never crosses this boundary — see
+   * migration 0014 and assertion 92.
+   */
+  customer_phone: string | null;
+  /** True for a booking the salon wrote for somebody with no account. */
+  is_walk_in: boolean;
   /** Snapshotted service names, in booking order. */
   services_en: string[] | null;
   services_ar: string[] | null;

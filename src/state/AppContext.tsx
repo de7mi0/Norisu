@@ -84,6 +84,9 @@ import {
   type AppointmentStatus,
   type VendorDay,
   type VendorReviews,
+  createWalkIn,
+  type WalkInDraft,
+  type WalkInFailure,
 } from '../data/vendorBookings';
 import {
   demoAvailability,
@@ -701,6 +704,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
       flash(t.blockSaved);
     },
     [flash, ownedSalonId, refreshTimeBlocks, refreshVendorDay, t, timeOffFailureText],
+  );
+
+  const walkInFailureText = useCallback(
+    (failure: WalkInFailure): string =>
+      failure === 'needName' ? t.walkInNeedName
+      : failure === 'noSuchService' ? t.walkInNeedService
+      : failure === 'noStaffFree' ? t.walkInNobodyFree
+      : failure === 'slotTaken' ? t.walkInChairTaken
+      : failure === 'notAllowed' ? t.walkInNotAllowed
+      : failure === 'notConfigured' ? t.blockNeedSalon
+      : t.walkInFailed,
+    [t],
+  );
+
+  /**
+   * The salon's own booking, for somebody with no account. The customer-facing
+   * gate does not move: this writes through create_walkin_booking(), which
+   * refuses anybody but the salon's owner, and nothing here lets a visitor
+   * create a booking.
+   */
+  const addWalkIn = useCallback(
+    async (draft: Omit<WalkInDraft, 'salonId'>) => {
+      if (!ownedSalonId) {
+        flash(t.blockNeedSalon);
+        return;
+      }
+      dispatch({ type: 'setWalkInSaving', saving: true });
+      const result = await createWalkIn({ ...draft, salonId: ownedSalonId });
+      dispatch({ type: 'setWalkInSaving', saving: false });
+      if ('error' in result) {
+        flash(walkInFailureText(result.error));
+        return;
+      }
+      dispatch({ type: 'closeWalkInSheet' });
+      // The figures move with it: a walk-in is a booking, so "Booked today",
+      // the value booked and occupancy all change the moment it is written.
+      await refreshVendorDay();
+      flash(`${t.walkInSaved} · ${result.reference}`);
+    },
+    [flash, ownedSalonId, refreshVendorDay, t, walkInFailureText],
   );
 
   /** Puts it back on sale. */
@@ -1546,6 +1589,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       vendorDay,
       timeBlocks,
       blockTime,
+      addWalkIn,
       unblockTime,
       photos,
       photoBusy,
@@ -1620,6 +1664,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       vendorDay,
       timeBlocks,
       blockTime,
+      addWalkIn,
       unblockTime,
       photos,
       photoBusy,

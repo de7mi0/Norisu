@@ -2,8 +2,8 @@
 
 Where the product goes from here. Today Saloni is a **front-end prototype**: it looks and
 behaves like the real thing. The catalogue, sign-in, bookings, availability and the salon owner's
-own dashboard, calendar, reviews, waitlist, notifications and photographs are real and survive a
-refresh; payment and chat are still simulated.
+own dashboard, calendar, walk-ins, reviews, waitlist, notifications and photographs are real and
+survive a refresh; payment and chat are still simulated.
 
 Two decisions are settled and shape everything below:
 

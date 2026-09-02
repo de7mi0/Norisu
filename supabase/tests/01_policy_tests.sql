@@ -4083,6 +4083,7 @@ begin
       'extend_waitlist_offer', 'join_waitlist', 'leave_waitlist', 'my_waitlist',
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
+      'create_walkin_booking',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -4465,6 +4466,289 @@ begin
   end if;
 
   raise notice 'PASS 90: photographs are public to read, capped in size, and images only';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 91. The salon writes its own diary: a walk-in with no account behind it is
+--     filed under a name the owner typed, holds a chair like any other
+--     appointment, and appears on the calendar it was written from.
+--
+--     The last of those is not obvious. salon_day() joined profiles on
+--     customer_id, and an inner join drops a null one — a walk-in would have
+--     been written, would have held its chair, and would have been invisible.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  vendor_a uuid := '33333333-3333-3333-3333-333333333333';
+  day      date := test_day(500);
+  at_time  timestamptz;
+  made     record;
+  row_     record;
+  seen     integer;
+  expected integer;
+begin
+  at_time := (day + time '12:00') at time zone 'Asia/Riyadh';
+
+  perform auth.login_as(vendor_a);
+  set local role authenticated;
+
+  select * into made
+  from create_walkin_booking(salon, null, array[service], at_time, '  Sara from the counter  ', '0500000009');
+
+  if made.booking_id is null then
+    raise exception 'FAIL 91a: the owner could not write a walk-in at all';
+  end if;
+
+  -- A chair was assigned, which is what puts it inside the no-double-booking
+  -- constraint rather than beside it.
+  if made.staff_id is null then
+    raise exception 'FAIL 91b: the walk-in holds no chair, so it can be double-booked';
+  end if;
+
+  -- Priced from the salon's own service row, not from anything the caller
+  -- said. Worked out from the table rather than written in here, which is the
+  -- claim being made: the figure comes from the salon's prices.
+  select round(net * 1.15)::integer into expected
+  from (
+    select round(s.price_halalas::numeric * (100 - s.discount_percent) / 100) as net
+    from services s where s.id = service
+  ) priced;
+
+  if made.total_halalas <> expected then
+    raise exception 'FAIL 91c: priced at % rather than the salon''s own % ',
+      made.total_halalas, expected;
+  end if;
+
+  select * into row_ from salon_day(salon, day) where booking_id = made.booking_id;
+  if row_ is null then
+    raise exception 'FAIL 91d: the walk-in is invisible on the calendar it was written from';
+  end if;
+  if row_.customer_name <> 'Sara from the counter' then
+    raise exception 'FAIL 91e: filed under % rather than the name the salon typed',
+      coalesce(row_.customer_name, '<null>');
+  end if;
+  if not row_.is_walk_in then
+    raise exception 'FAIL 91f: the calendar cannot tell a walk-in from an app booking';
+  end if;
+  if row_.services_en[1] is null then
+    raise exception 'FAIL 91g: the walk-in has no services on it';
+  end if;
+  reset role;
+
+  -- The chair is genuinely held. Asking for *that* person at that time is
+  -- refused — the salon has other chairs by now, and a customer being offered
+  -- one of those is right rather than wrong, so the check names the one Sara
+  -- is sitting in.
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    perform create_booking(salon, made.staff_id, array[service], at_time);
+    raise exception 'FAIL 91h: a customer was sold the chair the walk-in is in';
+  exception
+    when sqlstate 'SL003' then
+      null;
+  end;
+  reset role;
+
+  -- And the salon cannot double-book its own person either. This path names a
+  -- staff member, so free_staff_for() is not consulted at all: the exclusion
+  -- constraint is the whole of the protection, and this is what proves it is
+  -- still there.
+  perform auth.login_as(vendor_a);
+  set local role authenticated;
+  begin
+    perform create_walkin_booking(salon, made.staff_id, array[service], at_time, 'Second Sara');
+    raise exception 'FAIL 91i: the salon double-booked its own stylist';
+  exception
+    when exclusion_violation then
+      null;
+  end;
+  reset role;
+
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+
+  -- And no customer can see it. It is the salon's record, not a shared one.
+  select count(*) into seen from bookings where id = made.booking_id;
+  if seen <> 0 then
+    raise exception 'FAIL 91j: a customer can read the salon''s own diary entry';
+  end if;
+  reset role;
+
+  raise notice 'PASS 91: a walk-in is filed under its name, holds a chair, and shows on the calendar';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 92. The only phone number a salon gets is the one it typed itself.
+--
+--     Guarantee 9 — a customer's contact details never reach the salon — met
+--     the walk-in's phone number in salon_day(), and the tempting one-word
+--     change is to coalesce the profile's phone beside it. This fails if
+--     anybody makes it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  vendor_a uuid := '33333333-3333-3333-3333-333333333333';
+  cust_a   uuid := '11111111-1111-1111-1111-111111111111';
+  day      date := test_day(501);
+  walk_in  uuid;
+  booked   uuid;
+  row_     record;
+begin
+  -- The customer has filled in a phone number and a name on their profile.
+  update profiles set phone = '+966500000001', full_name = 'Huda A.' where id = cust_a;
+
+  perform auth.login_as(cust_a);
+  set local role authenticated;
+  select booking_id into booked
+  from create_booking(salon, null, array[service], (day + time '12:00') at time zone 'Asia/Riyadh');
+  reset role;
+
+  perform auth.login_as(vendor_a);
+  set local role authenticated;
+  select booking_id into walk_in
+  from create_walkin_booking(salon, null, array[service],
+                             (day + time '15:00') at time zone 'Asia/Riyadh',
+                             'Nora', '0501112233');
+
+  select * into row_ from salon_day(salon, day) where booking_id = booked;
+  if row_.customer_name <> 'Huda A.' then
+    raise exception 'FAIL 92a: the salon cannot see the name the customer chose to give';
+  end if;
+  if row_.customer_phone is not null then
+    raise exception 'FAIL 92b: the salon was handed a customer''s phone number: %',
+      row_.customer_phone;
+  end if;
+  if row_.is_walk_in then
+    raise exception 'FAIL 92c: an app booking is reported as a walk-in';
+  end if;
+
+  select * into row_ from salon_day(salon, day) where booking_id = walk_in;
+  if row_.customer_phone <> '0501112233' then
+    raise exception 'FAIL 92d: the salon cannot see the number it wrote down itself: %',
+      coalesce(row_.customer_phone, '<null>');
+  end if;
+  reset role;
+
+  raise notice 'PASS 92: a salon sees the number it typed, and never one from a profile';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 93. Only the salon's own owner may write into its diary. A rival salon and a
+--     plain customer are both refused, so "the owner records it" is enforced
+--     rather than assumed by the screen that calls it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  vendor_b uuid := '44444444-4444-4444-4444-444444444444';
+  cust_b   uuid := '22222222-2222-2222-2222-222222222222';
+  at_time  timestamptz := (test_day(502) + time '12:00') at time zone 'Asia/Riyadh';
+  refused  integer := 0;
+begin
+  perform auth.login_as(vendor_b);
+  set local role authenticated;
+  begin
+    perform create_walkin_booking(salon, null, array[service], at_time, 'Not mine');
+    raise exception 'FAIL 93a: a rival salon wrote a booking into this salon''s calendar';
+  exception
+    when insufficient_privilege then refused := refused + 1;
+  end;
+  reset role;
+
+  perform auth.login_as(cust_b);
+  set local role authenticated;
+  begin
+    perform create_walkin_booking(salon, null, array[service], at_time, 'Also not mine');
+    raise exception 'FAIL 93b: a customer wrote a booking into a salon''s calendar';
+  exception
+    when insufficient_privilege then refused := refused + 1;
+  end;
+
+  -- And the table itself is still shut: 0008 revoked INSERT, so there is no way
+  -- round the function.
+  begin
+    insert into bookings (reference, guest_name, salon_id, staff_id, starts_at, ends_at,
+                          status, subtotal_halalas, total_halalas)
+    values ('SL-FORGE', 'Forged', salon, 'dddddddd-0000-0000-0000-000000000001',
+            at_time, at_time + interval '45 min', 'confirmed', 0, 0);
+    raise exception 'FAIL 93c: a booking was inserted directly, bypassing the function';
+  exception
+    when insufficient_privilege then refused := refused + 1;
+  end;
+  reset role;
+
+  if refused <> 3 then
+    raise exception 'FAIL 93d: only % of the three attempts were refused', refused;
+  end if;
+
+  raise notice 'PASS 93: only the salon''s owner writes its walk-ins, and only through the function';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 94. Every booking belongs to somebody. A row with neither an account nor a
+--     name is a record of nothing, and one with both raises a question about
+--     which is right — so the schema refuses each, whoever is asking.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  staff_  uuid := 'dddddddd-0000-0000-0000-000000000001';
+  at_time timestamptz := (test_day(503) + time '12:00') at time zone 'Asia/Riyadh';
+  refused integer := 0;
+begin
+  begin
+    insert into bookings (reference, salon_id, staff_id, starts_at, ends_at, status,
+                          subtotal_halalas, total_halalas)
+    values ('SL-NOBODY', salon, staff_, at_time, at_time + interval '45 min',
+            'confirmed', 0, 0);
+    raise exception 'FAIL 94a: a booking belonging to nobody was accepted';
+  exception
+    when check_violation then refused := refused + 1;
+  end;
+
+  begin
+    insert into bookings (reference, customer_id, guest_name, salon_id, staff_id,
+                          starts_at, ends_at, status, subtotal_halalas, total_halalas)
+    values ('SL-BOTH', '11111111-1111-1111-1111-111111111111', 'And also Sara',
+            salon, staff_, at_time, at_time + interval '45 min', 'confirmed', 0, 0);
+    raise exception 'FAIL 94b: a booking with two people on it was accepted';
+  exception
+    when check_violation then refused := refused + 1;
+  end;
+
+  begin
+    insert into bookings (reference, guest_name, salon_id, staff_id, starts_at, ends_at,
+                          status, subtotal_halalas, total_halalas)
+    values ('SL-BLANK', '   ', salon, staff_, at_time, at_time + interval '45 min',
+            'confirmed', 0, 0);
+    raise exception 'FAIL 94c: a booking filed under a blank name was accepted';
+  exception
+    when check_violation then refused := refused + 1;
+  end;
+
+  if refused <> 3 then
+    raise exception 'FAIL 94: only % of the three malformed bookings were refused', refused;
+  end if;
+
+  raise notice 'PASS 94: a booking has an account or a name, never neither and never both';
 end
 $$;
 reset role;

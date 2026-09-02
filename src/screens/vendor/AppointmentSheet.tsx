@@ -144,13 +144,14 @@ function Summary({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ font: `600 14px ${font.sans}` }}>
+        {/* <bdi> because the name's script is the customer's, not the app's — see appointment.tsx. */}
+        <bdi style={{ font: `600 14px ${font.sans}` }}>
           {appointment.customerName ?? (
             <span className="ltr-run" style={{ fontFamily: font.mono, fontSize: 13 }}>
               {appointment.reference}
             </span>
           )}
-        </span>
+        </bdi>
         <span
           style={{
             font: `600 10px ${font.sans}`,
@@ -175,7 +176,27 @@ function Summary({
       </div>
       <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft, marginTop: 3 }}>
         {(isArabic ? appointment.staffNameAr : appointment.staffName) ?? t.anyProfessional}
+        {appointment.isWalkIn ? ` · ${t.walkInBadge}` : ''}
       </div>
+      {/*
+        Only ever a number the salon typed in itself when it took the booking.
+        A customer's own phone number is never handed over — salon_day() returns
+        nothing from their profile but the name they chose to give.
+      */}
+      {appointment.customerPhone ? (
+        <a
+          href={`tel:${appointment.customerPhone}`}
+          className="ltr-run"
+          style={{
+            display: 'inline-block',
+            font: `600 11.5px ${font.mono}`,
+            color: color.goldLink,
+            marginTop: 5,
+          }}
+        >
+          {appointment.customerPhone}
+        </a>
+      ) : null}
     </div>
   );
 }

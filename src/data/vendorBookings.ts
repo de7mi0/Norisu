@@ -49,6 +49,14 @@ export interface SalonAppointment {
    * e-mail or phone number to fill the gap.
    */
   customerName: string | null;
+  /**
+   * A number for this appointment, and only when the salon wrote it down
+   * itself while taking a walk-in or a call. Never a customer's own — the
+   * database does not hand that over, deliberately.
+   */
+  customerPhone: string | null;
+  /** The salon wrote this one itself, for somebody with no account. */
+  isWalkIn: boolean;
   /** Snapshotted at booking time, so this is what they actually agreed to. */
   services: string[];
   servicesAr: string[];
@@ -109,6 +117,15 @@ export type AppointmentFailure =
   | 'slotTaken'
   | 'notAllowed'
   | 'network';
+
+/**
+ * Writing a walk-in can be refused in two ways the owner can act on, so they
+ * are separated from the rest rather than all becoming "could not save":
+ * `noStaffFree` means everybody is already in a chair then, and `noSuchService`
+ * means the service list went stale under them — archived while the sheet was
+ * open, most likely.
+ */
+export type WalkInFailure = AppointmentFailure | 'noStaffFree' | 'noSuchService' | 'needName';
 
 /** Reads Postgres' complaint back as something the owner can act on. */
 function appointmentFailure(error: { code?: string; message?: string } | null): AppointmentFailure {
@@ -175,6 +192,75 @@ export async function replyToReview(
 /** Matches the cap inside reply_to_review(), so nothing is silently truncated. */
 export const REPLY_MAX_LENGTH = 1000;
 
+/** Both match the caps in migration 0014's constraint, so nothing is truncated silently. */
+export const GUEST_NAME_MAX_LENGTH = 60;
+export const GUEST_PHONE_MAX_LENGTH = 20;
+
+/** What the sheet collects. `staffId` null is "whoever is free". */
+export interface WalkInDraft {
+  salonId: string;
+  staffId: string | null;
+  serviceIds: string[];
+  startsAt: Date;
+  guestName: string;
+  guestPhone: string;
+  notes?: string;
+}
+
+/**
+ * The salon writing its own diary: an appointment for somebody with no account.
+ *
+ * Through `create_walkin_booking()` (0014) rather than an insert, for the same
+ * reasons a customer's booking goes through `create_booking()` — `authenticated`
+ * has no INSERT on `bookings` at all, the price is read from the salon's own
+ * services rather than stated here, and a chair is assigned before the row is
+ * written so the no-double-booking constraint applies to it.
+ */
+export async function createWalkIn(
+  draft: WalkInDraft,
+): Promise<{ reference: string } | { error: WalkInFailure }> {
+  if (!supabase) return { error: 'notConfigured' };
+
+  const name = draft.guestName.trim().slice(0, GUEST_NAME_MAX_LENGTH);
+  if (!name) return { error: 'needName' };
+  if (draft.serviceIds.length === 0) return { error: 'noSuchService' };
+
+  const { data, error } = await supabase.rpc('create_walkin_booking', {
+    p_salon_id: draft.salonId,
+    p_staff_id: draft.staffId,
+    p_service_ids: draft.serviceIds,
+    p_starts_at: draft.startsAt.toISOString(),
+    p_guest_name: name,
+    p_guest_phone: draft.guestPhone.trim().slice(0, GUEST_PHONE_MAX_LENGTH) || null,
+    p_notes: draft.notes ?? '',
+  });
+
+  if (error) return { error: walkInFailure(error) };
+
+  const row = ((data ?? []) as { reference: string }[])[0];
+  // The function returns a row or raises; no row means something answered that
+  // was not this function, so it is not reported as a success.
+  return row ? { reference: row.reference } : { error: 'network' };
+}
+
+/** The codes create_walkin_booking() raises, as things the owner can act on. */
+function walkInFailure(error: { code?: string; message?: string }): WalkInFailure {
+  switch (error.code) {
+    case 'SL001':
+      return 'noSuchService';
+    case 'SL003':
+      return 'noStaffFree';
+    case 'SL004':
+      return 'needName';
+    case '23P01':
+      return 'slotTaken';
+    case '42501':
+      return 'notAllowed';
+    default:
+      return appointmentFailure(error);
+  }
+}
+
 /** Races a call against the shared timeout. Rejects rather than hanging. */
 async function withTimeout<T>(call: PromiseLike<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -200,6 +286,8 @@ function mapAppointment(row: SalonDayRow): SalonAppointment {
     staffName: row.staff_name_en,
     staffNameAr: row.staff_name_ar,
     customerName: row.customer_name,
+    customerPhone: row.customer_phone,
+    isWalkIn: row.is_walk_in,
     services: row.services_en ?? [],
     servicesAr: row.services_ar ?? [],
     totalHalalas: row.total_halalas,

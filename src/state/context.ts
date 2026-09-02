@@ -4,6 +4,7 @@ import type {
   AppointmentStatus,
   VendorDay,
   VendorReviews,
+  WalkInDraft,
 } from '../data/vendorBookings';
 import type { SalonPhoto } from '../data/photos';
 import type { TimeBlock } from '../data/timeOff';
@@ -92,6 +93,12 @@ export interface AppContextValue {
   blockTime: (staffId: string | null, startsAt: Date, endsAt: Date, reason: string) => Promise<void>;
   /** Puts a blocked period back on sale. */
   unblockTime: (id: string) => Promise<void>;
+  /**
+   * The salon's own booking for somebody with no account — a walk-in at the
+   * counter, or a caller. Refused by the database for anyone but the salon's
+   * owner; the customer-facing sign-in gate is untouched by it.
+   */
+  addWalkIn: (draft: Omit<WalkInDraft, 'salonId'>) => Promise<void>;
   /** The salon's photographs, cover first. */
   photos: SalonPhoto[];
   /** True while one is being prepared and uploaded. */

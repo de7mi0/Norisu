@@ -122,6 +122,22 @@ export interface AppState {
     reason: string;
     saving: boolean;
   } | null;
+  /**
+   * The salon writing a booking of its own: a walk-in at the counter or a
+   * caller on the phone. UI state only — what it produces is a row, and the
+   * row is remote state on `vendorDay` like every other appointment.
+   */
+  walkInSheet: {
+    name: string;
+    phone: string;
+    /** '' means "whoever is free", the same as a customer's "any professional". */
+    staffId: string;
+    /** "14:30", in the salon's own time. */
+    at: string;
+    /** Service ids, in the order they were tapped. */
+    serviceIds: string[];
+    saving: boolean;
+  } | null;
   /** Hides the offered-seat banner without giving the seat up. */
   seatBannerDismissed: boolean;
 
@@ -186,6 +202,7 @@ export const initialState: AppState = {
 
   waitlistSheet: null,
   blockSheet: null,
+  walkInSheet: null,
   seatBannerDismissed: false,
 
   // Today. The strip used to be four fixed dates in July 2026, where 3 was the
@@ -268,6 +285,11 @@ export type Action =
   | { type: 'setBlockField'; field: 'staffId' | 'from' | 'to' | 'reason'; value: string }
   | { type: 'setBlockSaving'; saving: boolean }
   | { type: 'closeBlockSheet' }
+  | { type: 'openWalkInSheet'; at: string }
+  | { type: 'setWalkInField'; field: 'name' | 'phone' | 'staffId' | 'at'; value: string }
+  | { type: 'toggleWalkInService'; serviceId: string }
+  | { type: 'setWalkInSaving'; saving: boolean }
+  | { type: 'closeWalkInSheet' }
   | { type: 'openAuth'; reason?: 'booking' | 'vendor' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
@@ -459,6 +481,49 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'closeBlockSheet':
       return { ...state, blockSheet: null };
+
+    case 'openWalkInSheet':
+      // Opens on now, rounded, because the walk-in most worth recording is the
+      // one already in the chair. Nobody is chosen and nothing is ticked: the
+      // owner knows who and what, and guessing either would be a guess they
+      // have to undo.
+      return {
+        ...state,
+        walkInSheet: {
+          name: '',
+          phone: '',
+          staffId: '',
+          at: action.at,
+          serviceIds: [],
+          saving: false,
+        },
+      };
+
+    case 'setWalkInField':
+      return state.walkInSheet
+        ? { ...state, walkInSheet: { ...state.walkInSheet, [action.field]: action.value } }
+        : state;
+
+    case 'toggleWalkInService':
+      return state.walkInSheet
+        ? {
+            ...state,
+            walkInSheet: {
+              ...state.walkInSheet,
+              serviceIds: state.walkInSheet.serviceIds.includes(action.serviceId)
+                ? state.walkInSheet.serviceIds.filter((id) => id !== action.serviceId)
+                : [...state.walkInSheet.serviceIds, action.serviceId],
+            },
+          }
+        : state;
+
+    case 'setWalkInSaving':
+      return state.walkInSheet
+        ? { ...state, walkInSheet: { ...state.walkInSheet, saving: action.saving } }
+        : state;
+
+    case 'closeWalkInSheet':
+      return { ...state, walkInSheet: null };
 
     case 'dismissSeatBanner':
       return { ...state, seatBannerDismissed: true };
