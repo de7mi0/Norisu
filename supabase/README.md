@@ -430,6 +430,44 @@ means 0011 is, and `claim_offer_by_token` means 0012 is, and `create_walkin_book
 means 0014 is. 0013 leaves a bucket rather than a function —
 `select id from storage.buckets where id = 'salon-photos';` should return one row.
 
+### One query that says which migrations are applied
+
+Paste this into the SQL Editor. Every column should read `true` — a `false` names
+the migration to run, and each is a file in `supabase/migrations/` to paste as-is.
+
+```sql
+select
+  bool_or(p.proname = 'available_slots')             as "0003 availability",
+  bool_or(p.proname = 'salon_day')                   as "0005 vendor day",
+  bool_or(p.proname = 'reply_to_review')             as "0007 review reply",
+  bool_or(p.proname = 'create_booking')              as "0008 booking",
+  bool_or(p.proname = 'join_waitlist')               as "0009 waitlist",
+  bool_or(p.proname = 'claim_pending_notifications') as "0010 notifications",
+  bool_or(p.proname = 'register_push_device')        as "0011 push devices",
+  bool_or(p.proname = 'claim_offer_by_token')        as "0012 claim link",
+  bool_or(p.proname = 'create_walkin_booking')       as "0014 walk-ins"
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public';
+```
+
+The two that leave no function behind, and the three privilege revokes, which are
+the ones that matter most — **every column here must read `false`**:
+
+```sql
+select
+  (select count(*) = 0 from storage.buckets where id = 'salon-photos')      as "0013 MISSING",
+  has_column_privilege('authenticated', 'salons', 'is_published', 'UPDATE') as "0004 MISSING",
+  has_column_privilege('authenticated', 'profiles', 'role', 'UPDATE')       as "0006 MISSING",
+  has_table_privilege('authenticated', 'bookings', 'INSERT')                as "0008 MISSING";
+```
+
+A `true` in the second block is a live security hole, not a missing feature: an
+owner who can set `is_published` walks into the customer catalogue with nobody
+having checked their commercial registration; an account that can set its own
+`role` can read every profile, every booking and every unpublished salon; and an
+account that can INSERT a booking directly can state its own price.
+
 **0014 is the one to run if the calendar's "Add a booking" button reports an error.**
 Without it there is no function behind that button, and no `guest_name` column for the
 name to go in.
