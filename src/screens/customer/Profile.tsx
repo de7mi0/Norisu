@@ -1,3 +1,4 @@
+import { DeleteAccountSheet } from '../../components/DeleteAccountSheet';
 import { NameSheet } from '../../components/NameSheet';
 import { Screen } from '../../components/Screen';
 import { PROFILE_ROWS } from '../../data/reviews';
@@ -154,6 +155,33 @@ export function Profile() {
         {signedIn ? t.authSignOut : t.authSignIn}
       </button>
 
+      {/*
+        Both stores require an account to be deletable from inside the app, and
+        a reviewer has to be able to find it — so it sits under sign-out, in
+        plain words, rather than behind a "help" screen. Only for somebody
+        signed in: there is nothing to delete otherwise.
+      */}
+      {signedIn ? (
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'openDeleteSheet' })}
+          className="press"
+          style={{
+            display: 'block',
+            width: 'calc(100% - 48px)',
+            margin: '10px 24px 0',
+            textAlign: 'center',
+            padding: 12,
+            font: `600 12px ${font.sans}`,
+            color: color.mutedSoft,
+            textDecoration: 'underline',
+            textUnderlineOffset: 3,
+          }}
+        >
+          {t.deleteAccount}
+        </button>
+      ) : null}
+
       <button
         type="button"
         onClick={() => dispatch({ type: 'pickMode', mode: 'vendor' })}
@@ -174,6 +202,7 @@ export function Profile() {
       </button>
 
       <NameSheet />
+      <DeleteAccountSheet />
     </Screen>
   );
 }

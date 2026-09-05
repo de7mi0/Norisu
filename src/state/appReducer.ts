@@ -141,6 +141,13 @@ export interface AppState {
   /** Hides the offered-seat banner without giving the seat up. */
   seatBannerDismissed: boolean;
 
+  /**
+   * The "delete my account" sheet. Two steps on purpose: the second asks the
+   * person to type the word, because this cannot be undone and a mis-tap on a
+   * phone is how it would otherwise happen.
+   */
+  deleteSheet: { typed: string; saving: boolean } | null;
+
   /** The "your name" sheet. UI state only — the value itself lives on the profile. */
   nameModal: boolean;
   nameForm: string;
@@ -203,6 +210,7 @@ export const initialState: AppState = {
   waitlistSheet: null,
   blockSheet: null,
   walkInSheet: null,
+  deleteSheet: null,
   seatBannerDismissed: false,
 
   // Today. The strip used to be four fixed dates in July 2026, where 3 was the
@@ -290,6 +298,10 @@ export type Action =
   | { type: 'toggleWalkInService'; serviceId: string }
   | { type: 'setWalkInSaving'; saving: boolean }
   | { type: 'closeWalkInSheet' }
+  | { type: 'openDeleteSheet' }
+  | { type: 'setDeleteTyped'; value: string }
+  | { type: 'setDeleteSaving'; saving: boolean }
+  | { type: 'closeDeleteSheet' }
   | { type: 'openAuth'; reason?: 'booking' | 'vendor' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
@@ -524,6 +536,22 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'closeWalkInSheet':
       return { ...state, walkInSheet: null };
+
+    case 'openDeleteSheet':
+      return { ...state, deleteSheet: { typed: '', saving: false } };
+
+    case 'setDeleteTyped':
+      return state.deleteSheet
+        ? { ...state, deleteSheet: { ...state.deleteSheet, typed: clamp(action.value, 20) } }
+        : state;
+
+    case 'setDeleteSaving':
+      return state.deleteSheet
+        ? { ...state, deleteSheet: { ...state.deleteSheet, saving: action.saving } }
+        : state;
+
+    case 'closeDeleteSheet':
+      return { ...state, deleteSheet: null };
 
     case 'dismissSeatBanner':
       return { ...state, seatBannerDismissed: true };

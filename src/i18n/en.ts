@@ -320,6 +320,17 @@ export const en = {
   authChange: 'Use a different number',
   authNoPassword: 'Saloni has no passwords — every sign-in uses a fresh code.',
   authSignIn: 'Sign in',
+  deleteAccount: 'Delete my account',
+  deleteTitle: 'Delete your account',
+  deleteBody:
+    'Your account, your name, your place in any waitlist and the phones you are notified on are removed for good. Appointments you have already had stay on the salon\u2019s own records without your name on them, because a salon has to be able to say what it did. Anything still to come is cancelled.',
+  deleteOwner:
+    'This account owns a salon. Its appointments, team and photographs belong to the business, so the salon has to be handed over or closed first \u2014 message us and we will help.',
+  deleteConfirmHint: 'Type DELETE to confirm.',
+  deleteConfirmWord: 'DELETE',
+  deleteGo: 'Delete for good',
+  deleteDone: 'Your account has been deleted.',
+  deleteFailed: 'Could not delete the account. Check your connection and try again.',
   authSignOut: 'Sign out',
   authGuest: 'Browsing as a guest',
   authGuestSub: 'Sign in to keep your bookings',

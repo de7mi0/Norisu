@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              279 Chromium checks in both languages; see its README
+  browser-tests/              301 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -107,7 +107,8 @@ src/
     replies.ts                scripted chat + assistant content, delays, input caps
   components/                 PhoneFrame, Screen, TabBar, SheetModal, NameSheet,
                               SampleDataNotice, Conversation, Toast, LangToggle, icons,
-                              Photo.tsx — a photograph where a placeholder tile was
+                              Photo.tsx — a photograph where a placeholder tile was,
+                              DeleteAccountSheet.tsx — the store-required deletion
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
   screens/customer/           12 screens
   screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
@@ -137,6 +138,8 @@ supabase/
                                       instead of an account. Also widens salon_day()
   migrations/0015_audit_column_privileges.sql  the second audit: INSERT is column-blind
                                       too, and a staff_id points anywhere. 12 findings
+  migrations/0016_delete_my_account.sql  deleting an account: the person goes, the
+                                      salon keeps its record of the day it worked
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -144,7 +147,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   106 assertions
+  tests/01_policy_tests.sql   109 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -325,9 +328,9 @@ notification_settings, push_subscriptions, reviews` — plus a `salon_ratings` v
 functions in 0003–0012 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
-0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, and 0015's
-`reassign_appointment()` and `my_salon_cr()`.
-30 RLS policies (plus four on storage.objects). 106 assertions.
+0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, 0015's
+`reassign_appointment()` and `my_salon_cr()`, and 0016's `delete_my_account()`.
+30 RLS policies (plus four on storage.objects). 109 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -449,7 +452,15 @@ disguises, one of them critical:
     total, enforced by trigger so every path obeys it. Nothing is paid, so without a cap a day
     could be held for free by somebody who never arrives; deposits are the real answer and need
     payments. Assertion 104.
-26. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
+26. **Deleting an account removes the person, not the salon's records.** `delete_my_account()`
+    (0016) erases the profile, the sign-in identity itself, the queue position, queued messages,
+    registered devices and the account's reviews — and leaves each past booking in place with
+    nobody attached to it, the reference standing in for the name, which is what the calendar
+    already shows for a customer who never gave one. The appointment is the salon's record of a
+    day it worked and its figures are built from it; the person is not the salon's to keep.
+    Anything upcoming is cancelled first, so the chair goes back on sale. Refused while the
+    account owns a salon, because a salon holds other people's appointments. Assertions 107–109.
+27. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
     if a function added later forgets to.**
@@ -478,7 +489,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-106 assertions, drops it. Each of 53–106 was checked against a database with its own protection
+109 assertions, drops it. Each of 53–109 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -528,6 +539,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Vendor day calendar** | **Real, and the owner can act on it.** Appointments for any day in the coming week from `salon_day()`, cancellations included. Tapping one offers confirm, start, complete, no-show, cancel and reassign. |
 | **Vendor reviews** | **Real.** From `salon_reviews()`, unpublished rows included and marked. **Replying is real too**, through `reply_to_review()`. |
 | **Vendor waitlist** | **Real.** The owner's own queue, with re-offering and extending a hold. **No `SampleDataNotice` remains anywhere in the portal.** |
+| **Deleting your account** | **Real, and required by both stores.** A row under sign-out on the Profile screen, then a sheet that says what goes and what stays and asks the person to type the word. It removes the account, the sign-in identity, the queue position, queued messages, devices and reviews; past bookings stay on the salon's calendar with the reference where the name was. Refused while the account owns a salon. |
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
@@ -554,6 +566,10 @@ The two waitlist markers are gone: 0009 made it real. What is still missing ther
 - **Phone OTP has never sent anything** — no SMS provider has been configured.
 - **`profiles.full_name` is written now**, but only ever by the account itself, and only a name —
   there is still no wider "edit your details" screen, and `profiles.phone` is never set.
+- **An account can be deleted from inside the app** (0016), which both stores require. What it
+  does *not* do is delete a salon: an owner is refused with `SL007` and told to hand the salon
+  over or close it first, and neither of those is built. That is fine while one person owns one
+  salon and can ask; it is a real gap the day somebody else owns one.
 - **`role` is still not what gates anything.** Ownership does: the portal shows real data only for
   the salon whose `owner_id` matches the signed-in user, and the policies reject writes from anyone
   else (assertions 32 and 34). `profiles.role` remains decorative — a vendor with no salon row sees
@@ -822,8 +838,8 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (106 assertions);
-  UI changes with `scripts/browser-tests/` (279 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (109 assertions);
+  UI changes with `scripts/browser-tests/` (301 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

@@ -97,7 +97,14 @@ import {
 import { VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { CODE_LENGTH, normalizeIdentifier, sendPasscode, verifyPasscode } from '../lib/auth';
+import {
+  CODE_LENGTH,
+  deleteAccount as deleteAccountRow,
+  normalizeIdentifier,
+  sendPasscode,
+  verifyPasscode,
+  type DeleteAccountFailure,
+} from '../lib/auth';
 import { dayLabel, dictionaryFor, formatMoney } from '../i18n';
 import type { Booking, CustomerScreen, Lang } from '../types';
 
@@ -1165,6 +1172,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, [flash, isArabic, state.authForm]);
 
+  /**
+   * Deletes the signed-in account for good — the store requirement, and the
+   * only destructive thing a customer can do in Saloni.
+   *
+   * The sheet stays open on a refusal, so the reason is read next to the button
+   * that caused it; on success it closes and the session ends with the account,
+   * because every request made after this point would fail in a way nothing on
+   * screen could explain.
+   */
+  const deleteAccount = useCallback(async () => {
+    dispatch({ type: 'setDeleteSaving', saving: true });
+    const failure = await deleteAccountRow();
+    dispatch({ type: 'setDeleteSaving', saving: false });
+
+    if (failure) {
+      const said: Record<DeleteAccountFailure, string> = {
+        ownsSalon: t.deleteOwner,
+        notSignedIn: t.authSignIn,
+        notConfigured: t.deleteFailed,
+        network: t.deleteFailed,
+      };
+      flash(said[failure]);
+      return;
+    }
+
+    dispatch({ type: 'closeDeleteSheet' });
+    flash(t.deleteDone);
+  }, [flash, t]);
+
   const signOut = useCallback(() => {
     void endSession().then(() => flash(isArabic ? 'تم تسجيل الخروج' : 'Signed out'));
   }, [endSession, flash, isArabic]);
@@ -1621,6 +1657,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       requestPasscode,
       submitPasscode,
       signOut,
+      deleteAccount,
       upcomingBookings,
       pastBookings,
       bookingsPersisted: persistBookings,
@@ -1658,6 +1695,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sendChat,
       session,
       signOut,
+      deleteAccount,
       slotSummary,
       availability,
       owner,

@@ -164,6 +164,11 @@ export interface AppContextValue {
   /** Exchanges the typed passcode for a session. */
   submitPasscode: () => void;
   signOut: () => void;
+  /**
+   * Deletes the signed-in account for good. Required by both app stores, and
+   * refused while the account owns a salon — see `delete_my_account()` (0016).
+   */
+  deleteAccount: () => Promise<void>;
 
   /** The two tabs of "My bookings", already split and sorted. */
   upcomingBookings: Booking[];

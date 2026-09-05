@@ -10,6 +10,14 @@ interface SheetModalProps {
    * pair, because two buttons that both close the sheet reads as a bug.
    */
   saveLabel: string | null;
+  /** Greys the submit out and refuses it — for a form that is not filled in yet. */
+  saveDisabled?: boolean;
+  /**
+   * `danger` for an irreversible act. Gold is the app's "yes, do it" and reads
+   * as encouragement, which is the wrong tone on a button that deletes an
+   * account.
+   */
+  saveTone?: 'gold' | 'danger';
   onCancel: () => void;
   onSave: () => void;
   children: ReactNode;
@@ -20,6 +28,8 @@ export function SheetModal({
   title,
   cancelLabel,
   saveLabel,
+  saveDisabled = false,
+  saveTone = 'gold',
   onCancel,
   onSave,
   children,
@@ -91,14 +101,22 @@ export function SheetModal({
             <button
               type="submit"
               className="press"
+              disabled={saveDisabled}
               style={{
                 flex: 1,
                 textAlign: 'center',
                 padding: 14,
-                background: color.gold,
-                color: color.goldInk,
+                background:
+                  saveDisabled ? color.surfaceSand
+                  : saveTone === 'danger' ? color.danger
+                  : color.gold,
+                color:
+                  saveDisabled ? color.mutedFaint
+                  : saveTone === 'danger' ? '#fff'
+                  : color.goldInk,
                 borderRadius: 13,
                 font: `700 13px ${font.sans}`,
+                cursor: saveDisabled ? 'default' : 'pointer',
               }}
             >
               {saveLabel}

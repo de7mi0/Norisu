@@ -172,6 +172,43 @@ export async function verifyPasscode(
   }
 }
 
+/**
+ * Why deleting an account can be refused, in terms the person can act on.
+ *
+ * `ownsSalon` is the only one that is not a failure: a salon holds other
+ * people's appointments, its staff and a registration somebody checked, so the
+ * database refuses rather than orphaning all of it, and the screen explains
+ * what to do instead.
+ */
+export type DeleteAccountFailure = 'notConfigured' | 'notSignedIn' | 'ownsSalon' | 'network';
+
+/**
+ * Deletes the signed-in account for good.
+ *
+ * Both app stores require this of any app with sign-in, and it has to be
+ * reachable from inside the app rather than by writing to somebody. What it
+ * removes and what it deliberately keeps is decided in `delete_my_account()`
+ * (0016): the person goes, and the salon keeps its own record of the
+ * appointments it worked, with nobody attached to them.
+ *
+ * The session is ended here rather than left to expire. The account behind it
+ * no longer exists, so every request it made from that point would fail in a
+ * way nothing on screen could explain.
+ */
+export async function deleteAccount(): Promise<DeleteAccountFailure | null> {
+  if (!supabase) return 'notConfigured';
+
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) {
+    if (error.code === 'SL007') return 'ownsSalon';
+    if (error.code === '42501') return 'notSignedIn';
+    return 'network';
+  }
+
+  await supabase.auth.signOut();
+  return null;
+}
+
 export async function signOut(): Promise<AuthFailure | null> {
   if (!supabase) return { code: 'notConfigured' };
   try {

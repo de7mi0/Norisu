@@ -22,6 +22,7 @@ supabase/
     0013_salon_photos.sql        the bucket photographs live in, and who may write it
     0014_walkin_bookings.sql     the salon's own diary: bookings for people with no account
     0015_audit_column_privileges.sql  closes twelve findings from the second audit
+    0016_delete_my_account.sql   deleting an account, as both app stores require
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
@@ -447,7 +448,8 @@ select
   bool_or(p.proname = 'register_push_device')        as "0011 push devices",
   bool_or(p.proname = 'claim_offer_by_token')        as "0012 claim link",
   bool_or(p.proname = 'create_walkin_booking')       as "0014 walk-ins",
-  bool_or(p.proname = 'reassign_appointment')        as "0015 audit fixes"
+  bool_or(p.proname = 'reassign_appointment')        as "0015 audit fixes",
+  bool_or(p.proname = 'delete_my_account')           as "0016 account deletion"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';

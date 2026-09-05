@@ -4116,6 +4116,7 @@ begin
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
+      'delete_my_account',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -5326,6 +5327,179 @@ begin
   end if;
 
   raise notice 'PASS 106: a registration number reaches its own salon''s owner and nobody else';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 107. Deleting an account removes the person and keeps the salon's record.
+--
+--      Required by both app stores, and the plainest reading of PDPL. The
+--      difficulty is that these are two different things wearing one word: the
+--      person is theirs to erase, the appointment is the salon's record of its
+--      own day. 0014's nullable customer_id is what lets the second survive the
+--      first.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  layla    uuid := 'dddddddd-0000-0000-0000-000000000001';
+  leaver   uuid := '66666666-6666-6666-6666-666666666666';
+  past_b   uuid;
+  future_b uuid;
+  got      record;
+  n        integer;
+begin
+  insert into auth.users (id, phone) values (leaver, '+966500000066');
+  update profiles set full_name = 'Leaving Soon', phone = '+966500000066' where id = leaver;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-GONE1', leaver, salon, layla,
+          now() - interval '9 days', now() - interval '9 days' + interval '1 hour',
+          'completed', 20000, 23000)
+  returning id into past_b;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-GONE2', leaver, salon, layla,
+          now() + interval '9 days', now() + interval '9 days' + interval '1 hour',
+          'confirmed', 20000, 23000)
+  returning id into future_b;
+
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values (leaver, 'https://push.example/leaver', 'k', 'a');
+
+  perform auth.login_as(leaver);
+  set local role authenticated;
+  perform delete_my_account();
+  reset role;
+
+  -- The account is gone, identity and all.
+  select count(*) into n from auth.users where id = leaver;
+  if n <> 0 then
+    raise exception 'FAIL 107a: the sign-in identity survived the deletion';
+  end if;
+  select count(*) into n from profiles where id = leaver;
+  if n <> 0 then
+    raise exception 'FAIL 107b: the profile survived the deletion';
+  end if;
+  select count(*) into n from push_subscriptions where profile_id = leaver;
+  if n <> 0 then
+    raise exception 'FAIL 107c: their devices would still be sent notifications';
+  end if;
+
+  -- The salon keeps what it did, with nobody attached to it.
+  select customer_id, guest_name, total_halalas, status, anonymised_at
+    into got from bookings where id = past_b;
+  if got is null then
+    raise exception 'FAIL 107d: the salon lost its record of an appointment it kept';
+  end if;
+  if got.customer_id is not null or got.guest_name <> 'SL-GONE1' then
+    raise exception 'FAIL 107e: the person is still on the booking (% / %)',
+      got.customer_id, got.guest_name;
+  end if;
+  if got.total_halalas <> 23000 or got.status <> 'completed' then
+    raise exception 'FAIL 107f: the salon''s own figures were rewritten';
+  end if;
+  if got.anonymised_at is null then
+    raise exception 'FAIL 107g: nothing records that this was emptied, or when';
+  end if;
+
+  -- And what was still to come was called off, so the chair went back on sale.
+  select status into got from bookings where id = future_b;
+  if got.status <> 'cancelled' then
+    raise exception 'FAIL 107h: an upcoming appointment was left standing (%)', got.status;
+  end if;
+
+  raise notice 'PASS 107: deleting an account removes the person and leaves the salon its record';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 108. A deleted customer's history is not mistaken for a walk-in, and the
+--      salon still sees nothing about the person.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner uuid := '33333333-3333-3333-3333-333333333333';
+  row_  record;
+  day_  date;
+begin
+  select (starts_at at time zone 'Asia/Riyadh')::date into day_
+  from bookings where reference = 'SL-GONE1';
+
+  perform auth.login_as(owner);
+  set local role authenticated;
+  select * into row_ from salon_day(salon, day_) where reference = 'SL-GONE1';
+  reset role;
+
+  if row_ is null then
+    raise exception 'FAIL 108a: the appointment vanished from the salon''s own calendar';
+  end if;
+  if row_.is_walk_in then
+    raise exception 'FAIL 108b: a departed customer''s booking is shown as a walk-in';
+  end if;
+  if row_.customer_phone is not null then
+    raise exception 'FAIL 108c: a phone number survived the deletion: %', row_.customer_phone;
+  end if;
+  if row_.customer_name <> 'SL-GONE1' then
+    raise exception 'FAIL 108d: the salon still sees a name (%)', row_.customer_name;
+  end if;
+
+  raise notice 'PASS 108: an emptied booking reads as history, not as a walk-in';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 109. An account that owns a salon is refused, and nothing is half-done.
+--
+--      A salon holds other people's appointments, its staff, its photographs
+--      and a registration somebody checked. Deleting the owner would orphan all
+--      of it. The refusal has to leave the account exactly as it was.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner uuid := '33333333-3333-3333-3333-333333333333';
+  n     integer;
+begin
+  perform auth.login_as(owner);
+  set local role authenticated;
+  begin
+    perform delete_my_account();
+    raise exception 'FAIL 109a: a salon owner deleted their account, orphaning the salon';
+  exception
+    when sqlstate 'SL007' then null;
+  end;
+  reset role;
+
+  select count(*) into n from profiles where id = owner;
+  if n <> 1 then
+    raise exception 'FAIL 109b: the refusal still removed the account';
+  end if;
+  select count(*) into n from salons where owner_id = owner;
+  if n = 0 then
+    raise exception 'FAIL 109c: the salon was lost anyway';
+  end if;
+
+  -- And a signed-out visitor cannot call it at all.
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  begin
+    perform delete_my_account();
+    raise exception 'FAIL 109d: an anonymous caller reached the deletion function';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 109: an owner is refused, the refusal changes nothing, and anon cannot call it';
 end
 $$;
 reset role;

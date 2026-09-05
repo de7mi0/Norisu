@@ -1,6 +1,6 @@
 # Browser checks
 
-279 checks that drive the built app in real Chromium, in **both languages**, against a
+301 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -17,6 +17,7 @@ scrambled inside Arabic text.
 | `06-block-time.mjs` | The owner taking a period off sale, and putting it back |
 | `07-photos.mjs` | Uploading a salon photograph, that its GPS coordinates do not go with it, and the customer's side showing it |
 | `08-walkin.mjs` | The salon writing its own booking — that it sends no price, says why a refusal happened, and shows a walk-in as one |
+| `09-delete-account.mjs` | Deleting an account: that a reviewer can find it, that it cannot happen by accident, and that a salon owner is told why not |
 
 `05-push.mjs` carries the only regression check in this directory written against a fault
 found in production rather than in review: a browser holding notification permission with
