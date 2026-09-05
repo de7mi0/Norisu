@@ -5504,4 +5504,140 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 110. The cap holds when a booking is moved, not only when it is made.
+--
+--      0015 capped an account at three of a salon's slots in one day, and
+--      counted only at INSERT. reschedule_booking() moves a booking to any day,
+--      so three on Monday plus three moved onto Monday was six — the rule read
+--      as enforced and was not. Found by attacking the functions rather than
+--      the tables.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  -- A fresh account: the fixtures' customers have upcoming bookings from
+  -- earlier assertions and would meet the twelve-in-total cap on the way in.
+  cust    uuid := '88888888-8888-8888-8888-888888888888';
+  day     date := test_day(700);
+  spare   date := test_day(701);
+  bk      uuid;
+  moved   integer := 0;
+  n       integer;
+  t       time := '12:00';
+begin
+  insert into auth.users (id, phone) values (cust, '+966500000088');
+
+  perform auth.login_as(cust);
+  set local role authenticated;
+
+  -- Fill the day to the cap, the honest way.
+  for i in 1..3 loop
+    perform create_booking(salon, null, array[service], ((day + t) at time zone 'Asia/Riyadh'));
+    t := t + interval '90 min';
+  end loop;
+
+  -- Then try to walk around it: book elsewhere and move them across.
+  t := '12:00';
+  for i in 1..2 loop
+    select booking_id into bk
+    from create_booking(salon, null, array[service], ((spare + t) at time zone 'Asia/Riyadh'));
+    begin
+      perform reschedule_booking(bk, ((day + (t + interval '5 hours')) at time zone 'Asia/Riyadh'));
+      moved := moved + 1;
+    exception
+      when sqlstate 'SL006' then null;
+    end;
+    t := t + interval '90 min';
+  end loop;
+  reset role;
+
+  if moved > 0 then
+    raise exception 'FAIL 110a: % booking(s) were moved onto a day already at the cap', moved;
+  end if;
+
+  select count(*) into n
+  from bookings
+  where customer_id = cust and salon_id = salon
+    and status in ('pending', 'confirmed')
+    and (starts_at at time zone 'Asia/Riyadh')::date = day;
+
+  if n <> 3 then
+    raise exception 'FAIL 110b: % bookings on one day at one salon, expected 3', n;
+  end if;
+
+  -- And an ordinary move, onto a day with room, still works — the cap must not
+  -- have become "no rescheduling".
+  perform auth.login_as(cust);
+  set local role authenticated;
+  select id into bk from bookings
+   where customer_id = cust and (starts_at at time zone 'Asia/Riyadh')::date = spare
+     and status in ('pending', 'confirmed')
+   limit 1;
+  perform reschedule_booking(bk, ((spare + time '16:00') at time zone 'Asia/Riyadh'));
+  reset role;
+
+  raise notice 'PASS 110: the cap counts when a booking moves, and moving is still possible';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 111. A push endpoint is an address, not a proof.
+--
+--      register_push_device() upserts on the endpoint and hands it to the
+--      caller, which it must: one browser has one endpoint, so a shared phone
+--      follows whoever signed in last. It asked for nothing but the URL though,
+--      so anybody holding one could take it — stopping the owner's own seat
+--      offers and sending their own to somebody else's phone. The keys are what
+--      separate the two cases.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  mine   uuid := '11111111-1111-1111-1111-111111111111';
+  theirs uuid := '22222222-2222-2222-2222-222222222222';
+  url    text := 'https://push.example/shared-browser';
+  holder uuid;
+begin
+  perform auth.login_as(mine);
+  set local role authenticated;
+  perform register_push_device(url, 'real-key', 'real-auth', 'web');
+  reset role;
+
+  -- Somebody who has only overheard the address gets nowhere.
+  perform auth.login_as(theirs);
+  set local role authenticated;
+  begin
+    perform register_push_device(url, 'guessed', 'guessed', 'web');
+    raise exception 'FAIL 111a: an account took over a device knowing only its address';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  select profile_id into holder from push_subscriptions where endpoint = url;
+  if holder <> mine then
+    raise exception 'FAIL 111b: the device changed hands anyway';
+  end if;
+
+  -- The browser itself still hands over, because a shared phone must: same
+  -- endpoint, same keys, new person signed in.
+  perform auth.login_as(theirs);
+  set local role authenticated;
+  perform register_push_device(url, 'real-key', 'real-auth', 'web');
+  reset role;
+
+  select profile_id into holder from push_subscriptions where endpoint = url;
+  if holder <> theirs then
+    raise exception 'FAIL 111c: a shared browser could not follow whoever signed in';
+  end if;
+
+  raise notice 'PASS 111: a device follows its keys, not whoever knows its address';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

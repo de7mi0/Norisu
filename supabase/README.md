@@ -23,6 +23,8 @@ supabase/
     0014_walkin_bookings.sql     the salon's own diary: bookings for people with no account
     0015_audit_column_privileges.sql  closes twelve findings from the second audit
     0016_delete_my_account.sql   deleting an account, as both app stores require
+    0017_cap_and_device_takeover.sql  a cap that only counted on INSERT, and a push
+                                 endpoint anybody could claim
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
@@ -449,7 +451,10 @@ select
   bool_or(p.proname = 'claim_offer_by_token')        as "0012 claim link",
   bool_or(p.proname = 'create_walkin_booking')       as "0014 walk-ins",
   bool_or(p.proname = 'reassign_appointment')        as "0015 audit fixes",
-  bool_or(p.proname = 'delete_my_account')           as "0016 account deletion"
+  bool_or(p.proname = 'delete_my_account')           as "0016 account deletion",
+  (select bool_or(pg_get_triggerdef(oid) ~* 'or update') from pg_trigger
+    where tgrelid = 'bookings'::regclass
+      and tgname = 'bookings_cap_per_customer')      as "0017 cap on moves"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';

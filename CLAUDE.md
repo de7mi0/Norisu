@@ -140,6 +140,9 @@ supabase/
                                       too, and a staff_id points anywhere. 12 findings
   migrations/0016_delete_my_account.sql  deleting an account: the person goes, the
                                       salon keeps its record of the day it worked
+  migrations/0017_cap_and_device_takeover.sql  two the audit missed: a cap that
+                                      counted only on INSERT, and a push endpoint
+                                      that could be taken by anybody who knew it
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -147,7 +150,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   109 assertions
+  tests/01_policy_tests.sql   111 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -330,7 +333,7 @@ functions in 0003–0012 —
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
 0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, 0015's
 `reassign_appointment()` and `my_salon_cr()`, and 0016's `delete_my_account()`.
-30 RLS policies (plus four on storage.objects). 109 assertions.
+30 RLS policies (plus four on storage.objects). 111 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -449,9 +452,11 @@ disguises, one of them critical:
     the column is revoked from every role, and `my_salon_cr()` answers for a salon you own.
     Assertion 106.
 25. **One account cannot book out a salon's day.** Three at a salon on one day, twelve upcoming in
-    total, enforced by trigger so every path obeys it. Nothing is paid, so without a cap a day
-    could be held for free by somebody who never arrives; deposits are the real answer and need
-    payments. Assertion 104.
+    total. Enforced by trigger on **INSERT and UPDATE** — 0015 counted only on INSERT, and
+    `reschedule_booking()` moves a booking to any day it likes, so three on Monday plus three
+    moved onto Monday was six. A cap counted at one end is not a cap. Nothing is paid, so without
+    one a day could be held for free by somebody who never arrives; deposits are the real answer
+    and need payments. Assertions 104 and 110.
 26. **Deleting an account removes the person, not the salon's records.** `delete_my_account()`
     (0016) erases the profile, the sign-in identity itself, the queue position, queued messages,
     registered devices and the account's reviews — and leaves each past booking in place with
@@ -460,7 +465,13 @@ disguises, one of them critical:
     day it worked and its figures are built from it; the person is not the salon's to keep.
     Anything upcoming is cancelled first, so the chair goes back on sale. Refused while the
     account owns a salon, because a salon holds other people's appointments. Assertions 107–109.
-27. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
+27. **A push endpoint is an address, not a proof.** `register_push_device()` moves a device to
+    whoever registers it, which it must — one browser has one endpoint, so a shared phone follows
+    whoever signed in last. Until 0017 the URL alone was enough, so anybody who learned one could
+    take it: the owner's own seat offers would stop, and the taker's would arrive on somebody
+    else's phone. Taking over another account's row now requires the subscription's keys, which
+    only that browser holds. Assertion 111.
+28. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
     if a function added later forgets to.**
@@ -489,7 +500,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-109 assertions, drops it. Each of 53–109 was checked against a database with its own protection
+111 assertions, drops it. Each of 53–111 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -633,9 +644,31 @@ Worth keeping, because these are the ones that would have been found by somebody
   pictures without ever touching their files. The storage rules were right; the row was not.
 - **Nothing capped bookings per account**, and nothing is paid.
 
-What is deliberately *not* closed there: rate limiting on sign-in (a Supabase setting, not a
+**A third pass, at what the second one skipped, found two more.** The 0015 audit went at the
+tables and their policies; it did not go at the functions that move things around afterwards.
+Both of these were demonstrated before being fixed, and both are closed in 0017 with assertions
+110 and 111:
+
+- **A cap on INSERT is not a cap.** 0015 stopped an account taking more than three of a salon's
+  slots in one day — at the moment of booking. `reschedule_booking()` then moved a booking to any
+  day, and nothing counted again: three on Monday, three booked elsewhere and moved onto Monday,
+  six. A rule that reads as enforced and is not is worse than a gap somebody knows about, and this
+  one was mine, written and shipped hours earlier.
+- **A push endpoint was a proof of nothing.** `register_push_device()` upserts on the endpoint and
+  hands it to the caller — deliberately, because a browser two people share has one endpoint and
+  must follow whoever signed in last. It asked for nothing but the URL, so anybody who learned one
+  could take it: the owner's own seat offers stop, and the taker's arrive on somebody else's
+  phone. 0011's own comment names this as the risk it was closing. It did not close it. Taking
+  over another account's row now needs the subscription's keys.
+
+The lesson worth keeping: **a rule enforced in one place is a rule until somebody finds the other
+place.** Both of these were rules the schema genuinely stated, walked around by a function that
+was written before the rule existed. When adding a constraint, ask which existing functions could
+move a row past it.
+
+What is deliberately *not* closed: rate limiting on sign-in (a Supabase setting, not a
 schema change), deposits (needs payments), photo moderation (a product decision), and deleting an
-account (a store requirement, its own migration). The worker's open endpoint is closed **opt-in** —
+account (a store requirement, done separately in 0016). The worker's open endpoint is closed **opt-in** —
 `SALONI_WORKER_SECRET` plus a matching header on the cron job, because requiring it outright would
 have stopped every notification the moment it deployed. Its response says `guarded: true` once set.
 
@@ -838,7 +871,7 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (109 assertions);
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (111 assertions);
   UI changes with `scripts/browser-tests/` (301 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
