@@ -152,7 +152,11 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
   try {
     const salonCall = supabase
       .from('salons')
-      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cr_number, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled')
+      // No cr_number: 0015 revoked SELECT on it from every role, because the
+      // catalogue's `select *` was handing each salon's commercial registration
+      // number to anonymous visitors. The owner's own comes back from
+      // my_salon_cr() below.
+      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled')
       .eq('owner_id', userId)
       // One salon per owner for now; the schema permits more.
       .order('created_at', { ascending: true })
@@ -171,6 +175,23 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
 
     const { data: hours, error: hoursError } = await Promise.race([hoursCall, expiry]);
     if (hoursError) return { status: 'error', salon: null };
+
+    // The one column no role may select (0015). It answers null for a salon you
+    // do not own, so a failure here loses the number rather than the salon —
+    // the business profile then shows an empty field, which is also what a
+    // salon that never gave one looks like.
+    //
+    // Raced like every other read in this function: supabase-js retries four
+    // times internally and an unreachable backend would otherwise hold the
+    // whole portal open. And read defensively — an RPC returning `text` gives a
+    // string, but the first version of this trusted that, and a stub answering
+    // `[]` put an array where a string belonged and took the portal down on
+    // render. `String.prototype.trim` on an array is not a subtle failure.
+    const cr = await Promise.race([
+      supabase.rpc('my_salon_cr', { p_salon_id: row.id }),
+      expiry,
+    ]).catch(() => null);
+    const crNumber = typeof cr?.data === 'string' ? cr.data : '';
 
     // is_salon_owner() lets an owner read these whatever their published or
     // archived state, so this is the full catalogue as the owner knows it.
@@ -205,7 +226,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
           areaEn: row.area_en ?? '',
           areaAr: row.area_ar ?? '',
           city: row.city ?? '',
-          crNumber: row.cr_number ?? '',
+          crNumber,
           phone: row.phone ?? '',
         },
         slotStepMinutes: row.slot_step_minutes ?? 30,
@@ -388,8 +409,11 @@ export async function createSalon(
       city: draft.city.trim() || 'Riyadh',
       cr_number: draft.crNumber.trim(),
       phone: draft.phone.trim() || null,
-      is_verified: false,
-      is_published: false,
+      // Neither is sent any more: 0015 revoked INSERT on them, so sending even
+      // `false` is refused outright. The column defaults are false, which is
+      // the same registration this always made — and now the *only* one it can
+      // make. Sending them was how the audit found the hole: the app could
+      // only have written those columns if they were writable.
     })
     .select('id')
     .limit(1);

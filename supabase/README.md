@@ -21,6 +21,7 @@ supabase/
     0012_claim_by_token.sql      the notification's link claims that seat
     0013_salon_photos.sql        the bucket photographs live in, and who may write it
     0014_walkin_bookings.sql     the salon's own diary: bookings for people with no account
+    0015_audit_column_privileges.sql  closes twelve findings from the second audit
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
@@ -445,7 +446,8 @@ select
   bool_or(p.proname = 'claim_pending_notifications') as "0010 notifications",
   bool_or(p.proname = 'register_push_device')        as "0011 push devices",
   bool_or(p.proname = 'claim_offer_by_token')        as "0012 claim link",
-  bool_or(p.proname = 'create_walkin_booking')       as "0014 walk-ins"
+  bool_or(p.proname = 'create_walkin_booking')       as "0014 walk-ins",
+  bool_or(p.proname = 'reassign_appointment')        as "0015 audit fixes"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -468,6 +470,10 @@ having checked their commercial registration; an account that can set its own
 `role` can read every profile, every booking and every unpublished salon; and an
 account that can INSERT a booking directly can state its own price.
 
+**0015 is the one to run before anybody else looks at this app.** It closes a hole that let any
+account put a salon into the customer catalogue without its commercial registration ever being
+checked, and eleven others. Until it is applied, that door is open on the live project.
+
 **0014 is the one to run if the calendar's "Add a booking" button reports an error.**
 Without it there is no function behind that button, and no `guest_name` column for the
 name to go in.
@@ -486,6 +492,41 @@ select case
   else 'applied'
 end as migration_0006;
 ```
+
+### Locking the notification worker to your own cron job
+
+Optional, and off until you set it. The function that sends notifications never
+checked who was calling it: anybody who knew its URL could make it *run*. It
+cannot be made to send anything it should not — every message it sends was
+queued by the database — but a stranger can spend your invocation budget.
+
+It is opt-in on purpose. If the function demanded a header the moment it
+deployed, your existing cron job would not be sending it, and every notification
+would stop.
+
+1. Pick any long random string.
+2. **Edge Functions → send-notifications → Secrets**, add
+   `SALONI_WORKER_SECRET` with that value.
+3. Update the cron job to send it, replacing the value with yours:
+
+```sql
+select cron.unschedule('send-notifications');
+select cron.schedule('send-notifications', '* * * * *', $$
+  select net.http_post(
+    url     := 'https://<your project ref>.supabase.co/functions/v1/send-notifications',
+    headers := jsonb_build_object(
+      'Content-Type',    'application/json',
+      'Authorization',   'Bearer <your sb_secret_ key>',
+      'x-saloni-worker', '<the value you picked>'
+    ),
+    timeout_milliseconds := 8000
+  );
+$$);
+```
+
+The function's own reply says whether it is on: `"guarded": true` once the
+secret is set. Check it in `net._http_response`, the same place §"If no
+notification arrives at all" points at.
 
 ## Turning on notifications
 

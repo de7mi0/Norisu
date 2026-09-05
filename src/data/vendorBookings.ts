@@ -161,13 +161,29 @@ export async function setAppointmentStatus(
   return error ? appointmentFailure(error) : null;
 }
 
-/** Hands an appointment to a different specialist, or back to "any professional". */
+/**
+ * Hands an appointment to a different specialist, or to whoever is free.
+ *
+ * Through `reassign_appointment()` (0015) rather than an UPDATE, because the
+ * column is no longer writable from the browser: the same grant let a
+ * *customer* move their own booking onto a stylist at a different salon and
+ * occupy a chair there. The function refuses that, and refuses to leave the
+ * appointment with no chair at all — "any professional" now means "pick
+ * somebody free", which is what the owner meant and what keeps the booking
+ * inside the no-double-booking constraint.
+ */
 export async function reassignAppointment(
   bookingId: string,
   staffId: string | null,
 ): Promise<AppointmentFailure | null> {
   if (!supabase) return 'notConfigured';
-  const { error } = await supabase.from('bookings').update({ staff_id: staffId }).eq('id', bookingId);
+  const { error } = await supabase.rpc('reassign_appointment', {
+    p_booking_id: bookingId,
+    p_staff_id: staffId,
+  });
+  // SL003 is "nobody free, or not one of yours" — the same thing the slot-taken
+  // wording covers, and the only new code this path can answer with.
+  if (error?.code === 'SL003') return 'slotTaken';
   return error ? appointmentFailure(error) : null;
 }
 

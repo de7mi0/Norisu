@@ -281,7 +281,29 @@ async function pushToDevices(n: Claimed): Promise<void> {
   if (delivered === 0) throw new Error(problems.join('; ') || 'no device accepted it');
 }
 
-Deno.serve(async () => {
+/**
+ * A shared word between the cron job and this function, if one is set.
+ *
+ * The function never looked at who was calling it. That cannot make it send
+ * anything it should not — every row it sends was queued by the database, and
+ * the payload is the database's — but anybody who knew the URL could make it
+ * *run*, which spends the project's invocation budget and nothing else.
+ *
+ * Deliberately opt-in. Requiring a header the existing cron job does not send
+ * would stop every notification the moment this deploys, which is a worse
+ * outcome than the thing it fixes. Set SALONI_WORKER_SECRET in the function's
+ * secrets and add the same value as an `x-saloni-worker` header on the cron
+ * job — supabase/README.md has the SQL — and this closes. Until then it says
+ * so in the response rather than pretending to be protected.
+ */
+const workerSecret = Deno.env.get('SALONI_WORKER_SECRET');
+
+Deno.serve(async (request) => {
+  if (workerSecret && request.headers.get('x-saloni-worker') !== workerSecret) {
+    // No detail: a caller who guessed wrong learns only that they guessed.
+    return Response.json({ error: 'not authorised' }, { status: 401 });
+  }
+
   // Rows whose hold has lapsed or whose seat has been taken are filtered out
   // here rather than sent — see claim_pending_notifications().
   const { data, error } = await admin.rpc('claim_pending_notifications', { p_limit: BATCH });
@@ -314,5 +336,7 @@ Deno.serve(async () => {
     }
   }
 
-  return Response.json({ claimed: claimed.length, sent, failed });
+  // `guarded` is here so a glance at the cron job's own logs answers "is this
+  // endpoint protected yet?" without reading the secrets page.
+  return Response.json({ claimed: claimed.length, sent, failed, guarded: Boolean(workerSecret) });
 });

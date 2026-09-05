@@ -135,6 +135,8 @@ supabase/
   migrations/0013_salon_photos.sql    the bucket photographs live in, and who may write it
   migrations/0014_walkin_bookings.sql the salon's own diary: a booking with a name
                                       instead of an account. Also widens salon_day()
+  migrations/0015_audit_column_privileges.sql  the second audit: INSERT is column-blind
+                                      too, and a staff_id points anywhere. 12 findings
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -142,7 +144,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   90 assertions
+  tests/01_policy_tests.sql   106 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -323,8 +325,9 @@ notification_settings, push_subscriptions, reviews` — plus a `salon_ratings` v
 functions in 0003–0012 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
-0012's `claim_offer_by_token()` and 0014's `create_walkin_booking()`.
-30 RLS policies (plus four on storage.objects). 94 assertions.
+0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, and 0015's
+`reassign_appointment()` and `my_salon_cr()`.
+30 RLS policies (plus four on storage.objects). 106 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -332,6 +335,24 @@ whole rows. So "you may edit your own X" means "you may edit *every field* of yo
 grant says otherwise. 0004 said so for `salons`; **0006 says so for `profiles`, `bookings` and
 `reviews`**, after an audit found three live holes (see §10). When adding a table or a column, ask
 which columns the policy is really meant to expose — the answer is rarely "all of them".
+
+**And it is not only UPDATE.** A second audit (0015) found the same mistake in three more
+disguises, one of them critical:
+
+- **INSERT is column-blind too.** 0004 stopped an owner *updating* `is_verified`; nothing stopped
+  them *inserting* a salon with it already true, so any account could put a salon in the customer
+  catalogue with no commercial registration ever seen. The `published_salons_are_verified`
+  constraint did not help — setting both at once satisfies it.
+- **SELECT is column-blind too**, and `select *` asks for all of it. Every visitor, signed out,
+  was handed each salon's CR number. **Revoking a column from a table-wide grant does nothing**:
+  the table grant has to go and the columns be named.
+- **A foreign key points anywhere.** `time_off`, `staff_services` and `bookings` each carried a
+  `staff_id` beside a `salon_id` with nothing comparing them, so one salon could take another's
+  stylist off sale, make their services unbookable, or occupy their chairs. Triggers, because the
+  answer lives in another table.
+- **A grant outlives the thing it was for.** 0006 granted UPDATE on `starts_at`/`ends_at`/
+  `staff_id` because rescheduling was an UPDATE; 0008 made it a function and the grant stayed, so
+  a customer could stretch a booking across a whole day and hold the chair for free.
 
 **Guarantees enforced by Postgres, not by app code:**
 1. **No double-booking, including "any professional".** A GiST exclusion constraint on
@@ -406,7 +427,29 @@ which columns the policy is really meant to expose — the answer is rarely "all
     skips a profile with no phone number, refuses a slot already in the past, caps how often one
     person is pinged, and a unique index on `(offer_id, channel)` makes the three code paths that
     reach an offer unable to double-send. Assertions 78–81.
-21. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
+21. **A salon cannot put itself in the catalogue.** Verification is the one human check in the
+    product, and it was skippable: INSERT being column-blind let any account create a salon with
+    `is_verified` and `is_published` already true. 0015 revokes INSERT on both, so a new row starts
+    false whatever the caller sends, and changing `cr_number` afterwards sends a verified salon
+    back into the queue — verification is a statement about a particular number. Assertions 95
+    and 96.
+22. **A booking's hours and its chair are fixed once made.** Not writable by `authenticated`
+    (0015): customers move a booking with `reschedule_booking()`, which re-checks opening hours
+    and availability, and the salon reassigns with `reassign_appointment()`, which is bounded to
+    its own team and never leaves an appointment without a chair. A raw UPDATE re-checked nothing
+    and let a customer hold a stylist all day for free. Assertions 56 and 98.
+23. **A row that names a salon and a stylist names a stylist of that salon.** Enforced by trigger
+    on `time_off`, `staff_services` and `bookings`, because the answer lives in another table and
+    a policy cannot see it. Without it one salon could block out another's staff, narrow their
+    services to nobody, or occupy their chairs. Assertions 97, 99 and 100.
+24. **A commercial registration number reaches its own salon's owner and nobody else.** SELECT on
+    the column is revoked from every role, and `my_salon_cr()` answers for a salon you own.
+    Assertion 106.
+25. **One account cannot book out a salon's day.** Three at a salon on one day, twelve upcoming in
+    total, enforced by trigger so every path obeys it. Nothing is paid, so without a cap a day
+    could be held for free by somebody who never arrives; deposits are the real answer and need
+    payments. Assertion 104.
+26. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
     if a function added later forgets to.**
@@ -435,7 +478,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-90 assertions, drops it. Each of 53–90 was checked against a database with its own protection
+106 assertions, drops it. Each of 53–106 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -551,6 +594,34 @@ removed. Worth knowing they existed, because the same mistake is easy to repeat:
 **That audit is now fully closed.** The last item — `createBooking` stating the price from the
 browser — went with 0008: `authenticated` has no INSERT on `bookings`, and `create_booking()`
 prices from the salon's own rows.
+
+**A second audit, and it found more than the first.** Thirteen findings, run as attacks against a
+throwaway database rather than read off the policies. One critical, three high, five medium, five
+low; twelve are closed in 0015 with assertions 95–106, each confirmed to fail against a database
+missing its protection. The full report is the artifact linked from that session, and the shape is
+in §7: a policy says whose row, never what is in it.
+
+Worth keeping, because these are the ones that would have been found by somebody else:
+- **Any account could publish a salon** — INSERT was column-blind, so `is_verified` and
+  `is_published` could arrive true and the salon was in the catalogue with no registration checked.
+  That is the whole verification step, skipped by one request.
+- **A customer could hold a chair all day for free** by stretching their own booking's `ends_at`,
+  and could move it onto a *different salon's* stylist, occupying a chair at a business they had
+  never dealt with. Both from a grant that stopped being needed when 0008 landed.
+- **One salon could sabotage another** two ways: `time_off` naming a rival's stylist (offered by
+  `available_slots()`, then refused by `create_booking()` — invisible, and for as long as the row
+  lasted), and `staff_services` linking its own stylist to a rival's service, after which nobody at
+  that rival was qualified to do it.
+- **Every visitor was handed every salon's CR number**, because the catalogue asked for `select *`.
+- **A photograph row could point into another salon's folder**, so a salon could display a rival's
+  pictures without ever touching their files. The storage rules were right; the row was not.
+- **Nothing capped bookings per account**, and nothing is paid.
+
+What is deliberately *not* closed there: rate limiting on sign-in (a Supabase setting, not a
+schema change), deposits (needs payments), photo moderation (a product decision), and deleting an
+account (a store requirement, its own migration). The worker's open endpoint is closed **opt-in** —
+`SALONI_WORKER_SECRET` plus a matching header on the cron job, because requiring it outright would
+have stopped every notification the moment it deployed. Its response says `guarded: true` once set.
 
 **A second finding, from 0010, of exactly the same shape.** Every migration since 0003 ends its
 functions with `revoke all on function … from public`. That line has never revoked anything.
@@ -691,8 +762,11 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
   reviewer's own and this belongs to no account. Correct rather than missing — there is
   nobody to attribute it to.
 - **`reschedule_booking()` refuses walk-ins**, to the owner as well, because it checks the
-  caller owns the booking. Moving one is a plain UPDATE of its times, which the owner already
-  has, and widening that function looked like more risk than it removed.
+  caller owns the booking. When 0014 landed, moving one was a plain UPDATE of its times — which
+  0015 has since revoked, because the same grant let a customer stretch their own booking across a
+  day. **So a walk-in's time cannot be changed at all today**: the owner cancels it and writes
+  another. Worth fixing when somebody asks, as an owner-guarded move function beside
+  `reassign_appointment()`.
 - **What is still missing: nothing tells the person.** No push, no reminder, no confirmation
   — the salon has their number and that is the whole channel. Fine for somebody standing at
   the counter; thinner for a booking taken by phone a week ahead.
@@ -748,7 +822,7 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (94 assertions);
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (106 assertions);
   UI changes with `scripts/browser-tests/` (279 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as

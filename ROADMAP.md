@@ -272,6 +272,8 @@ through the same function, and only the worker's last hop differs. A WhatsApp pr
 - Terms of service and a vendor agreement.
 - **Verify vendors** — check the CR — before a salon can take real bookings.
 - Moderation for photos and reviews.
+- Deposits, which are the real answer to somebody booking a salon's whole day and not arriving.
+  Migration 0015 caps bookings per account in the meantime.
 
 ### Phase 5 — Ship the apps
 - Wrap this same React codebase with **Capacitor**. No rewrite: the existing screens ship

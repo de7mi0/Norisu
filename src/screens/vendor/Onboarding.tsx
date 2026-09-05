@@ -33,7 +33,27 @@ const EMPTY: SalonDraft = {
   phone: '',
 };
 
-/** Long enough for any real value, short enough to bound what is stored. */
+/**
+ * Long enough for any real value, short enough to bound what is stored — and
+ * matched to migration 0015's check constraints field by field, not by one
+ * number for all of them. A single cap of 80 was under the limit for a name and
+ * over it for a city, a registration number and a phone, which the database
+ * would have refused on save with nothing useful to say. Trimming as it is
+ * typed is the kinder half of the same rule.
+ */
+const CAPS: Record<keyof SalonDraft, number> = {
+  nameEn: 80,
+  nameAr: 80,
+  categoryEn: 60,
+  categoryAr: 60,
+  areaEn: 80,
+  areaAr: 80,
+  city: 60,
+  crNumber: 30,
+  phone: 20,
+};
+
+/** The longest of them, for inputs that share one attribute. */
 const MAX = 80;
 
 export function Onboarding() {
@@ -65,7 +85,7 @@ export function Onboarding() {
   }, [existing, loadedFor]);
 
   const set = (key: keyof SalonDraft) => (value: string) =>
-    setDraft((current) => ({ ...current, [key]: value.slice(0, MAX) }));
+    setDraft((current) => ({ ...current, [key]: value.slice(0, CAPS[key]) }));
 
   const ready = Boolean(draft.nameEn.trim() && draft.nameAr.trim() && draft.crNumber.trim());
 

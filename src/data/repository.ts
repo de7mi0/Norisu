@@ -159,7 +159,15 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
   const [salonsResult, servicesResult, staffResult, ratingsResult, mediaResult] = await Promise.all([
     supabase
       .from('salons')
-      .select('*')
+      // Named rather than `*` since 0015: SELECT on `cr_number` is revoked from
+      // every role — a commercial registration number identifies a business to
+      // the government and this query was handing every one of them to
+      // anonymous visitors — and asking for a column you may not read fails the
+      // whole request rather than omitting it.
+      .select(
+        'id, slug, name_en, name_ar, tags_en, tags_ar, category_en, category_ar,' +
+          ' area_en, area_ar, city, phone, is_published, slot_step_minutes',
+      )
       .eq('is_published', true)
       .order('name_en')
       .abortSignal(signal)

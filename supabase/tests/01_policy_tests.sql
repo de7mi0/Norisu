@@ -329,13 +329,16 @@ $$;
 -- 11. A salon has at most one cover photo.
 -- ---------------------------------------------------------------------------
 
+-- Real paths: `<salon id>/<kind>/<file>`, which 0015 now constrains them to.
 insert into salon_media (salon_id, storage_path, is_cover)
-values ('aaaaaaaa-0000-0000-0000-000000000001', 'a/1.jpg', true);
+values ('aaaaaaaa-0000-0000-0000-000000000001',
+        'aaaaaaaa-0000-0000-0000-000000000001/cover/1.jpg', true);
 
 do $$
 begin
   insert into salon_media (salon_id, storage_path, is_cover)
-  values ('aaaaaaaa-0000-0000-0000-000000000001', 'a/2.jpg', true);
+  values ('aaaaaaaa-0000-0000-0000-000000000001',
+          'aaaaaaaa-0000-0000-0000-000000000001/cover/2.jpg', true);
   raise exception 'FAIL 11: a second cover photo was accepted';
 exception
   when unique_violation then
@@ -2428,11 +2431,27 @@ begin
     when insufficient_privilege then null;
   end;
 
-  -- Moving and calling off an appointment must still work: those are the only
-  -- two booking updates the app makes.
-  update bookings set starts_at = '2026-10-01 14:00+03',
-                      ends_at   = '2026-10-01 15:00+03'
-    where id = booking;
+  -- Moving one by hand is refused since 0015. It was granted in 0006 because
+  -- rescheduling was an UPDATE from the browser; 0008 made it a function and
+  -- the grant outlived its use, which let a customer stretch a booking across
+  -- a whole day and hold the chair. reschedule_booking() is the way now, and
+  -- assertion 68 covers that it still works.
+  begin
+    update bookings set ends_at = '2026-10-01 22:00+03' where id = booking;
+    raise exception 'FAIL 56h: the customer stretched their booking to hold the chair';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  begin
+    update bookings set staff_id = 'dddddddd-0000-0000-0000-000000000001' where id = booking;
+    raise exception 'FAIL 56i: the customer chose the chair their booking occupies';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Calling it off must still work: it is the one booking update the app still
+  -- makes directly.
   update bookings set status = 'cancelled', cancelled_at = now() where id = booking;
 
   reset role;
@@ -2455,8 +2474,11 @@ begin
   end;
 
   reset role;
-  select subtotal_halalas, total_halalas, paid_at, status, starts_at
+  select subtotal_halalas, total_halalas, paid_at, status, starts_at, ends_at
     into got from bookings where id = booking;
+  if got.ends_at <> '2026-10-01 11:00+03'::timestamptz then
+    raise exception 'FAIL 56j: the booking ended up longer than it was made (%)', got.ends_at;
+  end if;
   if got.subtotal_halalas <> 50000 or got.total_halalas <> 57500 then
     raise exception 'FAIL 56e: the price changed anyway (% / %)',
       got.subtotal_halalas, got.total_halalas;
@@ -2468,7 +2490,7 @@ begin
     raise exception 'FAIL 56g: the customer could no longer cancel';
   end if;
 
-  raise notice 'PASS 56: the money on a booking is fixed once made, while moving and cancelling still work';
+  raise notice 'PASS 56: a booking''s money, hours and chair are all fixed once made; cancelling still works';
 end
 $$;
 reset role;
@@ -2722,17 +2744,27 @@ begin
   perform set_config('request.jwt.claims', format('{"sub":"%s"}', owner), true);
   set local role authenticated;
 
-  -- Moving the second onto Layla would put her in two chairs at once.
+  -- Reassigning goes through the function since 0015: the column itself is no
+  -- longer writable, because the same grant let a *customer* move their booking
+  -- onto another salon's stylist.
   begin
     update bookings set staff_id = layla where id = second_b;
-    raise exception 'FAIL 61a: reassigning double-booked a staff member';
+    raise exception 'FAIL 61a: the chair is still writable by hand';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Moving the second onto Layla would put her in two chairs at once.
+  begin
+    perform reassign_appointment(second_b, layla);
+    raise exception 'FAIL 61b: reassigning double-booked a staff member';
   exception
     when exclusion_violation then null;
   end;
 
   -- Freeing the slot first makes the same move legitimate.
   update bookings set status = 'cancelled', cancelled_at = now() where id = first_b;
-  update bookings set staff_id = layla where id = second_b;
+  perform reassign_appointment(second_b, layla);
 
   -- And the salon may run the appointment through to the end.
   update bookings set status = 'in_progress' where id = second_b;
@@ -2741,7 +2773,7 @@ begin
   reset role;
   select status into final from bookings where id = second_b;
   if final <> 'completed' then
-    raise exception 'FAIL 61b: the salon could not complete its own appointment (%)', final;
+    raise exception 'FAIL 61c: the salon could not complete its own appointment (%)', final;
   end if;
 
   raise notice 'PASS 61: a salon runs its own appointments, and reassigning cannot double-book';
@@ -4083,7 +4115,7 @@ begin
       'extend_waitlist_offer', 'join_waitlist', 'leave_waitlist', 'my_waitlist',
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
-      'create_walkin_booking',
+      'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -4456,16 +4488,30 @@ begin
       bucket.allowed_mime_types;
   end if;
 
-  -- A signed-out visitor can see the file the salon uploaded above.
+  -- Photographs load for a signed-out visitor because the bucket is public
+  -- (90b above) — public objects are served without consulting row-level
+  -- security at all. What that visitor must NOT be able to do is enumerate the
+  -- bucket: the folder names are salon ids, unpublished salons included, and
+  -- 0013's read policy handed out exactly that. 0015 replaced it with one that
+  -- lists a salon's own folder to its own owner.
   set local role anon;
   select count(*) into visible from storage.objects where bucket_id = 'salon-photos';
   reset role;
 
-  if visible < 1 then
-    raise exception 'FAIL 90e: a visitor cannot see any photograph, so no salon has a picture';
+  if visible <> 0 then
+    raise exception 'FAIL 90e: a signed-out visitor listed % object(s) in the bucket', visible;
   end if;
 
-  raise notice 'PASS 90: photographs are public to read, capped in size, and images only';
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  select count(*) into visible from storage.objects where bucket_id = 'salon-photos';
+  reset role;
+
+  if visible < 1 then
+    raise exception 'FAIL 90f: the salon cannot list its own photographs';
+  end if;
+
+  raise notice 'PASS 90: photographs are public to read, capped, images only, and the bucket is not listable';
 end
 $$;
 reset role;
@@ -4749,6 +4795,537 @@ begin
   end if;
 
   raise notice 'PASS 94: a booking has an account or a name, never neither and never both';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- The second audit (0015). Every one of 95-106 was demonstrated against a
+-- database *before* the fix and succeeded there; each is run again here against
+-- a database with its own protection removed, and fails.
+--
+-- The shape they share: a row policy says whose row you may touch, and nothing
+-- about what you may put in it, or whether the ids inside it are yours.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- 95. A salon cannot walk into the catalogue by inserting itself verified.
+--
+--     THE CRITICAL ONE. 0004 stopped an owner *updating* those two columns;
+--     INSERT was column-blind, so one request created a published salon with
+--     no commercial registration ever seen. Registering normally must still
+--     work, or the fix would have closed the front door of the vendor side.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  cust   uuid := '22222222-2222-2222-2222-222222222222';
+  made   uuid;
+  v      boolean;
+  p      boolean;
+begin
+  perform auth.login_as(cust);
+  set local role authenticated;
+
+  begin
+    insert into salons (owner_id, slug, name_en, name_ar, is_verified, is_published)
+    values (cust, 'walk-in-live', 'Walked In', 'دخل', true, true);
+    raise exception 'FAIL 95a: a new account published a salon with no verification';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Even one flag on its own.
+  begin
+    insert into salons (owner_id, slug, name_en, name_ar, is_verified)
+    values (cust, 'walk-in-verified', 'Half Way', 'نصف', true);
+    raise exception 'FAIL 95b: a new account verified its own salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Registering the honest way still works, and lands unverified.
+  insert into salons (owner_id, slug, name_en, name_ar, cr_number)
+  values (cust, 'honest-salon', 'Honest', 'صادق', '1010999999')
+  returning id into made;
+
+  select is_verified, is_published into v, p from salons where id = made;
+  if v or p then
+    raise exception 'FAIL 95c: a freshly registered salon was already live (% / %)', v, p;
+  end if;
+  reset role;
+
+  delete from salons where id = made;
+
+  raise notice 'PASS 95: a salon is registered unverified, and cannot insert itself otherwise';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 96. Verification is about a particular registration number. Changing it puts
+--     the salon back in the queue rather than leaving a tick against a number
+--     nobody checked.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner uuid := '33333333-3333-3333-3333-333333333333';
+  v     boolean;
+  p     boolean;
+begin
+  update salons set cr_number = '1010000001', is_verified = true, is_published = true
+   where id = salon;
+
+  perform auth.login_as(owner);
+  set local role authenticated;
+  update salons set cr_number = '9999999999' where id = salon;
+  reset role;
+
+  select is_verified, is_published into v, p from salons where id = salon;
+  if v or p then
+    raise exception 'FAIL 96: the number changed and the salon stayed verified (% / %)', v, p;
+  end if;
+
+  -- Put it back, since the assertions after this one need a live salon.
+  update salons set is_verified = true, is_published = true where id = salon;
+
+  raise notice 'PASS 96: changing the registration number sends a salon back for review';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 97. A booking's stylist must work at the booking's salon — whoever writes it.
+--
+--     The grant that let a customer move their own booking is gone (56i), and
+--     this is the rule underneath it: even a path with the privilege cannot
+--     put one salon's appointment in another salon's chair.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon_a uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  salon_b uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  theirs  uuid;
+begin
+  insert into staff (salon_id, name_en, name_ar, initials)
+  values (salon_b, 'Rival', 'منافس', 'RV') returning id into theirs;
+
+  -- As the database owner: no policy, no grant, nothing but the rule itself.
+  begin
+    insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                          status, subtotal_halalas, total_halalas)
+    values ('SL-CROSS', '11111111-1111-1111-1111-111111111111', salon_a, theirs,
+            '2026-12-01 10:00+03', '2026-12-01 11:00+03', 'confirmed', 100, 100);
+    raise exception 'FAIL 97: a booking was written into another salon''s chair';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  raise notice 'PASS 97: a booking can only occupy a chair at its own salon';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 98. Reassigning is the salon's, is bounded to its own team, and never leaves
+--     an appointment without a chair — which is the state 0008 closed.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon_a uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  salon_b uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  owner_a uuid := '33333333-3333-3333-3333-333333333333';
+  owner_b uuid := '44444444-4444-4444-4444-444444444444';
+  layla   uuid := 'dddddddd-0000-0000-0000-000000000001';
+  theirs  uuid;
+  bk      uuid;
+  got     uuid;
+begin
+  select id into theirs from staff where salon_id = salon_b limit 1;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-REASSIGN', '11111111-1111-1111-1111-111111111111', salon_a, layla,
+          '2026-12-02 10:00+03', '2026-12-02 11:00+03', 'confirmed', 100, 100)
+  returning id into bk;
+
+  -- A rival salon cannot touch it.
+  perform auth.login_as(owner_b);
+  set local role authenticated;
+  begin
+    perform reassign_appointment(bk, theirs);
+    raise exception 'FAIL 98a: a rival salon reassigned this salon''s appointment';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform auth.login_as(owner_a);
+  set local role authenticated;
+
+  -- Nor can its own owner hand it to somebody who does not work there. Either
+  -- refusal counts: the function checks it, and assertion 97's trigger checks
+  -- it again underneath — deliberately, so a path that forgets is still safe.
+  begin
+    perform reassign_appointment(bk, theirs);
+    raise exception 'FAIL 98b: an appointment was handed to another salon''s stylist';
+  exception
+    when sqlstate 'SL003' or insufficient_privilege then null;
+  end;
+
+  -- "Anyone" assigns somebody rather than clearing the chair.
+  select reassign_appointment(bk, null) into got;
+  reset role;
+
+  if got is null then
+    raise exception 'FAIL 98c: reassigning to "anyone" left the appointment with no chair';
+  end if;
+
+  select staff_id into got from bookings where id = bk;
+  if got is null then
+    raise exception 'FAIL 98d: the booking ended up outside the no-double-booking constraint';
+  end if;
+
+  raise notice 'PASS 98: only the salon reassigns, only to its own team, and never to nobody';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 99. One salon cannot take another's stylist off sale.
+--
+--     time_off carried a salon_id and a staff_id and never compared them. The
+--     row was accepted, available_slots() ignored it (it scopes by salon) and
+--     create_booking() honoured it (it did not) — so customers were offered
+--     times that were then refused, for as long as the row lasted.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon_b uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  owner_b uuid := '44444444-4444-4444-4444-444444444444';
+  layla   uuid := 'dddddddd-0000-0000-0000-000000000001';
+begin
+  perform auth.login_as(owner_b);
+  set local role authenticated;
+
+  begin
+    insert into time_off (salon_id, staff_id, starts_at, ends_at, reason)
+    values (salon_b, layla, now(), now() + interval '30 days', 'sabotage');
+    raise exception 'FAIL 99: one salon blocked out another salon''s stylist';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 99: time off can only name a stylist of its own salon';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 100. One salon cannot make another's services unbookable.
+--
+--      staff_services means "only these people may do this service". Its policy
+--      asked whether you owned the *stylist*, never whether the *service* was
+--      yours — so linking your own stylist to a rival's service left nobody at
+--      that rival qualified to do it, and every booking failed with "nobody is
+--      free".
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_b  uuid := '44444444-4444-4444-4444-444444444444';
+  salon_b  uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  their_service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  mine     uuid;
+begin
+  select id into mine from staff where salon_id = salon_b limit 1;
+
+  perform auth.login_as(owner_b);
+  set local role authenticated;
+
+  begin
+    insert into staff_services (staff_id, service_id) values (mine, their_service);
+    raise exception 'FAIL 100: one salon narrowed another salon''s service to its own staff';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 100: a stylist can only be linked to their own salon''s services';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 101. A review cannot arrive with the salon's answer already written in it.
+--
+--      0006 revoked UPDATE and 0007 made replying a function, so this looked
+--      closed. INSERT was still column-blind: a one-star review could carry a
+--      reply in the salon's name, and replied_at so it looked answered.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  cust  uuid := '11111111-1111-1111-1111-111111111111';
+  bk    uuid;
+begin
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-REVIEWED', cust, salon, 'dddddddd-0000-0000-0000-000000000001',
+          now() - interval '2 days', now() - interval '2 days' + interval '1 hour',
+          'completed', 100, 100)
+  returning id into bk;
+
+  perform auth.login_as(cust);
+  set local role authenticated;
+
+  begin
+    insert into reviews (booking_id, salon_id, customer_id, rating, body, reply, replied_at)
+    values (bk, salon, cust, 1, 'awful', 'We agree, we are awful', now());
+    raise exception 'FAIL 101a: a customer wrote the salon''s reply for it';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- Leaving an honest review still works.
+  insert into reviews (booking_id, salon_id, customer_id, rating, body)
+  values (bk, salon, cust, 4, 'good');
+  reset role;
+
+  raise notice 'PASS 101: a review carries the customer''s words only, and still can';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 102. A photograph row cannot point into another salon's folder. The storage
+--      rules were already right (89); the row that names the file was not.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon_b uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  owner_b uuid := '44444444-4444-4444-4444-444444444444';
+begin
+  perform auth.login_as(owner_b);
+  set local role authenticated;
+
+  begin
+    insert into salon_media (salon_id, storage_path, is_cover)
+    values (salon_b, 'aaaaaaaa-0000-0000-0000-000000000001/cover/theirs.jpg', true);
+    raise exception 'FAIL 102: a salon listed a rival''s photograph as its own cover';
+  exception
+    when check_violation then null;
+  end;
+
+  -- Its own folder is fine.
+  insert into salon_media (salon_id, storage_path)
+  values (salon_b, salon_b::text || '/gallery/mine.jpg');
+  reset role;
+
+  raise notice 'PASS 102: a photograph row can only name a file in its own salon''s folder';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 103. Nothing a person types is unbounded. The catalogue every visitor
+--      downloads on the home screen is built out of these columns.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner uuid := '33333333-3333-3333-3333-333333333333';
+  n     integer;
+begin
+  perform auth.login_as(owner);
+  set local role authenticated;
+
+  begin
+    update salons set name_en = repeat('x', 100000) where id = salon;
+    raise exception 'FAIL 103a: a one-hundred-thousand-character salon name was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    update services set name_en = repeat('x', 5000)
+     where salon_id = salon and id = 'cccccccc-0000-0000-0000-000000000001';
+    raise exception 'FAIL 103b: an unbounded service name was accepted';
+  exception
+    when check_violation then null;
+  end;
+  reset role;
+
+  select length(name_en) into n from salons where id = salon;
+  if n > 80 then
+    raise exception 'FAIL 103c: the salon name grew anyway (% characters)', n;
+  end if;
+
+  raise notice 'PASS 103: free text is bounded, so one row cannot bloat the catalogue';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 104. One account cannot hold a salon's whole day.
+--
+--      Nothing is paid, so without a cap an account books every slot for free
+--      and simply does not turn up. Deposits are the real answer and need
+--      payments; this is what can be done before then.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  cust    uuid := '22222222-2222-2222-2222-222222222222';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  day     date := test_day(600);
+  made    integer := 0;
+  t       time := '12:00';
+begin
+  perform auth.login_as(cust);
+  set local role authenticated;
+
+  for i in 1..5 loop
+    begin
+      perform create_booking(salon, null, array[service],
+        ((day + t) at time zone 'Asia/Riyadh'));
+      made := made + 1;
+    exception
+      when sqlstate 'SL006' then exit;
+    end;
+    t := t + interval '90 min';
+  end loop;
+  reset role;
+
+  if made <> 3 then
+    raise exception 'FAIL 104: one account made % bookings at one salon in a day, expected 3', made;
+  end if;
+
+  raise notice 'PASS 104: one account cannot book out a salon''s day';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 105. A salon still awaiting review answers nothing about its day.
+--
+--      available_slots() is open to anon on purpose — browsing is ungated — and
+--      never asked whether the salon was published, so an unpublished salon's
+--      opening hours and booking shape were readable by anyone holding its id.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner   uuid := '33333333-3333-3333-3333-333333333333';
+  seen    bigint;
+begin
+  update salons set is_published = false where id = salon;
+
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  select count(*) into seen from available_slots(salon, test_day(601), 45, null);
+  reset role;
+
+  if seen <> 0 then
+    raise exception 'FAIL 105a: a visitor read % slots of a salon under review', seen;
+  end if;
+
+  -- Its own owner still sees it, or the portal would go blank before approval.
+  perform auth.login_as(owner);
+  set local role authenticated;
+  select count(*) into seen from available_slots(salon, test_day(601), 45, null);
+  reset role;
+
+  if seen = 0 then
+    raise exception 'FAIL 105b: the owner cannot see their own salon''s availability';
+  end if;
+
+  update salons set is_published = true where id = salon;
+
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  select count(*) into seen from available_slots(salon, test_day(601), 45, null);
+  reset role;
+
+  if seen = 0 then
+    raise exception 'FAIL 105c: a published salon stopped offering times';
+  end if;
+
+  raise notice 'PASS 105: availability is answered for a public salon, or to its owner, and nobody else';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 106. A commercial registration number is not public.
+--
+--      SELECT is column-blind too, and the catalogue asked for `select *`, so
+--      every signed-out visitor was handed each salon's CR number. Revoked from
+--      signed-in accounts as well, because signup is open — "signed in" is not
+--      a filter. The owner reads their own through a function.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner uuid := '33333333-3333-3333-3333-333333333333';
+  other uuid := '22222222-2222-2222-2222-222222222222';
+  got   text;
+  n     bigint;
+begin
+  perform set_config('request.jwt.claims', '', true);
+  set local role anon;
+  begin
+    select cr_number into got from salons where id = salon;
+    raise exception 'FAIL 106a: a signed-out visitor read a commercial registration number';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- The catalogue itself must still load for that visitor.
+  select count(*) into n from salons where is_published;
+  if n = 0 then
+    raise exception 'FAIL 106b: the catalogue stopped loading for signed-out visitors';
+  end if;
+  reset role;
+
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    select cr_number into got from salons where id = salon;
+    raise exception 'FAIL 106c: any signed-in account read another salon''s registration number';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- And a stranger cannot get it through the function either.
+  select my_salon_cr(salon) into got;
+  if got is not null then
+    raise exception 'FAIL 106d: the function handed a stranger the number (%)', got;
+  end if;
+  reset role;
+
+  perform auth.login_as(owner);
+  set local role authenticated;
+  select my_salon_cr(salon) into got;
+  reset role;
+
+  if got is null then
+    raise exception 'FAIL 106e: the owner cannot read their own registration number';
+  end if;
+
+  raise notice 'PASS 106: a registration number reaches its own salon''s owner and nobody else';
 end
 $$;
 reset role;

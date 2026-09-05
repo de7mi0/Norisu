@@ -73,6 +73,24 @@ async function install(page) {
       return ok(route, []);
     }
 
+    // Reassigning goes through the 0015 function, not a PATCH: the column is no
+    // longer writable from the browser, because the same grant let a customer
+    // move their own booking onto another salon's stylist.
+    if (url.includes('rpc/reassign_appointment')) {
+      const body = JSON.parse(req.postData() || '{}');
+      db.writes.push(body);
+      if (db.rejectNext) {
+        const e = db.rejectNext; db.rejectNext = null;
+        return route.fulfill({ status: 409, contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(e) });
+      }
+      const person = staff.find((s) => s.id === body.p_staff_id);
+      db.appt.staff_name_en = person ? person.name_en : null;
+      db.appt.staff_name_ar = person ? person.name_ar : null;
+      // The function answers with the chair it settled on.
+      return ok(route, person ? person.id : staff[0].id);
+    }
+
     if (url.includes('rpc/reply_to_review')) {
       const body = JSON.parse(req.postData() || '{}');
       db.writes.push(body);
