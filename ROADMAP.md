@@ -237,6 +237,39 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   Checkout.com. **Tabby and Tamara require their own separate merchant onboarding.**
 - Payouts to salons, the commission model, and refunds.
 
+**The revenue model is decided: a percentage of each booking, not a subscription.**
+(Owner's decision, September 2026.) That choice is not only commercial — it decides how
+much regulation Saloni takes on, because there are two structurally different ways to
+collect a percentage and they are not equally heavy:
+
+- **A — the salon is the merchant; Saloni invoices the commission afterwards.** The
+  customer pays the salon, and Saloni bills each salon for its share of what completed.
+  Saloni never holds anybody else's money, so it is selling software to businesses and
+  nothing more. The booking rows are already the evidence: `booking_items` snapshots what
+  was charged and `status = 'completed'` says it happened, so the amount owed is a query,
+  not a claim. The costs are collection (invoices have to be chased) and that **deposits
+  stay impossible**, because nothing is held — the per-account booking cap in 0015/0017 is
+  the interim answer to no-shows and stays the interim answer.
+- **B — money flows through Saloni and is split.** The customer pays Saloni, which keeps
+  its percentage and pays the rest out. Holding other people's money is the regulated part
+  in Saudi Arabia; the practical route is a gateway whose own licence covers it, splitting
+  and settling to each salon as a sub-merchant, rather than Saloni becoming licensed. Every
+  salon then needs its own CR, bank account and KYC **before it can take one booking**,
+  which is a hard funnel for a marketplace that has no salons yet. It is also the only way
+  deposits ever work.
+
+**A first, B when the volume justifies it,** is the recommendation — but confirm the
+current SAMA position and what each gateway actually supports before committing, because
+this is the one decision that is expensive to reverse. Ask each gateway directly whether
+it supports split settlement to sub-merchants in KSA; support varies and changes.
+
+**Whichever lands, the privacy policy and terms change with it.** They currently say, in
+both languages and truthfully, that nothing is paid through Saloni, that no card details
+are ever collected, and that the customer pays the salon directly. Under A the first and
+third become false; under B all three need rewriting and a payment processor joins the
+list of third parties. That is not a tidy-up afterwards — it is part of the payments
+change, by the rule in CLAUDE.md §10.
+
 Two things worth knowing early:
 - **Apple does not require In-App Purchase for real-world services.** Salon appointments
   are a physical service, so you can take payment through mada/Apple Pay directly and keep
