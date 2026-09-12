@@ -369,6 +369,135 @@ export const en = {
   bookCancelYes: 'Yes, cancel',
   bookConfirmMove: 'Confirm new time',
 
+  // ---------------------------------------------------------------------
+  // Privacy and terms
+  //
+  // Drafted from the schema rather than from a template: every item in the
+  // "what is kept" list is a column that exists, and every absence in the
+  // "never asked for" list is one somebody could otherwise reasonably assume.
+  // Nobody here is a lawyer, which the banner says first and plainly.
+  // ---------------------------------------------------------------------
+  legalTitle: 'Privacy & terms',
+  legalSub: 'What Saloni keeps, and the rules it runs by',
+  legalTabPrivacy: 'Privacy',
+  legalTabTerms: 'Terms',
+  legalDraftTitle: 'Draft — not approved yet',
+  legalDraftBody:
+    'This was written from what the app actually does, not by a lawyer. It has to be read and approved by one, and the blanks below filled in, before Saloni is submitted to either app store or relied on by anybody.',
+  legalDraftBlanks:
+    'Still to be supplied: the name and address of the company behind Saloni, a contact address for privacy questions, and the country the database is hosted in.',
+
+  legalPrivIntroH: 'What this covers',
+  legalPrivIntroB:
+    'Saloni is a booking app for salons in Saudi Arabia. This says what it keeps about you, who can see it, and how to have it removed. It covers the app — not what a salon does with what you tell it in person.',
+
+  legalPrivCollectH: 'What Saloni keeps',
+  legalPrivCollectB:
+    'Only what a booking needs. Every item below is stored because a screen you use depends on it.',
+  legalPrivCollectL:
+    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. A review is shown on the salon’s page and to the salon itself, with your name beside it.',
+
+  legalPrivNeverH: 'What Saloni never asks for',
+  legalPrivNeverB:
+    'These absences are worth stating, because an app of this kind is usually assumed to have them.',
+  legalPrivNeverL:
+    'No card details, ever. Nothing is paid through Saloni today: choosing a payment method records which one you would use and nothing more, and no card number is asked for on any screen.\nNo location. The app never asks where you are, which is why a salon card shows no distance to it.\nNo contacts, no calendar, no photo library. A salon owner picks photographs of their own salon; nothing else on the phone is read.\nNo advertising, no tracking, no analytics. Nothing on any screen is there to measure you.',
+
+  legalPrivSalonH: 'What the salon sees about you',
+  legalPrivSalonB:
+    'Your display name, and nothing else about you. If you have given no name, the salon sees your booking reference where a name would be — which is already how its calendar reads for somebody who never gave one. Your e-mail address and your mobile number never reach a salon: the database refuses to hand them over, rather than the app merely declining to show them. A telephone number shown against an appointment is one the salon typed in itself while taking a booking at the counter or over the phone.',
+
+  legalPrivPhotoH: 'Photographs',
+  legalPrivPhotoB:
+    'Only salon owners upload photographs, and only of their own salon. Before a picture leaves the phone the app re-encodes it, which removes everything a camera writes alongside the image — the GPS coordinates most of all. What is uploaded is the picture and nothing else. Photographs on a salon page are public, so anybody can see them.',
+
+  legalPrivOwnerH: 'If you run a salon',
+  legalPrivOwnerB:
+    'Registering a salon also stores its name, its area, its telephone number and its commercial registration number. A person checks that registration before the salon appears to customers. The number itself is readable only by the account that owns the salon — not by customers, not by other salons, and not by a visitor who is not signed in.',
+
+  legalPrivPushH: 'Notifications',
+  legalPrivPushB:
+    'If you let Saloni notify you, your browser or phone gives it an address to send to, and that address is stored against your account. It is used for one thing: telling you a seat has come free on a waitlist you joined. Turning notifications off in your device settings stops them, and deleting your account removes the address.',
+
+  legalPrivWhereH: 'Where it is held',
+  legalPrivWhereB:
+    'The database, the sign-in service and the photographs are hosted by [[Supabase]]. The app itself is served as a web page by [[GitHub Pages]]. That page loads its typefaces from [[Google Fonts]], which means [[Google]] sees the network address your device connects from when a screen first opens. The country the database is hosted in must be stated here before Saloni is submitted — see the note at the top.',
+
+  legalPrivKeepH: 'How long it is kept',
+  legalPrivKeepB:
+    'Your account and everything attached to it stay until you delete the account. A salon keeps its record of appointments it actually worked, with you detached from them — set out below.',
+
+  legalPrivDeleteH: 'Deleting your account',
+  legalPrivDeleteB:
+    'There is a “Delete my account” link under Sign out on your profile. It is immediate and cannot be undone. Precisely what happens:',
+  legalPrivDeleteL:
+    'Removed for good: your profile, the e-mail address or number you signed in with, your name, your language preference, your place in any waitlist, any message queued for you, every device registered for notifications, and every review you have written.\nCancelled first: any appointment still to come, so the chair goes back on sale.\nKept, without you: appointments you have already had. They stay on the salon’s own calendar with the booking reference where your name was. A salon has to be able to say what it did on a given day, and its figures are built from those appointments — but the person is not the salon’s to keep.\nRefused: while your account owns a salon. A salon holds other people’s appointments, its team and its photographs, so it has to be handed over or closed first.',
+
+  legalPrivRightsH: 'Your rights',
+  legalPrivRightsB:
+    'Saudi Arabia’s Personal Data Protection Law gives you the right to know what is held about you, to have it corrected, and to have it destroyed. Deleting your account does the last of those inside the app and immediately. For the first two, or for anything this page does not answer, write to the address below.',
+
+  legalPrivChildH: 'Children',
+  legalPrivChildB:
+    'Saloni is for adults. It is not designed for children and asks for nothing that would identify one.',
+
+  legalPrivChangeH: 'Changes to this page',
+  legalPrivChangeB:
+    'If what the app collects changes, this page changes with it. It is part of the app rather than a document kept somewhere else, so the two cannot quietly drift apart.',
+
+  legalPrivContactH: 'Contact',
+  legalPrivContactB:
+    'A contact address for privacy questions has not been set yet, and must be before Saloni is submitted. Until then, ask through Help & support in the app.',
+
+  legalTermIntroH: 'What Saloni is',
+  legalTermIntroB:
+    'Saloni introduces you to a salon and holds your appointment with it. The work itself — the cut, the colour, the treatment — is the salon’s, and so is the responsibility for it. Saloni is not the salon and does not employ its staff.',
+
+  legalTermAccountH: 'Your account',
+  legalTermAccountB:
+    'Signing in takes a six-digit code sent to your e-mail address or your mobile number. There is no password. That code is how the app knows you, so anybody with your inbox or your phone can sign in as you — keep both to yourself. One account is one person.',
+
+  legalTermBookH: 'Booking and cancelling',
+  legalTermBookB:
+    'A time you pick is held by the database the moment you confirm, which is why two people tapping the same slot cannot both get it. You can move or cancel an appointment yourself from the Bookings screen. A cancelled appointment goes back on sale at once, and if somebody is waiting for that day it is offered to them. What a salon charges for a late cancellation, or for not arriving, is between you and the salon: Saloni takes no payment and applies no fee.',
+
+  legalTermPayH: 'Payment',
+  legalTermPayB:
+    'Nothing is paid through Saloni. Choosing a payment method at checkout records which one you would use; it takes no money and no card number, and you pay the salon directly. Prices come from the salon and include VAT at the rate stored with your booking, so a later change to that rate cannot alter what you were quoted.',
+
+  legalTermWaitH: 'Waitlists',
+  legalTermWaitB:
+    'Joining a waitlist for a full day puts you in a queue in the order people joined it. When a seat comes free it is held for whoever has waited longest, for fifteen minutes, and then passes to the next person. A place in a waitlist is not an appointment and guarantees nothing.',
+
+  legalTermReviewH: 'Reviews',
+  legalTermReviewB:
+    'You can review a salon after an appointment it has marked completed — your own appointment, not somebody else’s. A salon can reply to a review and cannot edit or delete one; the database will not let it. Write about the visit. Anything abusive, or aimed at a person rather than the service, may be taken down.',
+
+  legalTermSalonH: 'If you run a salon',
+  legalTermSalonB:
+    'You are responsible for what you publish: your services, your prices, your team, your photographs, and that your commercial registration is genuine and current. A person checks a salon before customers can see it, and being registered is not the same as being approved. Do not upload a photograph you have no right to use. What you are shown about a customer is a name or a booking reference — treat it as theirs, and use it only to do the work they booked.',
+
+  legalTermUseH: 'Using it fairly',
+  legalTermUseB: 'A short list, all of which the database already enforces:',
+  legalTermUseL:
+    'Book for yourself, under your own account.\nDo not try to reach data that is not yours, or to work around the rules that keep one salon’s records apart from another’s.\nDo not hold seats you do not intend to take. There is a limit on how many appointments one account may hold at one salon on one day, for exactly this reason.',
+
+  legalTermAvailH: 'When it is not there',
+  legalTermAvailB:
+    'Saloni is offered as it is. It can be down, a salon’s hours can be wrong, and a time it offers can be taken a second before you confirm it — the app says so when that happens. Nothing here promises the service will be uninterrupted.',
+
+  legalTermEndH: 'Ending it',
+  legalTermEndB:
+    'You can delete your account whenever you like, from your profile. Saloni can close an account being used to harm somebody or to abuse the service.',
+
+  legalTermLawH: 'Which law applies',
+  legalTermLawB:
+    'These terms are governed by the laws of the Kingdom of Saudi Arabia, and the courts of the Kingdom decide any dispute about them.',
+
+  legalTermChangeH: 'Changes to these terms',
+  legalTermChangeB:
+    'These terms change with the app, on this page. Carrying on using Saloni after a change means accepting it.',
+
 };
 
 /** Every dictionary carries the same keys; values are plain strings. */

@@ -182,6 +182,31 @@ export function Profile() {
         </button>
       ) : null}
 
+      {/*
+        Shown signed in or out, because a store reviewer reaches this screen
+        without an account and both stores expect to find the policy from
+        inside the app as well as at the URL they were given. It sits beside
+        account deletion since that is where somebody looks for both.
+      */}
+      <button
+        type="button"
+        onClick={() => dispatch({ type: 'openLegal', tab: 'privacy' })}
+        className="press"
+        style={{
+          display: 'block',
+          width: 'calc(100% - 48px)',
+          margin: '10px 24px 0',
+          textAlign: 'center',
+          padding: 12,
+          font: `600 12px ${font.sans}`,
+          color: color.mutedSoft,
+          textDecoration: 'underline',
+          textUnderlineOffset: 3,
+        }}
+      >
+        {t.legalTitle}
+      </button>
+
       <button
         type="button"
         onClick={() => dispatch({ type: 'pickMode', mode: 'vendor' })}

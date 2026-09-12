@@ -24,6 +24,7 @@ import { Chat } from './screens/customer/Chat';
 import { Chooser } from './screens/customer/Chooser';
 import { Confirmation } from './screens/customer/Confirmation';
 import { Home } from './screens/customer/Home';
+import { Legal } from './screens/customer/Legal';
 import { Payment } from './screens/customer/Payment';
 import { Profile } from './screens/customer/Profile';
 import { Reviews } from './screens/customer/Reviews';
@@ -54,6 +55,7 @@ const CUSTOMER_SCREENS: Record<CustomerScreen, () => React.ReactElement> = {
   profile: Profile,
   chat: Chat,
   bot: AssistantBot,
+  legal: Legal,
 };
 
 const VENDOR_SCREENS: Record<VendorScreen, () => React.ReactElement> = {

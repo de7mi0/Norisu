@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { appReducer, initialState } from './appReducer';
+import { appReducer, initialStateFor } from './appReducer';
 import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } from './context';
 import { BOT_TOPICS, REPLY_DELAY, SALON_AUTO_REPLY, botReplyFor, type BotTopicKey } from './replies';
 import { useSession } from './useSession';
@@ -109,7 +109,13 @@ import { dayLabel, dictionaryFor, formatMoney } from '../i18n';
 import type { Booking, CustomerScreen, Lang } from '../types';
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  // `?legal` is resolved into the very first state rather than dispatched from
+  // an effect, so a store reviewer following a policy link lands on the policy
+  // instead of watching the chooser flash past on the way to it. Unlike
+  // `?claim` below, the parameter is deliberately *left in the address bar*:
+  // re-reading a policy is idempotent, and a reviewer who reloads or shares
+  // the link should get the same page back.
+  const [state, dispatch] = useReducer(appReducer, window.location.search, initialStateFor);
 
   // The catalogue starts as the bundled sample data so the app renders
   // immediately, then swaps to live rows once they arrive.

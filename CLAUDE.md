@@ -30,7 +30,7 @@ built out as a real app. The implementation is the source of truth now.
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
 
-**Scale:** 74 TypeScript files, ~16,100 lines. ~4,000 lines of migrations, ~9,000 including tests and seed.
+**Scale:** 76 TypeScript files, ~17,000 lines. ~4,000 lines of migrations, ~9,000 including tests and seed.
 
 ---
 
@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              301 Chromium checks in both languages; see its README
+  browser-tests/              346 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -110,7 +110,8 @@ src/
                               Photo.tsx — a photograph where a placeholder tile was,
                               DeleteAccountSheet.tsx — the store-required deletion
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
-  screens/customer/           12 screens
+  screens/customer/           13 screens, including Legal.tsx — the privacy policy and
+                              terms, also reachable at ?legal without signing in
   screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
                               BlockSheet.tsx (taking time off sale),
                               WalkInSheet.tsx (the salon's own booking),
@@ -552,6 +553,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Vendor waitlist** | **Real.** The owner's own queue, with re-offering and extending a hold. **No `SampleDataNotice` remains anywhere in the portal.** |
 | **Deleting your account** | **Real, and required by both stores.** A row under sign-out on the Profile screen, then a sheet that says what goes and what stays and asks the person to type the word. It removes the account, the sign-in identity, the queue position, queued messages, devices and reviews; past bookings stay on the salon's calendar with the reference where the name was. Refused while the account owns a salon. |
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
+| **Privacy policy and terms** | **Written, and a draft.** In the app in both languages, from the Profile screen and at `?legal` — a URL a store reviewer opens with no account. Drafted from the schema, not a template. **No lawyer has read it**, and three blanks are named on the page itself. See §10. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
@@ -820,6 +822,35 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
   — the salon has their number and that is the whole channel. Fine for somebody standing at
   the counter; thinner for a booking taken by phone a week ahead.
 
+**The privacy policy and terms are written, and are a draft.** Both stores refuse a
+submission without a policy at a public URL, and the Saudi PDPL wants one whether they ask
+or not. `screens/customer/Legal.tsx` is that page: both documents, both languages, reachable
+from the Profile screen signed in or out, and at `?legal` / `?legal=terms` — read in
+`initialStateFor` before the first render, so a reviewer following a link lands on the policy
+rather than watching the chooser flash past. Unlike `?claim` the parameter is **left in the
+address bar**, because re-reading a policy is idempotent and a reviewer who reloads or
+forwards the link should get the same page back. 45 browser checks, confirmed to fail against
+the code before them.
+
+- **It was drafted from the schema, not from a template**, which is the only reason it is
+  worth anything. Every line of "what Saloni keeps" is a column that exists; every line of
+  "what it never asks for" is one that deliberately does not — no card details (nothing is
+  paid, `paid_at` is never set), no location, no analytics. It says a salon sees
+  `nullif(full_name, '')` and nothing else, and it sets out 0016's split: the person goes,
+  the salon's record of the day it worked stays with the reference where the name was.
+  **If a migration starts collecting something new, that list is part of the change.**
+- **Nobody who wrote it is a lawyer**, and the page says so above everything else rather
+  than in a footnote. It also names the three blanks somebody has to fill: the company
+  behind Saloni, a contact address for privacy questions, and the country the database is
+  hosted in. None of them could be answered from this repository, and inventing any of the
+  three would have been worse than leaving it visibly empty.
+- **Latin names inside the Arabic text** — Supabase, GitHub Pages, Google Fonts — are marked
+  `[[…]]` in the dictionary and wrapped in `.ltr-run` by a small renderer in `Legal.tsx`,
+  because `Dictionary` values are plain strings and there is nowhere else to put the markup.
+- **Google Fonts is disclosed**, because `index.html` loads typefaces from it and that hands
+  Google the visitor's network address. It is the only third party the page reaches that
+  nobody had written down before.
+
 **Structural gaps:**
 - **Verification is a manual step.** A registered salon stays invisible to customers until someone
   ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
@@ -864,7 +895,11 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
    Nothing is paid today: `payment_method` is recorded but `paid_at` stays null. **Start the
    commercial registration and payment-gateway paperwork early** — it runs for weeks in the
    background and is the thing most likely to delay launch.
-4. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
+4. **Get the privacy policy and terms read by a lawyer**, and fill the three blanks the page
+   names. It is written, in both languages, at a URL a store reviewer can open — see §10 —
+   but it is a draft until somebody qualified says otherwise, and both stores will ask for
+   the URL before anything else.
+5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
    in the same table through the same function, so only the worker's last hop changes.
 
 ---
@@ -872,7 +907,7 @@ service and no value, leaving "Booked today", occupancy and the day list all wro
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (111 assertions);
-  UI changes with `scripts/browser-tests/` (301 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (346 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

@@ -2,6 +2,7 @@ import type {
   ChatMessage,
   CustomerScreen,
   Lang,
+  LegalTab,
   Mode,
   Screen,
   VendorScreen,
@@ -152,6 +153,9 @@ export interface AppState {
   nameModal: boolean;
   nameForm: string;
 
+  /** Which half of the privacy-and-terms page is showing. */
+  legalTab: LegalTab;
+
   /**
    * Which appointment the owner has open on the calendar, by id, and null when
    * the sheet is closed. Only the *choice* lives here; the appointment itself
@@ -221,6 +225,7 @@ export const initialState: AppState = {
   extraStaff: [],
   nameModal: false,
   nameForm: '',
+  legalTab: 'privacy',
   apptSheet: null,
   svcModal: false,
   svcForm: { name: '', price: '', dur: '' },
@@ -234,6 +239,33 @@ export const initialState: AppState = {
   toast: '',
 };
 
+/**
+ * The privacy-and-terms page asked for by name in the address bar.
+ *
+ * Both app stores want a URL a reviewer can open cold — no account, no tapping
+ * through an app they have not seen before — and the Saudi PDPL wants one
+ * whether the stores ask or not. `?legal` is that URL, and it is read *before*
+ * the first render rather than in an effect afterwards, so the page opens on
+ * the policy instead of flashing the chooser on the way to it.
+ *
+ * An unrecognised value still lands on the privacy half: somebody who typed
+ * the address slightly wrong wanted the policy, not the front door.
+ */
+function legalTabFromSearch(search: string): LegalTab | null {
+  const value = new URLSearchParams(search).get('legal');
+  if (value === null) return null;
+  return value.toLowerCase() === 'terms' ? 'terms' : 'privacy';
+}
+
+/** Initial state, with `?legal` honoured before anything has rendered. */
+export function initialStateFor(search: string): AppState {
+  const tab = legalTabFromSearch(search);
+  if (!tab) return initialState;
+  // Customer mode, because the chooser is not somewhere a reviewer following a
+  // policy link should have to make a decision.
+  return { ...initialState, mode: 'customer', screen: 'legal', legalTab: tab };
+}
+
 /** Where the back arrow leads from each customer screen. */
 const BACK_MAP: Partial<Record<Screen, CustomerScreen>> = {
   salon: 'home',
@@ -241,6 +273,7 @@ const BACK_MAP: Partial<Record<Screen, CustomerScreen>> = {
   time: 'staff',
   pay: 'time',
   reviews: 'salon',
+  legal: 'profile',
 };
 
 export type Action =
@@ -275,6 +308,8 @@ export type Action =
   | { type: 'dismissSeatBanner' }
   | { type: 'openAppointment'; bookingId: string }
   | { type: 'closeAppointment' }
+  | { type: 'openLegal'; tab: LegalTab }
+  | { type: 'setLegalTab'; tab: LegalTab }
   | { type: 'openNameSheet'; current: string }
   | { type: 'setNameForm'; value: string }
   | { type: 'closeNameSheet' }
@@ -560,6 +595,10 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, apptSheet: action.bookingId };
     case 'closeAppointment':
       return { ...state, apptSheet: null };
+    case 'openLegal':
+      return { ...state, screen: 'legal', legalTab: action.tab };
+    case 'setLegalTab':
+      return { ...state, legalTab: action.tab };
     case 'openNameSheet':
       // Prefilled with whatever is stored, so this edits rather than retypes.
       return { ...state, nameModal: true, nameForm: action.current };
