@@ -326,12 +326,60 @@ database backups, and someone reachable when a salon's Saturday morning breaks.
 
 ---
 
-## The concrete next step
+## What is left before the App Store and Google Play
 
-**Stand up the backend — auth and the data model first.** Everything above depends on data
-that survives a refresh, and the current code is deliberately structured so that dropping
-a real API behind `src/data/` and the reducer doesn't touch the screens.
+~~Stand up the backend.~~ **Done** — auth, the data model, bookings, availability, the
+waitlist, push, photographs, walk-ins, account deletion and the vendor portal are all real
+and all against Supabase. What follows is what stands between that and a published app.
 
-**On the same day, start the CR and payment-gateway paperwork.** It runs for weeks in the
-background while the engineering proceeds, and it is the thing most likely to delay launch
-if it's left until the app is finished.
+### Blocks a release outright
+
+1. **Payments.** Nothing is built. `payment_method` records a choice and `paid_at` is never
+   set. This was optional while the plan was a subscription; it is not optional now that the
+   revenue model is a percentage of each booking (Phase 2 above). Decide model A or B first,
+   because the gateway onboarding differs.
+2. **The Capacitor wrap.** Not started — no `capacitor.config.*`, no `android/`, no `ios/`.
+   The screens ship as-is, but the wrap itself, native push (APNs and FCM), deep links and
+   two signed builds are real work.
+3. **Store accounts.** Apple Developer Program — an organisation account needs a **D-U-N-S
+   number**, which is itself a queue — and Google Play Console. Start both alongside the CR.
+4. **Handing a salon over, or closing one.** Today `delete_my_account()` refuses any account
+   that owns a salon (`SL007`). Both stores require account deletion from inside the app, so
+   **a reviewer who registers a salon and then tries to delete the account hits a refusal.**
+   This is the likeliest avoidable rejection on the list.
+5. **Your own SMTP.** Supabase's built-in mail is capped at 30 messages an hour for the whole
+   project, and every sign-in sends one. That is 30 sign-ins an hour, project-wide.
+
+### Needed for review, not for the code to work
+
+6. **A demo account for Apple.** Browsing works signed out, but the vendor portal only shows
+   real data to an account that owns a salon. Reviewers need credentials for one, verified and
+   published, or they see the sample portal and may read it as broken.
+7. **Privacy labels and the data-safety form.** Apple's and Google's questionnaires must match
+   what is actually collected. The privacy page written for `?legal` is the source material —
+   it was drafted from the schema, so the answers are already enumerated.
+8. **Minimum functionality (Apple 4.2).** A wrapped web app gets scrutiny. Native push, deep
+   links, and the camera path for salon photographs are what make the case that this is an app
+   rather than a bookmark. Worth doing deliberately rather than hoping.
+9. **Bilingual store listings and screenshots**, both languages, both stores.
+
+### Will bite shortly after launch
+
+10. **Error monitoring and analytics** (Sentry or equivalent) — before launch, not after.
+    Nothing today reports a crash on somebody's phone.
+11. **Phone sign-in.** `VITE_AUTH_PHONE_OTP` is still false and no SMS provider is configured.
+    A six-digit code to a mobile is the Saudi norm; e-mail is the unusual choice here.
+12. **The tests do not run in CI.** `deploy.yml` builds and deploys only. The 111 database
+    assertions and 346 browser checks are run by hand, which means they are run when somebody
+    remembers.
+13. **No staging.** Production is GitHub Pages built from the default branch, so every merge
+    is a deploy. There is one database and it is the live one.
+14. **Moderation.** Nothing reviews an uploaded photograph or a review before it is public.
+15. **Verification is a dashboard chore.** No admin screen, and nothing tells an owner they
+    went live.
+
+### Polish, and honest to defer
+
+`salon_media.alt_ar` beside `alt_text`; reordering the gallery by dragging; moving a walk-in
+(today it must be cancelled and rewritten); the dashboard showing more than today; a custom
+domain; database backups checked rather than assumed.
