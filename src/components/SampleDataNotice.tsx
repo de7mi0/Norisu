@@ -1,3 +1,4 @@
+import { dayLabel } from '../i18n';
 import { useApp } from '../state/context';
 import { color, font } from '../theme';
 
@@ -19,7 +20,7 @@ interface SampleDataNoticeProps {
 }
 
 export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
-  const { owner, isArabic, dispatch } = useApp();
+  const { owner, isArabic, dispatch, t } = useApp();
 
   const sectionCopy: Record<string, { en: string; ar: string }> = {
     dashboard: {
@@ -66,6 +67,66 @@ export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
   // Still asking. A banner that flickers in and out reads as a fault.
   if (owner.status === 'loading') return null;
 
+  // Somebody who closed their own salon. They own none, like the cases below,
+  // but "this account doesn't own one yet" is the wrong sentence for them in
+  // every word — and this is the one place they find out that the salon under
+  // this notice is not theirs. It was a real report: close the shop, come
+  // back, and the portal shows a salon again.
+  if (owner.status === 'closed' && owner.closed) {
+    const { closed } = owner;
+    return (
+      <div
+        style={{
+          margin: '14px 24px 0',
+          background: color.cream,
+          border: `1px solid ${color.creamLine}`,
+          borderRadius: 12,
+          padding: '12px 14px',
+        }}
+      >
+        <div style={{ font: `700 12px ${font.sans}`, color: '#8a6d14' }}>
+          {t.closedPortalTitle}
+        </div>
+        <div
+          style={{
+            font: `600 11.5px ${font.sans}`,
+            color: color.inkSoft,
+            marginTop: 3,
+          }}
+        >
+          {isArabic ? closed.nameAr : closed.name}
+          {' · '}
+          {/* Through the i18n helper, never toLocaleDateString here — §4. */}
+          <span>{dayLabel(new Date(closed.closedAt), isArabic ? 'ar' : 'en')}</span>
+        </div>
+        <p
+          style={{
+            font: `500 11.5px/1.5 ${font.sans}`,
+            color: color.mutedSoft,
+            margin: '7px 0 0',
+          }}
+        >
+          {t.closedPortalBody}
+        </p>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'goOnboarding', from: 'v_more' })}
+          className="press"
+          style={{
+            marginTop: 9,
+            background: color.ink,
+            color: color.goldSoft,
+            borderRadius: 10,
+            padding: '7px 12px',
+            font: `700 11px ${font.sans}`,
+          }}
+        >
+          {t.closedPortalOpenAgain}
+        </button>
+      </div>
+    );
+  }
+
   const copy: Record<string, { en: string; ar: string }> = {
     unavailable: {
       en: 'Sample salon — no database is connected, so nothing here is saved.',
@@ -78,6 +139,12 @@ export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
     none: {
       en: 'Sample salon — this account doesn’t own one yet.',
       ar: 'صالون تجريبي — هذا الحساب لا يملك صالوناً بعد.',
+    },
+    // Reached only if my_closed_salon() could not answer — the name is then
+    // unknown, but "yet" would still be wrong, so it is not used.
+    closed: {
+      en: 'Sample salon — you closed yours, so this one is not your own.',
+      ar: 'صالون تجريبي — لقد أغلقت صالونك، لذا هذا ليس صالونك.',
     },
     error: {
       en: 'Sample salon — we couldn’t reach your salon just now.',

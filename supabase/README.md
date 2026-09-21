@@ -27,6 +27,7 @@ supabase/
                                  endpoint anybody could claim
     0018_commission.sql          what Saloni is owed, recorded when the booking is made
     0019_close_salon.sql         closing a salon, so its owner can delete their account
+    0020_closed_salon_memory.sql who closed it, so the portal can say so
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
@@ -458,7 +459,8 @@ select
     where tgrelid = 'bookings'::regclass
       and tgname = 'bookings_cap_per_customer')      as "0017 cap on moves",
   bool_or(p.proname = 'commission_statement')        as "0018 commission",
-  bool_or(p.proname = 'close_my_salon')              as "0019 close salon"
+  bool_or(p.proname = 'close_my_salon')              as "0019 close salon",
+  bool_or(p.proname = 'my_closed_salon')             as "0020 closed memory"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';

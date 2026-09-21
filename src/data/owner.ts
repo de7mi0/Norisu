@@ -69,6 +69,8 @@ export interface OwnerStaff {
  * `loading`     — asking
  * `signedOut`   — nobody is signed in
  * `none`        — signed in, but this account owns no salon
+ * `closed`      — owns none *because they closed one*, which is a different
+ *                 sentence and needs a different one on screen
  * `live`        — `salon` is theirs
  * `error`       — the read failed
  */
@@ -77,16 +79,49 @@ export type OwnerStatus =
   | 'loading'
   | 'signedOut'
   | 'none'
+  | 'closed'
   | 'live'
   | 'error';
+
+/** The salon this account closed: enough to say what happened, and no more. */
+export interface ClosedSalon {
+  name: string;
+  nameAr: string;
+  /** ISO instant. */
+  closedAt: string;
+}
 
 export interface OwnerState {
   status: OwnerStatus;
   salon: OwnerSalon | null;
+  /** Set only when `status` is `'closed'`. */
+  closed?: ClosedSalon;
 }
 
 /** Same reasoning as the catalogue: supabase-js retries internally. */
 const LOAD_TIMEOUT_MS = 6000;
+
+/**
+ * The salon this account closed, if any.
+ *
+ * Deliberately allowed to fail on its own and return null: not knowing that a
+ * salon was closed is a worse message, not a broken portal, and losing the
+ * whole owner lookup over it would be far worse than losing the sentence.
+ */
+async function closedSalonFor(): Promise<ClosedSalon | undefined> {
+  if (!supabase) return undefined;
+  try {
+    const { data, error } = await supabase.rpc('my_closed_salon');
+    if (error) return undefined;
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { name_en: string; name_ar: string; closed_at: string }
+      | undefined;
+    if (!row) return undefined;
+    return { name: row.name_en, nameAr: row.name_ar, closedAt: row.closed_at };
+  } catch {
+    return undefined;
+  }
+}
 
 /** Postgres `time` comes back as "10:00:00"; the editor wants "10:00". */
 function toHourMinute(value: string): string {
@@ -166,7 +201,19 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
     if (error) return { status: 'error', salon: null };
 
     const row = (salons ?? [])[0] as SalonRow | undefined;
-    if (!row) return { status: 'none', salon: null };
+    if (!row) {
+      // Owning none is two different situations, and the portal has been
+      // telling both of them the same wrong thing: it fell back to the sample
+      // salon with "this account doesn't own one yet", which is exactly the
+      // wrong sentence for somebody who has just closed theirs. Closing severs
+      // owner_id on purpose (0019), so the only way to tell them apart is to
+      // ask what this account has closed — 0020's my_closed_salon(), which
+      // answers for the caller and for nobody else.
+      const closed = await closedSalonFor();
+      return closed
+        ? { status: 'closed', salon: null, closed }
+        : { status: 'none', salon: null };
+    }
 
     const hoursCall = supabase
       .from('working_hours')

@@ -4117,6 +4117,7 @@ begin
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
       'delete_my_account', 'commission_statement', 'close_my_salon',
+      'my_closed_salon',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -6027,6 +6028,114 @@ begin
   end if;
 
   raise notice 'PASS 118: closing a salon is what lets its owner delete their account';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 119. Closing records who did it, and tells only them.
+--
+--      0019 severed every link between the person and the salon, which is what
+--      releases the account — and left the portal unable to tell "just closed
+--      one" from "never had one", so it showed a sample salon and called it
+--      not-owned-yet. closed_by restores the link as a record of an action.
+--      It must grant nothing and reach nobody else.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon  uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  owner  uuid := '33333333-3333-3333-3333-333333333333';
+  rival  uuid := '11111111-1111-1111-1111-111111111111';
+  got    record;
+  seen   integer;
+begin
+  perform auth.login_as(owner);
+  set local role authenticated;
+  perform close_my_salon(salon);
+  reset role;
+
+  -- The person who closed it is told what and when.
+  perform auth.login_as(owner);
+  set local role authenticated;
+  select * into got from my_closed_salon();
+  reset role;
+
+  if got.name_en is null then
+    raise exception 'FAIL 119a: the person who closed a salon is told nothing about it';
+  end if;
+  if got.closed_at is null then
+    raise exception 'FAIL 119b: no date came back, so the portal cannot say when';
+  end if;
+
+  -- Nobody else is.
+  perform auth.login_as(rival);
+  set local role authenticated;
+  select count(*) into seen from my_closed_salon();
+  reset role;
+
+  if seen <> 0 then
+    raise exception 'FAIL 119c: somebody else read which salon this account closed';
+  end if;
+
+  -- And it grants nothing: the salon still has no owner, so it cannot be
+  -- managed, published or reopened by the person named in closed_by.
+  if (select owner_id from salons where id = salon) is not null then
+    raise exception 'FAIL 119d: recording who closed it re-attached an owner';
+  end if;
+
+  if is_salon_owner(salon) then
+    raise exception 'FAIL 119e: closed_by made somebody the owner again';
+  end if;
+
+  raise notice 'PASS 119: closing records who did it, grants them nothing, and tells only them';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 120. closed_by is not readable from the browser, and goes with the person.
+--
+--      Same shape as cr_number (0015) and commission_bps (0018): the column is
+--      in no grant at all, so a direct select cannot reach it and only
+--      my_closed_salon() answers. And deleting the account clears it, which is
+--      what keeps guarantee 26 true — the salon keeps its record of the work
+--      it did, and the person is not the salon's to keep.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner uuid := '33333333-3333-3333-3333-333333333333';
+  salon uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+begin
+  if has_column_privilege('authenticated', 'salons', 'closed_by', 'SELECT')
+     or has_column_privilege('anon', 'salons', 'closed_by', 'SELECT') then
+    raise exception 'FAIL 120a: who closed a salon is readable straight from the browser';
+  end if;
+
+  if has_column_privilege('authenticated', 'salons', 'closed_by', 'UPDATE') then
+    raise exception 'FAIL 120b: an account can write itself into closed_by';
+  end if;
+
+  if (select closed_by from salons where id = salon) <> owner then
+    raise exception 'FAIL 120c: the wrong person is recorded as having closed it';
+  end if;
+
+  perform auth.login_as(owner);
+  set local role authenticated;
+  perform delete_my_account();
+  reset role;
+
+  if (select closed_by from salons where id = salon) is not null then
+    raise exception 'FAIL 120d: a deleted account is still named on the salon it closed';
+  end if;
+
+  -- The salon itself outlives both of them.
+  if not exists (select 1 from salons where id = salon and closed_at is not null) then
+    raise exception 'FAIL 120e: the closed salon went with the account that closed it';
+  end if;
+
+  raise notice 'PASS 120: who closed a salon stays private, and goes when they do';
 end
 $$;
 reset role;

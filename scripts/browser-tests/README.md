@@ -1,6 +1,6 @@
 # Browser checks
 
-403 checks that drive the built app in real Chromium, in **both languages**, against a
+422 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -21,6 +21,7 @@ scrambled inside Arabic text.
 | `10-legal.mjs` | The privacy policy and terms: that `?legal` opens them cold with no account, and that they say the things it would be wrong to leave out |
 | `11-commission.mjs` | What a salon owes Saloni: whole-month windows, and that a failed lookup never reads as "you owe nothing" |
 | `12-close-salon.mjs` | Closing a salon: that an owner can find it, that it cannot happen by accident, and that the deletion refusal now points somewhere real |
+| `13-closed-portal.mjs` | What the portal says to somebody who closed their salon and came back — written against a real report, not a review |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about
 data arriving: that a failed query says so instead of showing a zero, that walk-ins are
@@ -34,7 +35,13 @@ name and nothing else, and what deleting an account does and does not remove. Th
 the three places a policy copied off a template would quietly contradict what migration
 0016 and the 0005 functions actually do, and the page is worse than useless if it does.
 
-`05-push.mjs` carries the only regression check in this directory written against a fault
+`13-closed-portal.mjs` is the second file here written against a real report rather than a
+review. The owner closed a salon, came back, and the portal showed a salon again — the
+sample one, under "this account doesn't own one yet". 0019 had severed every link on
+purpose, so the app genuinely could not tell that case from an account that never had one.
+The checks are mostly about the sentence, because the sentence was the bug.
+
+`05-push.mjs` carries the other regression check written against a fault
 found in production rather than in review: a browser holding notification permission with
 no subscription ever saved, which left six waitlist offers producing nothing and no error
 anywhere. It was confirmed to fail against the code that had the bug before being trusted.
@@ -77,7 +84,7 @@ into `localStorage` so the app believes somebody is signed in.
 **That is also their limit, and it matters.** A stub answers whatever it is told to, so
 these prove the app *sends the right thing and renders the answer correctly* — they can
 say nothing about whether a grant or a policy would really allow it. The database
-assertions in `supabase/tests/` are the evidence for that half, and there are 118 of them.
+assertions in `supabase/tests/` are the evidence for that half, and there are 120 of them.
 
 `07-photos.mjs` is the exception to that limit, and worth knowing about: it builds a real
 JPEG carrying a fake EXIF GPS tag, feeds it through the actual file picker, and reads the

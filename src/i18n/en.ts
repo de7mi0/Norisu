@@ -497,6 +497,10 @@ export const en = {
   // ---------------------------------------------------------------------
   // What the salon owes Saloni
   // ---------------------------------------------------------------------
+  closedPortalTitle: 'You closed this salon',
+  closedPortalBody:
+    'Nothing below is yours — it is the sample salon the portal shows when an account has none. Your records were kept: the appointments you worked, the reviews written about you, and what you were invoiced.',
+  closedPortalOpenAgain: 'Register a new salon',
   closeSalon: 'Close this salon',
   closeTitle: 'Close this salon',
   closeBody:

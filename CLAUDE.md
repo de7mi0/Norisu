@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              403 Chromium checks in both languages; see its README
+  browser-tests/              422 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -150,6 +150,8 @@ supabase/
                                       snapshot per booking, and commission_statement()
   migrations/0019_close_salon.sql     closing a salon so its owner can leave: the
                                       owner goes, the business keeps its records
+  migrations/0020_closed_salon_memory.sql  who closed it, so the portal can say so
+                                      instead of "this account doesn't own one yet"
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -157,7 +159,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   118 assertions
+  tests/01_policy_tests.sql   120 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -340,8 +342,8 @@ functions in 0003–0012 —
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
 0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, 0015's
 `reassign_appointment()` and `my_salon_cr()`, 0016's `delete_my_account()`, 0018's
-`commission_statement()`, and 0019's `close_my_salon()`.
-30 RLS policies (plus four on storage.objects). 118 assertions.
+`commission_statement()`, 0019's `close_my_salon()` and 0020's `my_closed_salon()`.
+30 RLS policies (plus four on storage.objects). 120 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -501,6 +503,12 @@ disguises, one of them critical:
     change to `delete_my_account()` at all**, because it then finds no salon. Two check
     constraints hold the rest: a published salon has an owner, and a closed salon is not
     published. Assertions 116–118. **Handover is deliberately not built** — see §10.
+    0020 adds the half 0019 could not have: closing severs every link, so afterwards the app
+    could not tell "just closed one" from "never had one" and showed both the sample salon
+    under "this account doesn't own one **yet**". `closed_by` records the *action* and grants
+    nothing — `owner_id` stays null, the column is in no SELECT grant, and `my_closed_salon()`
+    answers for the caller alone. It is cleared when that account is deleted, so guarantee 26
+    still holds. Assertions 119–120.
 30. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
@@ -530,7 +538,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-118 assertions, drops it. Each of 53–118 was checked against a database with its own protection
+120 assertions, drops it. Each of 53–120 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -940,8 +948,8 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (118 assertions);
-  UI changes with `scripts/browser-tests/` (403 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (120 assertions);
+  UI changes with `scripts/browser-tests/` (422 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.
