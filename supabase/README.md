@@ -454,7 +454,8 @@ select
   bool_or(p.proname = 'delete_my_account')           as "0016 account deletion",
   (select bool_or(pg_get_triggerdef(oid) ~* 'or update') from pg_trigger
     where tgrelid = 'bookings'::regclass
-      and tgname = 'bookings_cap_per_customer')      as "0017 cap on moves"
+      and tgname = 'bookings_cap_per_customer')      as "0017 cap on moves",
+  bool_or(p.proname = 'commission_statement')        as "0018 commission"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';

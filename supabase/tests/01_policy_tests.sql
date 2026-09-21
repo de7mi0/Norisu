@@ -4116,7 +4116,7 @@ begin
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
-      'delete_my_account',
+      'delete_my_account', 'commission_statement',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -5636,6 +5636,210 @@ begin
   end if;
 
   raise notice 'PASS 111: a device follows its keys, not whoever knows its address';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 112. Neither side of a booking can touch what Saloni is owed.
+--
+--      Same shape as the money columns 0006 closed, for the same reason: a
+--      policy says whose row, never what is in it. A customer who could zero
+--      commission_halalas costs Saloni nothing directly — but a salon owner
+--      who could is writing their own invoice.
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  if has_column_privilege('authenticated', 'bookings', 'commission_halalas', 'UPDATE')
+     or has_column_privilege('authenticated', 'bookings', 'commission_bps', 'UPDATE') then
+    raise exception 'FAIL 112a: authenticated can rewrite a booking''s commission';
+  end if;
+
+  if has_table_privilege('authenticated', 'bookings', 'INSERT') then
+    raise exception 'FAIL 112b: authenticated can insert a booking, so it can state its own commission';
+  end if;
+
+  raise notice 'PASS 112: the commission on a booking is not writable from the browser';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 113. A salon's rate is neither readable nor settable by the salon.
+--
+--      Revenue. An owner who could write it would write zero, and one who
+--      could read a rival's would learn what deal a competitor negotiated.
+--      Closed the way cr_number is (0015): the column is in no grant at all,
+--      so this fails the moment somebody adds it to one.
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  if has_column_privilege('authenticated', 'salons', 'commission_bps', 'UPDATE')
+     or has_column_privilege('authenticated', 'salons', 'commission_bps', 'INSERT') then
+    raise exception 'FAIL 113a: a salon owner can set their own commission rate';
+  end if;
+
+  if has_column_privilege('authenticated', 'salons', 'commission_bps', 'SELECT')
+     or has_column_privilege('anon', 'salons', 'commission_bps', 'SELECT') then
+    raise exception 'FAIL 113b: a salon''s commission rate is readable from the browser';
+  end if;
+
+  raise notice 'PASS 113: a salon''s rate is not the salon''s to read or set';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 114. A customer's booking carries commission; a walk-in carries none.
+--
+--      The second half is the decision worth protecting. Commission pays for
+--      introducing a customer, and a walk-in is the salon's own customer at
+--      its own counter. Charge for it and the salon stops recording walk-ins
+--      to dodge the fee — which puts the calendar back to selling hours
+--      somebody is already sitting in. If a later change starts charging for
+--      them, this fails rather than quietly costing Saloni its data.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service  uuid := 'cccccccc-0000-0000-0000-000000000001';
+  booked   uuid;
+  walked   uuid;
+  bps      integer;
+  amount   integer;
+  gross    integer;
+begin
+  -- Deliberately derived from the booking's own stored total rather than from
+  -- a hardcoded figure: earlier assertions reprice this service, and a number
+  -- written in here would be testing which of them ran last. The guarantee is
+  -- the relationship — commission is the salon's rate applied to the GROSS
+  -- total, VAT included, which is the owner's deliberate choice (0018's
+  -- header). Taking it on the net instead would yield a visibly smaller
+  -- number and fail here.
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select c.booking_id into booked
+  from create_booking(salon, null, array[service],
+                      (test_day(800) + time '12:00') at time zone 'Asia/Riyadh') c;
+  reset role;
+
+  select b.commission_bps, b.commission_halalas, b.total_halalas
+    into bps, amount, gross
+  from bookings b where b.id = booked;
+
+  if bps <> 500 then
+    raise exception 'FAIL 114a: the booking did not take the salon''s rate (got %)', bps;
+  end if;
+
+  if coalesce(gross, 0) <= 0 then
+    raise exception 'FAIL 114b: the booking has no gross total to charge on (got %)', gross;
+  end if;
+
+  if amount <> round(gross::numeric * 500 / 10000)::integer then
+    raise exception 'FAIL 114c: commission is not 5%% of the gross total (% on %)', amount, gross;
+  end if;
+
+  -- The salon's own diary entry, for somebody Saloni never introduced.
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  select w.booking_id into walked
+  from create_walkin_booking(salon, null, array[service],
+                             (test_day(801) + time '12:00') at time zone 'Asia/Riyadh',
+                             'Counter Customer') w;
+  reset role;
+
+  select b.commission_bps, b.commission_halalas into bps, amount
+  from bookings b where b.id = walked;
+
+  if bps <> 0 or amount <> 0 then
+    raise exception 'FAIL 114d: a walk-in was charged commission (% bps, %)', bps, amount;
+  end if;
+
+  raise notice 'PASS 114: a booking carries commission, a walk-in carries none';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 115. A statement reaches its own salon and Saloni, and nobody else.
+--
+--      And it counts what happened, not what was booked: only 'completed'.
+--      A cancellation and a no-show are worth nothing because no service was
+--      given, and an appointment still in the future has not happened yet.
+--      Billing on anything wider would be billing for work nobody did.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'aaaaaaaa-0000-0000-0000-000000000001';
+  service uuid := 'cccccccc-0000-0000-0000-000000000001';
+  booked  uuid;
+  owed    bigint;
+  seen    integer;
+  due     integer;
+  window_from timestamptz := (test_day(802) + time '00:00') at time zone 'Asia/Riyadh';
+  window_to   timestamptz := (test_day(802) + time '23:59') at time zone 'Asia/Riyadh';
+begin
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  select c.booking_id into booked
+  from create_booking(salon, null, array[service],
+                      (test_day(802) + time '12:00') at time zone 'Asia/Riyadh') c;
+  reset role;
+
+  select b.commission_halalas into due from bookings b where b.id = booked;
+
+  -- A rival salon may not read it.
+  perform auth.login_as('44444444-4444-4444-4444-444444444444');
+  set local role authenticated;
+  begin
+    perform commission_statement(salon, window_from, window_to);
+    raise exception 'FAIL 115a: a rival salon read another salon''s statement';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- Nor may a plain customer.
+  perform auth.login_as('22222222-2222-2222-2222-222222222222');
+  set local role authenticated;
+  begin
+    perform commission_statement(salon, window_from, window_to);
+    raise exception 'FAIL 115b: a customer read a salon''s statement';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- Confirmed but not yet completed: nothing is owed on it.
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  select s.commission_halalas, s.bookings_count into owed, seen
+  from commission_statement(salon, window_from, window_to) s;
+  reset role;
+
+  if seen <> 0 or owed <> 0 then
+    raise exception 'FAIL 115c: an appointment that has not happened was billed (% for %)', owed, seen;
+  end if;
+
+  -- The salon runs the appointment and marks it done. Now it is owed.
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  update bookings set status = 'completed' where id = booked;
+
+  select s.commission_halalas, s.bookings_count into owed, seen
+  from commission_statement(salon, window_from, window_to) s;
+  reset role;
+
+  if seen <> 1 or owed <> due then
+    raise exception 'FAIL 115d: the completed visit was not billed correctly (% for %, expected %)',
+      owed, seen, due;
+  end if;
+
+  raise notice 'PASS 115: a statement bills completed visits, to the two people entitled to see it';
 end
 $$;
 reset role;

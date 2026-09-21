@@ -144,6 +144,8 @@ supabase/
   migrations/0017_cap_and_device_takeover.sql  two the audit missed: a cap that
                                       counted only on INSERT, and a push endpoint
                                       that could be taken by anybody who knew it
+  migrations/0018_commission.sql      the revenue model: a rate per salon, a
+                                      snapshot per booking, and commission_statement()
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -151,7 +153,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   111 assertions
+  tests/01_policy_tests.sql   115 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -333,8 +335,9 @@ functions in 0003–0012 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
 0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, 0015's
-`reassign_appointment()` and `my_salon_cr()`, and 0016's `delete_my_account()`.
-30 RLS policies (plus four on storage.objects). 111 assertions.
+`reassign_appointment()` and `my_salon_cr()`, 0016's `delete_my_account()`, and 0018's
+`commission_statement()`.
+30 RLS policies (plus four on storage.objects). 115 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -472,7 +475,19 @@ disguises, one of them critical:
     take it: the owner's own seat offers would stop, and the taker's would arrive on somebody
     else's phone. Taking over another account's row now requires the subscription's keys, which
     only that browser holds. Assertion 111.
-28. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
+28. **What Saloni is owed is not the salon's to decide.** 0018 stores the rate per salon
+    (`commission_bps`, basis points — money is never a float here) and snapshots it onto each
+    booking beside `vat_rate`, for the same reason: what was agreed is history, and
+    re-deriving at invoice time would re-price every past booking the day a deal changed.
+    `salons.commission_bps` is in **no grant at all** — not select, not insert, not update —
+    so an owner can neither read their rate nor set it to zero, and cannot learn a rival's.
+    `commission_statement()` answers to Saloni's admin and to that salon's own owner, and
+    counts `completed` bookings only: a cancellation and a no-show gave no service, and a
+    future appointment has not happened. **A walk-in carries no commission**, deliberately —
+    Saloni introduced nobody, and charging for it would make the salon stop recording
+    walk-ins, which is how the calendar goes back to selling hours somebody is sitting in.
+    Assertions 112–115.
+29. **An internal function is not reachable from the browser.** Supabase grants EXECUTE on every
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
     if a function added later forgets to.**
@@ -501,7 +516,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-111 assertions, drops it. Each of 53–111 was checked against a database with its own protection
+115 assertions, drops it. Each of 53–115 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -906,7 +921,7 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (111 assertions);
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (115 assertions);
   UI changes with `scripts/browser-tests/` (346 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
