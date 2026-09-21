@@ -494,6 +494,31 @@ export const en = {
   legalTermLawB:
     'These terms are governed by the laws of the Kingdom of Saudi Arabia, and the courts of the Kingdom decide any dispute about them.',
 
+  // ---------------------------------------------------------------------
+  // What the salon owes Saloni
+  // ---------------------------------------------------------------------
+  earnTitle: 'Saloni commission',
+  earnSub: 'What you owe, from the bookings we sent you',
+  earnThisMonth: 'This month so far',
+  earnLastMonth: 'Last month',
+  earnCommission: 'Saloni commission',
+  earnGross: 'Billed on',
+  earnVisits: 'Completed visits',
+  earnRate: 'Your rate',
+  earnLoading: 'Working out your figures…',
+  earnFailed: 'Could not load your figures. Check your connection and try again.',
+  earnNeedSalon:
+    'These are a salon’s figures. Sign in with the account that owns one to see them.',
+  earnNothing: 'Nothing owed yet',
+  earnNothingSub: 'Commission appears here once a booking is marked completed.',
+  earnHowTitle: 'How this is worked out',
+  earnHowBody:
+    'Commission is charged on the full bill, VAT included, at the rate agreed with you. It is counted only once you mark a visit completed — a cancellation, a no-show and an appointment still to come are all worth nothing.',
+  earnWalkInNote:
+    'Walk-ins and bookings you took yourself are never charged. You found those customers, not us.',
+  earnNotPaid:
+    'Nothing is collected through the app. This is a record of what will be invoiced, not a payment.',
+
   legalTermChangeH: 'Changes to these terms',
   legalTermChangeB:
     'These terms change with the app, on this page. Carrying on using Saloni after a change means accepting it.',

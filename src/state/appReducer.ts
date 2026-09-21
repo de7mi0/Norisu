@@ -773,4 +773,5 @@ export const VENDOR_TAB_SCREENS: VendorScreen[] = [
   'v_staff',
   'v_reviews',
   'v_waitlist',
+  'v_earnings',
 ];

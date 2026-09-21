@@ -64,9 +64,14 @@ export function More() {
       onSelect: go('v_waitlist'),
     },
     {
-      label: isArabic ? 'المدفوعات' : 'Payouts',
-      value: isArabic ? '18,240 ر.س' : 'SAR 18,240',
-      onSelect: () => {},
+      // Was "Payouts · SAR 18,240" behind a button that did nothing — an
+      // invented figure about money, which is the worst kind to leave in a
+      // demo because it is the one somebody believes. It is a real screen now,
+      // and the value is deliberately not a number: the figure belongs on the
+      // screen that can explain it, not on a hub row with no context.
+      label: t.earnTitle,
+      value: isArabic ? 'عرض' : 'View',
+      onSelect: go('v_earnings'),
     },
   ];
 

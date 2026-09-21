@@ -6,6 +6,7 @@ import type {
   VendorReviews,
   WalkInDraft,
 } from '../data/vendorBookings';
+import type { CommissionState } from '../data/commission';
 import type { SalonPhoto } from '../data/photos';
 import type { TimeBlock } from '../data/timeOff';
 import type { MyWaitlist, SalonWaitlist, WaitlistRequest } from '../data/waitlist';
@@ -108,6 +109,8 @@ export interface AppContextValue {
   setCoverPhoto: (photoId: string) => Promise<void>;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
+  /** What the salon owes Saloni this month and last. `'demo'` when it owns none. */
+  commission: CommissionState;
   /**
    * Moves one of the owner's appointments through its lifecycle. Which moves
    * are legal is decided by the database, not by the caller.

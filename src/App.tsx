@@ -34,6 +34,7 @@ import { TimePicker } from './screens/customer/TimePicker';
 
 import { Calendar } from './screens/vendor/Calendar';
 import { Dashboard } from './screens/vendor/Dashboard';
+import { Earnings } from './screens/vendor/Earnings';
 import { Gallery } from './screens/vendor/Gallery';
 import { Hours } from './screens/vendor/Hours';
 import { More } from './screens/vendor/More';
@@ -69,6 +70,7 @@ const VENDOR_SCREENS: Record<VendorScreen, () => React.ReactElement> = {
   v_reviews: VendorReviews,
   v_more: More,
   v_waitlist: Waitlist,
+  v_earnings: Earnings,
 };
 
 function CurrentScreen() {

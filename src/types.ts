@@ -29,7 +29,8 @@ export type VendorScreen =
   | 'v_reviews'
   | 'v_more'
   | 'v_hours'
-  | 'v_waitlist';
+  | 'v_waitlist'
+  | 'v_earnings';
 
 export type Screen = CustomerScreen | VendorScreen;
 

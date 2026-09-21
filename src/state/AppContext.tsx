@@ -88,6 +88,7 @@ import {
   type WalkInDraft,
   type WalkInFailure,
 } from '../data/vendorBookings';
+import { loadCommission, type CommissionState } from '../data/commission';
 import {
   demoAvailability,
   loadAvailability,
@@ -498,6 +499,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     source: 'demo',
   });
 
+  // What the salon owes Saloni. Remote state like everything else the database
+  // owns, so it sits here rather than in the reducer.
+  const [commission, setCommission] = useState<CommissionState>({
+    thisMonth: null,
+    lastMonth: null,
+    source: 'demo',
+  });
+
   // The waitlist, both sides of it. Reading is also what advances a lapsed
   // hold — there is no job runner, so the queue moves when somebody looks.
   const [myWaitlist, setMyWaitlist] = useState<MyWaitlist>({ entries: [], source: 'demo' });
@@ -561,6 +570,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setVendorReviews({ reviews: [], source: 'loading' });
     void loadSalonReviews(ownedSalonId).then((result) => {
       if (!cancelled) setVendorReviews(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ownedSalonId, state.screen]);
+
+  useEffect(() => {
+    if (state.screen !== 'v_earnings') return;
+    if (!ownedSalonId) {
+      // No salon of their own: there is nothing owed and nothing to show, and
+      // a zero would read as a real figure rather than as "not applicable".
+      setCommission({ thisMonth: null, lastMonth: null, source: 'demo' });
+      return;
+    }
+
+    let cancelled = false;
+    setCommission({ thisMonth: null, lastMonth: null, source: 'loading' });
+    void loadCommission(ownedSalonId).then((result) => {
+      if (!cancelled) setCommission(result);
     });
 
     return () => {
@@ -1639,6 +1668,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removePhoto,
       setCoverPhoto,
       vendorReviews,
+      commission,
       myWaitlist,
       salonWaitlist,
       leaveWaitlist,
@@ -1716,6 +1746,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       removePhoto,
       setCoverPhoto,
       vendorReviews,
+      commission,
       myWaitlist,
       salonWaitlist,
       leaveWaitlist,

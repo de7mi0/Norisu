@@ -258,6 +258,13 @@ collect a percentage and they are not equally heavy:
   which is a hard funnel for a marketplace that has no salons yet. It is also the only way
   deposits ever work.
 
+**Built so far (0018, and the vendor Earnings screen):** the rate per salon, the snapshot
+per booking, and `commission_statement()` — everything that is identical under A and B.
+The salon sees what it owes this month and last from the same rows the invoice will be
+built from, so the first bill is never the first time it sees the figure. What is *not*
+built is either model's second half: no invoice is generated or sent under A, and no money
+moves under B. Nothing is collected, and `paid_at` is still never set.
+
 **A first, B when the volume justifies it,** is the recommendation — but confirm the
 current SAMA position and what each gateway actually supports before committing, because
 this is the one decision that is expensive to reverse. Ask each gateway directly whether

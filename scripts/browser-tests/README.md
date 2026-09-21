@@ -1,6 +1,6 @@
 # Browser checks
 
-346 checks that drive the built app in real Chromium, in **both languages**, against a
+377 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -19,6 +19,13 @@ scrambled inside Arabic text.
 | `08-walkin.mjs` | The salon writing its own booking — that it sends no price, says why a refusal happened, and shows a walk-in as one |
 | `09-delete-account.mjs` | Deleting an account: that a reviewer can find it, that it cannot happen by accident, and that a salon owner is told why not |
 | `10-legal.mjs` | The privacy policy and terms: that `?legal` opens them cold with no account, and that they say the things it would be wrong to leave out |
+| `11-commission.mjs` | What a salon owes Saloni: whole-month windows, and that a failed lookup never reads as "you owe nothing" |
+
+`11-commission.mjs` has three checks worth more than the rest, and none of them is about
+data arriving: that a failed query says so instead of showing a zero, that walk-ins are
+stated as never charged, and that the screen says nothing is collected through the app.
+Each is a thing a salon would otherwise assume the other way, and getting any of them
+wrong costs somebody real money exactly once.
 
 `10-legal.mjs` is the odd one out: most of these drive a feature, and it mostly checks
 *words* — that the policy says no card details are collected, that a salon sees a display
@@ -69,7 +76,7 @@ into `localStorage` so the app believes somebody is signed in.
 **That is also their limit, and it matters.** A stub answers whatever it is told to, so
 these prove the app *sends the right thing and renders the answer correctly* — they can
 say nothing about whether a grant or a policy would really allow it. The database
-assertions in `supabase/tests/` are the evidence for that half, and there are 90 of them.
+assertions in `supabase/tests/` are the evidence for that half, and there are 115 of them.
 
 `07-photos.mjs` is the exception to that limit, and worth knowing about: it builds a real
 JPEG carrying a fake EXIF GPS tag, feeds it through the actual file picker, and reads the

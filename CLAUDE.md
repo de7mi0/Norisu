@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              346 Chromium checks in both languages; see its README
+  browser-tests/              377 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -94,6 +94,7 @@ src/
     waitlist.ts             ★ the queue, both sides of it
     timeOff.ts              ★ periods the salon has taken off sale
     photos.ts               ★ the bucket, salon_media, and the path that is the permission
+    commission.ts           ★ what the salon owes Saloni, from commission_statement()
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -569,6 +570,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Deleting your account** | **Real, and required by both stores.** A row under sign-out on the Profile screen, then a sheet that says what goes and what stays and asks the person to type the word. It removes the account, the sign-in identity, the queue position, queued messages, devices and reviews; past bookings stay on the salon's calendar with the reference where the name was. Refused while the account owns a salon. |
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
 | **Privacy policy and terms** | **Written, and a draft.** In the app in both languages, from the Profile screen and at `?legal` — a URL a store reviewer opens with no account. Drafted from the schema, not a template. **No lawyer has read it**, and three blanks are named on the page itself. See §10. |
+| **Saloni's commission** | **Real, as a record.** A rate per salon and a snapshot per booking (0018); the vendor More hub opens a screen showing what is owed this month and last, from `commission_statement()`. **Nothing is collected** — this is what an invoice will say, not a payment. It replaced a "Payouts · SAR 18,240" row that was invented. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
@@ -922,7 +924,7 @@ the code before them.
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (115 assertions);
-  UI changes with `scripts/browser-tests/` (346 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (377 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.
