@@ -4116,7 +4116,7 @@ begin
       'reoffer_waitlist_slot', 'reply_to_review', 'reschedule_booking',
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
-      'delete_my_account', 'commission_statement',
+      'delete_my_account', 'commission_statement', 'close_my_salon',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -5840,6 +5840,193 @@ begin
   end if;
 
   raise notice 'PASS 115: a statement bills completed visits, to the two people entitled to see it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 116. Only a salon's own owner closes it.
+--
+--      Closing takes a business out of the catalogue, cancels its appointments
+--      and detaches its owner. A rival who could do it could destroy a
+--      competitor with one call, so the guard is the whole boundary — the
+--      function is security definer and RLS does not filter it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon uuid := 'bbbbbbbb-0000-0000-0000-000000000002';  -- vendor B's
+  still integer;
+begin
+  -- A rival salon owner.
+  perform auth.login_as('33333333-3333-3333-3333-333333333333');
+  set local role authenticated;
+  begin
+    perform close_my_salon(salon);
+    raise exception 'FAIL 116a: a rival salon closed somebody else''s business';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- And a plain customer.
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    perform close_my_salon(salon);
+    raise exception 'FAIL 116b: a customer closed a salon';
+  exception
+    when insufficient_privilege then null;
+  end;
+  reset role;
+
+  select count(*) into still from salons
+   where id = salon and closed_at is null and owner_id is not null;
+  if still <> 1 then
+    raise exception 'FAIL 116c: the salon was closed anyway';
+  end if;
+
+  raise notice 'PASS 116: only a salon''s own owner closes it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 117. Closing empties the queue, calls off what is to come, and keeps the past.
+--
+--      A check was written here claiming the ORDER of operations mattered —
+--      that clearing the queue before cancelling stops closing handing out
+--      seats at a salon that is shutting. It could not fail: the offer and its
+--      queued push both cascade from the entry, and the whole thing is one
+--      transaction, so both orders commit the same state. It was removed
+--      rather than left looking like a guarantee. What remains is the outcome,
+--      which is real: nobody waiting, nothing upcoming, and the past intact.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon    uuid := 'bbbbbbbb-0000-0000-0000-000000000002';
+  owner    uuid := '44444444-4444-4444-4444-444444444444';
+  customer uuid := '11111111-1111-1111-1111-111111111111';
+  svc      uuid;
+  stf      uuid;
+  past     uuid;
+  soon     uuid;
+  row_     record;
+  queued   integer;
+begin
+  -- Vendor B has no fixtures of its own; give it enough to close.
+  insert into services (salon_id, name_en, name_ar, duration_minutes, price_halalas)
+  values (salon, 'Cut', 'قص', 30, 10000) returning id into svc;
+  insert into staff (salon_id, name_en, name_ar, initials)
+  values (salon, 'Noura', 'نورة', 'N') returning id into stf;
+  insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+  select salon, d, time '10:00', time '23:00' from generate_series(0, 6) d;
+
+  -- One visit already had, and one still to come.
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-CLOSE1', customer, salon, stf,
+          now() - interval '9 days', now() - interval '9 days' + interval '30 min',
+          'completed', 10000, 11500)
+  returning id into past;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-CLOSE2', customer, salon, stf,
+          (test_day(810) + time '12:00') at time zone 'Asia/Riyadh',
+          (test_day(810) + time '12:30') at time zone 'Asia/Riyadh',
+          'confirmed', 10000, 11500)
+  returning id into soon;
+
+  -- And somebody waiting, who must not still be waiting afterwards.
+  insert into waitlist_entries (customer_id, salon_id, requested_date, status)
+  values ('22222222-2222-2222-2222-222222222222', salon, test_day(810), 'waiting');
+
+  perform auth.login_as(owner);
+  set local role authenticated;
+  perform close_my_salon(salon);
+  reset role;
+
+  select * into row_ from salons where id = salon;
+  if row_.closed_at is null then
+    raise exception 'FAIL 117a: the salon was not marked closed';
+  end if;
+  if row_.owner_id is not null then
+    raise exception 'FAIL 117b: the salon still has an owner, so its owner still cannot leave';
+  end if;
+  if row_.is_published then
+    raise exception 'FAIL 117c: a closed salon is still in the catalogue';
+  end if;
+
+  if (select status from bookings where id = soon) <> 'cancelled' then
+    raise exception 'FAIL 117d: an appointment still to come survived the closure';
+  end if;
+
+  -- The past is the customer's record of their own appointment. It stays.
+  if (select status from bookings where id = past) <> 'completed' then
+    raise exception 'FAIL 117e: a visit that already happened was rewritten';
+  end if;
+
+  select count(*) into queued from waitlist_entries where salon_id = salon;
+  if queued <> 0 then
+    raise exception 'FAIL 117f: somebody is still queued at a closed salon (%)', queued;
+  end if;
+
+  if exists (select 1 from services where salon_id = salon and not is_archived) then
+    raise exception 'FAIL 117g: a closed salon still offers services';
+  end if;
+
+  raise notice 'PASS 117: closing clears the queue, calls off what is to come, and keeps the past';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 118. And then the owner can actually leave.
+--
+--      The whole point. 0016 refuses an account that owns a salon, and until
+--      0019 there was no way out of that — which reads to a store reviewer as
+--      a missing account-deletion requirement. Closing releases the account
+--      with no change to delete_my_account() at all, because it finds no salon.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner uuid := '44444444-4444-4444-4444-444444444444';
+  left_ integer;
+begin
+  perform auth.login_as(owner);
+  set local role authenticated;
+  -- Caught so the refusal reports itself rather than escaping as a bare
+  -- SL007: "this account owns a salon" from inside the one assertion that
+  -- exists to prove it no longer does is a confusing way to fail.
+  begin
+    perform delete_my_account();
+  exception
+    when others then
+      raise exception 'FAIL 118a: a former owner still cannot delete their account (%)', sqlerrm;
+  end;
+  reset role;
+
+  select count(*) into left_ from profiles where id = owner;
+  if left_ <> 0 then
+    raise exception 'FAIL 118b: the account survived, so closing did not release it';
+  end if;
+
+  -- The business it used to run is still there, ownerless, with its records.
+  if not exists (select 1 from salons
+                 where id = 'bbbbbbbb-0000-0000-0000-000000000002'
+                   and closed_at is not null and owner_id is null) then
+    raise exception 'FAIL 118c: the closed salon went with its owner';
+  end if;
+
+  if not exists (select 1 from bookings
+                 where reference = 'SL-CLOSE1' and status = 'completed') then
+    raise exception 'FAIL 118d: the salon''s record of a day it worked went too';
+  end if;
+
+  raise notice 'PASS 118: closing a salon is what lets its owner delete their account';
 end
 $$;
 reset role;

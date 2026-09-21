@@ -25,6 +25,7 @@ import {
   addStaff,
   archiveService,
   archiveStaff,
+  closeSalon as closeSalonRow,
   createSalon,
   loadMySalon,
   saveProfile,
@@ -37,6 +38,7 @@ import {
   type DayHours,
   type OwnerState,
   type CatalogFailure,
+  type CloseSalonFailure,
   type OwnerWriteFailure,
   type RegisterFailure,
   type SalonDraft,
@@ -1236,6 +1238,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     flash(t.deleteDone);
   }, [flash, t]);
 
+  /**
+   * Closes the salon this account owns, which is what releases the account so
+   * it can then be deleted — the store requirement 0016 could not satisfy on
+   * its own. The sheet stays open on a refusal so the reason is read beside
+   * the button that caused it, exactly as deleting an account does.
+   */
+  const closeMySalon = useCallback(async () => {
+    const salonId = owner.salon?.id;
+    if (!salonId) return;
+
+    dispatch({ type: 'setCloseSaving', saving: true });
+    const failure = await closeSalonRow(salonId);
+    dispatch({ type: 'setCloseSaving', saving: false });
+
+    if (failure) {
+      const said: Record<CloseSalonFailure, string> = {
+        notOwner: t.closeNotOwner,
+        alreadyClosed: t.closeAlready,
+        notConfigured: t.closeFailed,
+        network: t.closeFailed,
+      };
+      flash(said[failure]);
+      return;
+    }
+
+    dispatch({ type: 'closeCloseSheet' });
+    // The portal is re-read rather than patched: this account no longer owns
+    // a salon, and every vendor screen derives from that one fact.
+    await refreshOwner();
+    dispatch({ type: 'go', screen: 'v_more' });
+    flash(t.closeDone);
+  }, [flash, owner.salon?.id, refreshOwner, t]);
+
   const signOut = useCallback(() => {
     void endSession().then(() => flash(isArabic ? 'تم تسجيل الخروج' : 'Signed out'));
   }, [endSession, flash, isArabic]);
@@ -1694,6 +1729,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       submitPasscode,
       signOut,
       deleteAccount,
+      closeMySalon,
       upcomingBookings,
       pastBookings,
       bookingsPersisted: persistBookings,
@@ -1732,6 +1768,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       session,
       signOut,
       deleteAccount,
+      closeMySalon,
       slotSummary,
       availability,
       owner,

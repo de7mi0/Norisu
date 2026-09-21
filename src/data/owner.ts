@@ -651,3 +651,29 @@ export async function saveProfile(
 
   return error ? 'network' : null;
 }
+
+/** Why closing a salon was refused. */
+export type CloseSalonFailure = 'notConfigured' | 'notOwner' | 'alreadyClosed' | 'network';
+
+/**
+ * Closes a salon the signed-in account owns.
+ *
+ * This is what makes account deletion reachable for a salon owner, which both
+ * stores require: `delete_my_account()` (0016) refuses anybody who owns a
+ * salon, and until there was a way to stop owning one that refusal was a dead
+ * end. Closing detaches the owner and leaves the business — its appointments,
+ * its reviews, what it was invoiced — because those are other people's records.
+ *
+ * Everything it does is one transaction inside `close_my_salon()` (0019), so
+ * there is no half-closed salon to recover from if this call is interrupted.
+ */
+export async function closeSalon(salonId: string): Promise<CloseSalonFailure | null> {
+  if (!supabase) return 'notConfigured';
+
+  const { error } = await supabase.rpc('close_my_salon', { p_salon_id: salonId });
+  if (!error) return null;
+
+  if (error.code === '42501') return 'notOwner';
+  if (error.code === 'SL008') return 'alreadyClosed';
+  return 'network';
+}

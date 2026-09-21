@@ -139,8 +139,12 @@ for (const arabic of [false, true]) {
   await page.waitForTimeout(900);
 
   const body = await page.locator('body').innerText();
-  check('a salon owner is told why, and what to do instead',
-        /owns a salon/.test(body) && /handed over or closed/.test(body),
+  // The wording changed with 0019, and the change is the point: it used to say
+  // the salon had to be "handed over or closed" and tell the person to message
+  // us, when neither was built. It now names the one that is.
+  check('a salon owner is told why, and pointed at the way out that exists',
+        /owns a salon/.test(body) && /close the salon first/.test(body)
+          && !/message us/.test(body),
         body.slice(0, 240).replace(/\n/g, ' '));
   check('the refusal does not sign them out', !db.signedOut);
   check('and the sheet stays open, so nothing is retyped',

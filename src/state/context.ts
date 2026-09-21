@@ -109,6 +109,11 @@ export interface AppContextValue {
   setCoverPhoto: (photoId: string) => Promise<void>;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
+  /**
+   * Closes the salon this account owns. Detaches the owner and keeps the
+   * business's records, which is what lets the account then be deleted.
+   */
+  closeMySalon: () => Promise<void>;
   /** What the salon owes Saloni this month and last. `'demo'` when it owns none. */
   commission: CommissionState;
   /**

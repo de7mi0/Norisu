@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CloseSalonSheet } from '../../components/CloseSalonSheet';
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
@@ -223,8 +224,37 @@ export function Onboarding() {
                 dir="ltr"
                 inputMode="tel"
               />
+        {/*
+          Only once the salon exists — there is nothing to close before that,
+          and the registration form should not offer it. It sits at the very
+          bottom, under the details it undoes, the same place account deletion
+          sits under sign-out on the customer's profile: findable by a store
+          reviewer looking for it, not in the way of anybody who is not.
+        */}
+        {editing ? (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'openCloseSheet' })}
+            className="press"
+            style={{
+              display: 'block',
+              width: '100%',
+              marginTop: 26,
+              textAlign: 'center',
+              padding: 12,
+              font: `600 12px ${font.sans}`,
+              color: color.mutedSoft,
+              textDecoration: 'underline',
+              textUnderlineOffset: 3,
+            }}
+          >
+            {t.closeSalon}
+          </button>
+        ) : null}
         </div>
       </Screen>
+
+      <CloseSalonSheet />
 
       <BottomBar>
         <button

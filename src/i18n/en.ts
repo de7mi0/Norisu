@@ -325,7 +325,7 @@ export const en = {
   deleteBody:
     'Your account, your name, your place in any waitlist and the phones you are notified on are removed for good. Appointments you have already had stay on the salon\u2019s own records without your name on them, because a salon has to be able to say what it did. Anything still to come is cancelled.',
   deleteOwner:
-    'This account owns a salon. Its appointments, team and photographs belong to the business, so the salon has to be handed over or closed first \u2014 message us and we will help.',
+    'This account owns a salon. Its appointments, team and photographs belong to the business, so close the salon first \u2014 it is under Business details in your salon\u2019s settings.',
   deleteConfirmHint: 'Type DELETE to confirm.',
   deleteConfirmWord: 'DELETE',
   deleteGo: 'Delete for good',
@@ -497,6 +497,21 @@ export const en = {
   // ---------------------------------------------------------------------
   // What the salon owes Saloni
   // ---------------------------------------------------------------------
+  closeSalon: 'Close this salon',
+  closeTitle: 'Close this salon',
+  closeBody:
+    'Your salon stops trading. It leaves the customer catalogue, its services and team are archived, anyone waiting is removed from the queue, and every appointment still to come is cancelled so nobody arrives at a closed door.',
+  closeKept:
+    'What it has already done stays: the appointments it worked, the reviews written about it, and what it was invoiced. Those are other people’s records and are not yours to erase.',
+  closeFinal:
+    'This cannot be undone from inside the app, and it releases your account — you can delete it afterwards.',
+  closeConfirmHint: 'Type CLOSE to confirm.',
+  closeConfirmWord: 'CLOSE',
+  closeGo: 'Close it for good',
+  closeDone: 'Your salon has been closed.',
+  closeAlready: 'This salon is already closed.',
+  closeNotOwner: 'Only the salon’s owner can close it.',
+  closeFailed: 'Could not close the salon. Check your connection and try again.',
   earnTitle: 'Saloni commission',
   earnSub: 'What you owe, from the bookings we sent you',
   earnThisMonth: 'This month so far',

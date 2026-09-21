@@ -312,9 +312,16 @@ through the same function, and only the worker's last hop differs. A WhatsApp pr
 - Terms of service and a vendor agreement.
 - **Verify vendors** — check the CR — before a salon can take real bookings.
 - Moderation for photos and reviews.
-- Handing a salon to a different owner, or closing one. Until then a salon owner cannot delete
-  their account at all — `delete_my_account()` refuses, because the salon holds other people's
-  appointments.
+- ~~Closing a salon~~ — **built (0019).** An owner closes it from Business details: the queue is
+  cleared, everything still to come is cancelled, services and team are archived, it leaves the
+  catalogue and its `owner_id` goes null. That releases the account, so `delete_my_account()`
+  works for a former owner with no change to it at all. The salon and its records stay, because
+  the appointments are other people's and so are the reviews.
+- **Handing a salon to a different owner is still not built**, and deliberately. A transfer needs
+  the other party's consent: looking an account up by e-mail would make the app an enumeration
+  oracle, and transferring without acceptance would let anybody drop a business and its
+  obligations on somebody who never agreed. It wants an invitation somebody accepts — a feature,
+  not a column. Closing is the half that unblocks the store requirement, so it shipped first.
 - Deposits, which are the real answer to somebody booking a salon's whole day and not arriving.
   Migration 0015 caps bookings per account in the meantime.
 

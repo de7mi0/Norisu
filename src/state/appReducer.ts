@@ -149,6 +149,13 @@ export interface AppState {
    */
   deleteSheet: { typed: string; saving: boolean } | null;
 
+  /**
+   * The "close this salon" sheet. Two steps for the reason deleteSheet has
+   * two: it cannot be undone from inside the app, and a mis-tap on a phone is
+   * otherwise all it takes to shut a business.
+   */
+  closeSheet: { typed: string; saving: boolean } | null;
+
   /** The "your name" sheet. UI state only — the value itself lives on the profile. */
   nameModal: boolean;
   nameForm: string;
@@ -223,6 +230,7 @@ export const initialState: AppState = {
   vOff: {},
   extraServices: [],
   extraStaff: [],
+  closeSheet: null,
   nameModal: false,
   nameForm: '',
   legalTab: 'privacy',
@@ -333,6 +341,10 @@ export type Action =
   | { type: 'toggleWalkInService'; serviceId: string }
   | { type: 'setWalkInSaving'; saving: boolean }
   | { type: 'closeWalkInSheet' }
+  | { type: 'openCloseSheet' }
+  | { type: 'setCloseTyped'; value: string }
+  | { type: 'setCloseSaving'; saving: boolean }
+  | { type: 'closeCloseSheet' }
   | { type: 'openDeleteSheet' }
   | { type: 'setDeleteTyped'; value: string }
   | { type: 'setDeleteSaving'; saving: boolean }
@@ -571,6 +583,22 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'closeWalkInSheet':
       return { ...state, walkInSheet: null };
+
+    case 'openCloseSheet':
+      return { ...state, closeSheet: { typed: '', saving: false } };
+
+    case 'setCloseTyped':
+      return state.closeSheet
+        ? { ...state, closeSheet: { ...state.closeSheet, typed: clamp(action.value, 20) } }
+        : state;
+
+    case 'setCloseSaving':
+      return state.closeSheet
+        ? { ...state, closeSheet: { ...state.closeSheet, saving: action.saving } }
+        : state;
+
+    case 'closeCloseSheet':
+      return { ...state, closeSheet: null };
 
     case 'openDeleteSheet':
       return { ...state, deleteSheet: { typed: '', saving: false } };
