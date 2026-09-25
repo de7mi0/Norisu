@@ -4117,7 +4117,12 @@ begin
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
       'delete_my_account', 'commission_statement', 'close_my_salon',
-      'my_closed_salon',
+      'my_closed_salon', 'my_salon_review',
+      -- Saloni's own back office (0021). Each is guarded by is_admin() in its
+      -- first line rather than by a grant, because an administrator signs in
+      -- as `authenticated` like everybody else.
+      'admin_salons', 'admin_verify_salon', 'admin_publish_salon',
+      'admin_reject_salon', 'admin_close_salon', 'admin_set_commission',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
@@ -6136,6 +6141,553 @@ begin
   end if;
 
   raise notice 'PASS 120: who closed a salon stays private, and goes when they do';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- Fixtures for the back office (0021).
+--
+-- Assertions 117 and 119 close both salons above, and 120 deletes one owner
+-- outright, so everything below needs its own. Two salons: one to walk the
+-- whole review journey, one left alone for the rate.
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id, email) values
+  ('ad000000-0000-0000-0000-0000000000a1', 'admin@saloni.test'),   -- Saloni
+  ('ad000000-0000-0000-0000-0000000000c1', 'noor@salon.test'),     -- vendor C
+  ('ad000000-0000-0000-0000-0000000000d1', 'oud@salon.test');      -- vendor D
+
+update profiles set role = 'admin'
+  where id = 'ad000000-0000-0000-0000-0000000000a1';
+update profiles set role = 'vendor'
+  where id in ('ad000000-0000-0000-0000-0000000000c1',
+               'ad000000-0000-0000-0000-0000000000d1');
+
+-- Both arrive the way a real registration does: unverified, unpublished, with
+-- a commercial registration number somebody has to check.
+insert into salons (id, owner_id, slug, name_en, name_ar, cr_number)
+values
+  ('ee000000-0000-0000-0000-0000000000e5',
+   'ad000000-0000-0000-0000-0000000000c1',
+   'noor-salon', 'Noor Salon', 'صالون نور', '1010101010'),
+  ('ff000000-0000-0000-0000-0000000000f6',
+   'ad000000-0000-0000-0000-0000000000d1',
+   'oud-house', 'Oud House', 'بيت العود', '2020202020');
+
+-- ---------------------------------------------------------------------------
+-- 121. The back office is closed to everybody but an administrator.
+--
+--      This is the whole boundary. An admin signs in as `authenticated` like
+--      everybody else, so no grant can tell them apart — the guard is the
+--      first line of each function and nothing else. A vendor is tested as
+--      well as a customer, because owning a salon is the closest anybody
+--      legitimately gets to running the platform.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_ uuid := 'ad000000-0000-0000-0000-0000000000a1';
+  cust   uuid := '11111111-1111-1111-1111-111111111111';
+  vendor uuid := 'ad000000-0000-0000-0000-0000000000d1';
+  salon  uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  who    uuid;
+  denied integer;
+  seen   integer;
+begin
+  foreach who in array array[cust, vendor] loop
+    denied := 0;
+    perform auth.login_as(who);
+    set local role authenticated;
+
+    begin perform count(*) from admin_salons();
+      exception when insufficient_privilege then denied := denied + 1; end;
+    begin perform admin_verify_salon(salon, true);
+      exception when insufficient_privilege then denied := denied + 1; end;
+    begin perform admin_publish_salon(salon, true);
+      exception when insufficient_privilege then denied := denied + 1; end;
+    begin perform admin_reject_salon(salon, 'because');
+      exception when insufficient_privilege then denied := denied + 1; end;
+    begin perform admin_close_salon(salon, 'because');
+      exception when insufficient_privilege then denied := denied + 1; end;
+    begin perform admin_set_commission(salon, 0);
+      exception when insufficient_privilege then denied := denied + 1; end;
+
+    reset role;
+
+    if denied <> 6 then
+      raise exception 'FAIL 121a: % of 6 back-office functions refused %', denied, who;
+    end if;
+  end loop;
+
+  -- The salon is untouched by all that trying.
+  if exists (select 1 from salons where id = salon
+               and (is_verified or is_published or closed_at is not null)) then
+    raise exception 'FAIL 121b: a non-administrator changed a salon through the back office';
+  end if;
+
+  -- And an administrator is let in.
+  perform auth.login_as(admin_);
+  set local role authenticated;
+  select count(*) into seen from admin_salons();
+  reset role;
+
+  if seen < 2 then
+    raise exception 'FAIL 121c: the register is empty for an administrator (% rows)', seen;
+  end if;
+
+  raise notice 'PASS 121: only an administrator reaches the back office, and does';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 122. A commercial registration reaches the administrator checking it, and
+--      still nobody else.
+--
+--      0015 revoked cr_number from every role after the catalogue's `select *`
+--      handed it to anonymous visitors. Checking that number IS the review, so
+--      the back office has to see it — which is exactly the kind of exception
+--      that quietly becomes a grant. It must not.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_ uuid := 'ad000000-0000-0000-0000-0000000000a1';
+  vendor uuid := 'ad000000-0000-0000-0000-0000000000d1';
+  salon  uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  got    text;
+begin
+  perform auth.login_as(admin_);
+  set local role authenticated;
+  select a.cr_number into got from admin_salons() a where a.id = salon;
+  reset role;
+
+  if got is distinct from '1010101010' then
+    raise exception 'FAIL 122a: the administrator cannot read the number they must check (%)', got;
+  end if;
+
+  -- The column itself is still in no grant, so a direct select cannot reach it
+  -- whoever asks. Assertion 106 states this too and runs first, so a break
+  -- here is reported by 106 rather than by this line — kept anyway, because
+  -- 106 is about the catalogue and this is about the back office not becoming
+  -- the exception that turns into a grant.
+  if has_column_privilege('anon', 'salons', 'cr_number', 'SELECT')
+     or has_column_privilege('authenticated', 'salons', 'cr_number', 'SELECT') then
+    raise exception 'FAIL 122b: commercial registration numbers are readable from the browser again';
+  end if;
+
+  -- And a salon owner still reads their own and no other.
+  perform auth.login_as(vendor);
+  set local role authenticated;
+  got := my_salon_cr(salon);
+  reset role;
+
+  if got is not null then
+    raise exception 'FAIL 122c: one salon owner read another salon''s registration number';
+  end if;
+
+  raise notice 'PASS 122: a registration number reaches its reviewer and its owner, and stops there';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 123. Verifying and publishing stay two decisions, in that order.
+--
+--      Guarantee 6, now that a second route to those columns exists. The
+--      constraint has always enforced the order; what is new is a function
+--      that could set both in one statement and satisfy it. Approving a
+--      registration and putting a salon in front of customers are separate
+--      acts, and the second one stays deliberate.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_  uuid := 'ad000000-0000-0000-0000-0000000000a1';
+  salon   uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  v_ver   boolean;
+  v_pub   boolean;
+  v_by    uuid;
+  v_at    timestamptz;
+  refused boolean := false;
+begin
+  perform auth.login_as(admin_);
+  set local role authenticated;
+
+  -- Publishing before verifying is refused in words, not by a constraint name.
+  begin
+    perform admin_publish_salon(salon, true);
+  exception when sqlstate 'SL030' then
+    refused := true;
+  end;
+
+  if not refused then
+    raise exception 'FAIL 123a: an unverified salon went into the customer catalogue';
+  end if;
+
+  -- Verifying alone does not publish. Columns are named rather than `select *`
+  -- because 0015 grants SELECT on salons column by column — the protection
+  -- assertion 122 checks — so `*` is denied to `authenticated` by design.
+  perform admin_verify_salon(salon, true);
+  select s.is_verified, s.is_published into v_ver, v_pub
+    from salons s where s.id = salon;
+
+  if not v_ver then
+    raise exception 'FAIL 123b: verifying a salon did not verify it';
+  end if;
+  if v_pub then
+    raise exception 'FAIL 123c: verifying a salon published it as well';
+  end if;
+
+  -- Then the second, separate decision.
+  perform admin_publish_salon(salon, true);
+  select s.is_published into v_pub from salons s where s.id = salon;
+  if not v_pub then
+    raise exception 'FAIL 123e: a verified salon could not be published';
+  end if;
+
+  -- Withdrawing verification takes it back out of the catalogue in the same
+  -- statement. Anything else violates published_salons_are_verified.
+  perform admin_verify_salon(salon, false);
+  select s.is_verified, s.is_published into v_ver, v_pub
+    from salons s where s.id = salon;
+  if v_ver or v_pub then
+    raise exception 'FAIL 123f: withdrawing verification left the salon verified or published';
+  end if;
+
+  reset role;
+
+  -- Who decided, and when. Without it two people share the queue by asking
+  -- each other, which is the dashboard again.
+  select s.reviewed_by, s.reviewed_at into v_by, v_at from salons s where s.id = salon;
+  if v_by is distinct from admin_ or v_at is null then
+    raise exception 'FAIL 123d: nothing records who reviewed this salon';
+  end if;
+
+  raise notice 'PASS 123: verifying and publishing stay two decisions, in that order';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 124. A refusal has to say why, and the owner is who reads it.
+--
+--      Denying a salon in the dashboard meant doing nothing at all, so the
+--      owner learned nothing and telephoned somebody. The reason is the entire
+--      reason this moved into the app — a denial nobody can act on is the old
+--      silence with more machinery behind it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_ uuid := 'ad000000-0000-0000-0000-0000000000a1';
+  owner_ uuid := 'ad000000-0000-0000-0000-0000000000c1';
+  rival  uuid := 'ad000000-0000-0000-0000-0000000000d1';
+  salon  uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  reason text := 'The registration number does not match the business name.';
+  row_   record;
+  got    record;
+  blank  boolean := false;
+begin
+  perform auth.login_as(admin_);
+  set local role authenticated;
+
+  begin
+    perform admin_reject_salon(salon, '   ');
+  exception when sqlstate 'SL031' then
+    blank := true;
+  end;
+
+  if not blank then
+    raise exception 'FAIL 124a: a salon was turned down without a reason';
+  end if;
+
+  perform admin_reject_salon(salon, reason);
+  reset role;
+
+  select * into row_ from salons where id = salon;
+  if row_.rejected_at is null then
+    raise exception 'FAIL 124b: the refusal was not recorded';
+  end if;
+  if row_.is_verified or row_.is_published then
+    raise exception 'FAIL 124c: a refused salon is still verified or in the catalogue';
+  end if;
+
+  -- The owner reads it.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  select * into got from my_salon_review(salon);
+  reset role;
+
+  if got.rejection_reason is distinct from reason then
+    raise exception 'FAIL 124d: the owner cannot read why they were turned down';
+  end if;
+
+  -- And nobody else does. Another salon owner asking about this salon gets
+  -- nothing — the function answers for your own and no other.
+  perform auth.login_as(rival);
+  set local role authenticated;
+  select * into got from my_salon_review(salon);
+  reset role;
+
+  if got.rejection_reason is not null then
+    raise exception 'FAIL 124e: one salon owner read why another was turned down';
+  end if;
+
+  -- The column stays out of every grant, for the reason the function exists:
+  -- the row policy lets anybody read a PUBLISHED salon, so a grant here would
+  -- expose an old refusal the moment the salon was corrected and went live.
+  if has_column_privilege('anon', 'salons', 'rejection_reason', 'SELECT')
+     or has_column_privilege('authenticated', 'salons', 'rejection_reason', 'SELECT') then
+    raise exception 'FAIL 124f: a refusal is readable straight from the browser';
+  end if;
+
+  if has_column_privilege('authenticated', 'salons', 'rejected_at', 'UPDATE')
+     or has_column_privilege('authenticated', 'salons', 'reviewed_by', 'UPDATE') then
+    raise exception 'FAIL 124g: a salon can clear its own refusal, or sign off its own review';
+  end if;
+
+  raise notice 'PASS 124: a refusal says why, reaches its own owner, and reaches nobody else';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 125. Correcting the registration puts a refused salon back in the queue.
+--
+--      The owner is told to fix the number and fixes it. If nothing then
+--      happens, the refusal is a dead end one layer further in than the old
+--      one. 0015's trigger already did this for a VERIFIED salon whose number
+--      changes; this is the same rule for a refused one.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'ad000000-0000-0000-0000-0000000000c1';
+  salon  uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  row_   record;
+begin
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  update salons set cr_number = '1010101011' where id = salon;
+  reset role;
+
+  select * into row_ from salons where id = salon;
+
+  if row_.rejected_at is not null then
+    raise exception 'FAIL 125a: correcting the registration left the salon refused';
+  end if;
+  if row_.rejection_reason is not null then
+    raise exception 'FAIL 125b: the old refusal is still attached to a corrected salon';
+  end if;
+  if row_.reviewed_at is not null then
+    raise exception 'FAIL 125c: the salon still reads as reviewed, so it never reaches the queue';
+  end if;
+
+  raise notice 'PASS 125: correcting the registration puts a refused salon back in the queue';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 126. Saloni can close somebody else's salon, and its former owner is told
+--      what happened rather than shown a sample one.
+--
+--      This is 0019 done to a salon that is not yours, and it carries 0020's
+--      lesson with it. Closing severs every link — that is what releases the
+--      account — so without closed_owner_id the former owner comes back to
+--      "this account doesn't own one yet", which is the exact complaint 0020
+--      was written to fix, reintroduced by a new feature.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_   uuid := 'ad000000-0000-0000-0000-0000000000a1';
+  owner_   uuid := 'ad000000-0000-0000-0000-0000000000c1';
+  customer uuid := '11111111-1111-1111-1111-111111111111';
+  salon    uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  reason   text := 'Trading under a registration that belongs to another business.';
+  svc      uuid;
+  stf      uuid;
+  past     uuid;
+  soon     uuid;
+  row_     record;
+  got      record;
+  blank    boolean := false;
+  queued   integer;
+begin
+  insert into services (salon_id, name_en, name_ar, duration_minutes, price_halalas)
+  values (salon, 'Cut', 'قص', 30, 10000) returning id into svc;
+  insert into staff (salon_id, name_en, name_ar, initials)
+  values (salon, 'Hessa', 'حصة', 'H') returning id into stf;
+  insert into working_hours (salon_id, day_of_week, opens_at, closes_at)
+  select salon, d, time '10:00', time '23:00' from generate_series(0, 6) d;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-ADMIN1', customer, salon, stf,
+          now() - interval '12 days', now() - interval '12 days' + interval '30 min',
+          'completed', 10000, 11500)
+  returning id into past;
+
+  insert into bookings (reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas)
+  values ('SL-ADMIN2', customer, salon, stf,
+          (test_day(820) + time '12:00') at time zone 'Asia/Riyadh',
+          (test_day(820) + time '12:30') at time zone 'Asia/Riyadh',
+          'confirmed', 10000, 11500)
+  returning id into soon;
+
+  insert into waitlist_entries (customer_id, salon_id, requested_date, status)
+  values ('22222222-2222-2222-2222-222222222222', salon, test_day(820), 'waiting');
+
+  perform auth.login_as(admin_);
+  set local role authenticated;
+
+  -- Cancelling other people's appointments without saying why is not an
+  -- administrative action, it is a fault report waiting to be filed.
+  begin
+    perform admin_close_salon(salon, '');
+  exception when sqlstate 'SL031' then
+    blank := true;
+  end;
+
+  if not blank then
+    raise exception 'FAIL 126a: a salon was closed without a reason';
+  end if;
+
+  perform admin_close_salon(salon, reason);
+  reset role;
+
+  select * into row_ from salons where id = salon;
+  if row_.closed_at is null or row_.is_published then
+    raise exception 'FAIL 126b: the salon is not closed, or is still in the catalogue';
+  end if;
+  if row_.owner_id is not null then
+    raise exception 'FAIL 126c: the owner is still attached, so they still cannot leave';
+  end if;
+  if row_.closed_by is distinct from admin_ then
+    raise exception 'FAIL 126d: the administrator who closed it is not recorded';
+  end if;
+  if row_.closed_owner_id is distinct from owner_ then
+    raise exception 'FAIL 126e: whose salon it was is not recorded, so the portal cannot tell them';
+  end if;
+
+  if (select status from bookings where id = soon) <> 'cancelled' then
+    raise exception 'FAIL 126f: an appointment still to come survived the closure';
+  end if;
+  if (select status from bookings where id = past) <> 'completed' then
+    raise exception 'FAIL 126g: a visit that already happened was rewritten';
+  end if;
+  select count(*) into queued from waitlist_entries where salon_id = salon;
+  if queued <> 0 then
+    raise exception 'FAIL 126h: somebody is still queued at a closed salon';
+  end if;
+  if exists (select 1 from staff where salon_id = salon and not is_archived) then
+    raise exception 'FAIL 126i: a closed salon still has a team on sale';
+  end if;
+
+  -- The former owner comes back and is told, by name, what happened and why.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  select * into got from my_closed_salon();
+  reset role;
+
+  if got.name_en is distinct from 'Noor Salon' then
+    raise exception 'FAIL 126j: the former owner is told nothing about their own salon';
+  end if;
+  if not got.closed_by_saloni then
+    raise exception 'FAIL 126k: the portal would tell them they closed it themselves';
+  end if;
+  if got.reason is distinct from reason then
+    raise exception 'FAIL 126l: the former owner cannot read why it was closed';
+  end if;
+
+  -- And they can then leave, which is the whole point of detaching them.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  perform delete_my_account();
+  reset role;
+
+  -- Guarantee 26 still holds for the new column: the person goes, the salon
+  -- keeps its record of the work it did.
+  if not exists (select 1 from salons where id = salon and closed_at is not null) then
+    raise exception 'FAIL 126m: the salon went with the account that used to own it';
+  end if;
+  if (select closed_owner_id from salons where id = salon) is not null then
+    raise exception 'FAIL 126n: a deleted account is still named on a salon';
+  end if;
+
+  raise notice 'PASS 126: Saloni closes a salon, its owner is told why, and can then leave';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 127. What a salon owes is Saloni's to set, and still not the salon's to read.
+--
+--      0018 put commission_bps in no grant at all, which left the Supabase
+--      dashboard as the only way to agree different terms with one salon. The
+--      back office ends that, and the thing to prove is that it ends only
+--      that: an owner still cannot read their own rate, set it to zero, or
+--      learn a rival's.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  admin_ uuid := 'ad000000-0000-0000-0000-0000000000a1';
+  owner_ uuid := 'ad000000-0000-0000-0000-0000000000d1';
+  salon  uuid := 'ff000000-0000-0000-0000-0000000000f6';
+  seen   integer;
+  silly  boolean := false;
+begin
+  perform auth.login_as(admin_);
+  set local role authenticated;
+
+  perform admin_set_commission(salon, 300);
+
+  begin
+    perform admin_set_commission(salon, 10001);
+  exception when sqlstate 'SL033' then
+    silly := true;
+  end;
+
+  select a.commission_bps into seen from admin_salons() a where a.id = salon;
+  reset role;
+
+  if not silly then
+    raise exception 'FAIL 127a: a commission rate above 100 per cent was accepted';
+  end if;
+  if seen <> 300 then
+    raise exception 'FAIL 127b: the rate did not change, or the register reports it wrong (%)', seen;
+  end if;
+  if (select commission_bps from salons where id = salon) <> 300 then
+    raise exception 'FAIL 127c: the register disagrees with the row';
+  end if;
+
+  -- Unchanged from 0018: the salon can neither see this nor touch it. As with
+  -- 122b, assertion 113 states this and runs first, so it is 113 that reports
+  -- a re-granted column. What is new here, and only checked here, is that the
+  -- setter works at all and is bounded.
+  if has_column_privilege('anon', 'salons', 'commission_bps', 'SELECT')
+     or has_column_privilege('authenticated', 'salons', 'commission_bps', 'SELECT') then
+    raise exception 'FAIL 127d: a salon can read what it is charged, and what a rival is';
+  end if;
+  if has_column_privilege('authenticated', 'salons', 'commission_bps', 'UPDATE')
+     or has_column_privilege('authenticated', 'salons', 'commission_bps', 'INSERT') then
+    raise exception 'FAIL 127e: a salon can set its own commission rate';
+  end if;
+
+  -- The owner is still the owner; nothing about them changed.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  if not is_salon_owner(salon) then
+    raise exception 'FAIL 127f: setting a rate detached the salon from its owner';
+  end if;
+  reset role;
+
+  raise notice 'PASS 127: Saloni sets what a salon owes; the salon still cannot read or change it';
 end
 $$;
 reset role;
