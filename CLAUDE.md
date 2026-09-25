@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              422 Chromium checks in both languages; see its README
+  browser-tests/              467 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -95,6 +95,7 @@ src/
     timeOff.ts              ★ periods the salon has taken off sale
     photos.ts               ★ the bucket, salon_media, and the path that is the permission
     commission.ts           ★ what the salon owes Saloni, from commission_statement()
+    admin.ts                ★ Saloni's own register, and the four decisions on a salon
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -114,6 +115,9 @@ src/
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
   screens/customer/           13 screens, including Legal.tsx — the privacy policy and
                               terms, also reachable at ?legal without signing in
+  screens/admin/              Register.tsx (every salon, the ones awaiting a decision
+                              first) and AdminSalon.tsx (one salon, four decisions).
+                              Reached only by an account whose profile says admin
   screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
                               BlockSheet.tsx (taking time off sale),
                               WalkInSheet.tsx (the salon's own booking),
@@ -152,6 +156,10 @@ supabase/
                                       owner goes, the business keeps its records
   migrations/0020_closed_salon_memory.sql  who closed it, so the portal can say so
                                       instead of "this account doesn't own one yet"
+  migrations/0021_admin_back_office.sql  Saloni's own administration, moved out of
+                                      the Supabase dashboard and into the app: a
+                                      review trail, six is_admin()-guarded
+                                      functions, and a refusal the owner reads
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -159,7 +167,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   120 assertions
+  tests/01_policy_tests.sql   127 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -342,8 +350,11 @@ functions in 0003–0012 —
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
 0012's `claim_offer_by_token()`, 0014's `create_walkin_booking()`, 0015's
 `reassign_appointment()` and `my_salon_cr()`, 0016's `delete_my_account()`, 0018's
-`commission_statement()`, 0019's `close_my_salon()` and 0020's `my_closed_salon()`.
-30 RLS policies (plus four on storage.objects). 120 assertions.
+`commission_statement()`, 0019's `close_my_salon()`, 0020's `my_closed_salon()` and
+0021's back office — `admin_salons()`, `admin_verify_salon()`, `admin_publish_salon()`,
+`admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
+own `my_salon_review()`.
+30 RLS policies (plus four on storage.objects). 127 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -513,6 +524,27 @@ disguises, one of them critical:
     new function to `anon` and `authenticated` by default, so `revoke ... from public` revokes
     nothing — see the audit note in §10. 0010 names the roles explicitly, and **assertion 84 fails
     if a function added later forgets to.**
+31. **Saloni's own administration is guarded function by function, and a grant could not do
+    it.** An administrator signs in as `authenticated`, exactly like a customer or a salon
+    owner, and column privileges are granted to database *roles* — so there is no grant that
+    says "authenticated may write `is_verified`, but only when their profile says admin".
+    0004 revoked those columns from `authenticated` outright, which is what makes guarantee 6
+    true, so 0021's back office writes no table at all: six `security definer` functions whose
+    first line is `is_admin()`. That makes `profiles.role` load-bearing for the first time and
+    raises the stakes on guarantee 7 rather than changing it. An administrator is made in the
+    Supabase dashboard, by hand, once — there is deliberately no function that promotes one,
+    because the first could not come from inside the app anyway and building it would only let
+    a compromised admin account mint more. Assertions 121–127; 121 refuses a customer **and a
+    salon owner**, because owning a salon is the closest anybody legitimately gets.
+32. **A salon that is turned down is told why, and correcting it puts them back in the
+    queue.** Denying used to mean doing nothing in the dashboard, so the owner learned nothing.
+    `admin_reject_salon()` requires a reason — by constraint, not only by the screen — and
+    `my_salon_review()` is how that salon's own owner reads it. The column is in no SELECT
+    grant, for a reason worth keeping: a grant is bounded only by the row policy, and that
+    policy lets anybody read a **published** salon, so a salon turned down, corrected and then
+    published would have carried its old refusal to every visitor. Changing the commercial
+    registration number clears the refusal by trigger, so the fix an owner is told to make is
+    the fix that re-queues them. Assertions 124 and 125.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -538,7 +570,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-120 assertions, drops it. Each of 53–120 was checked against a database with its own protection
+127 assertions, drops it. Each of 53–127 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -579,7 +611,8 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | **Notifications** | **Real, and delivered.** Push, not WhatsApp. A freed seat has reached an Android phone through the push service. Two paths stay unexercised: retiring an endpoint the service reports as gone, and iOS. See §10. |
 | **The claim link** | **Real.** `?claim=<token>` in the push claims that exact seat, checked for ownership so a forwarded link is worthless. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
-| **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, or live. Approval itself is not the owner's to make. |
+| **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, live — or **turned down, with the reason Saloni gave**, and a line saying that correcting the registration number re-queues it. Approval itself is not the owner's to make. |
+| **Saloni's back office** | **Real.** A third way in on the opening screen, shown only to an account whose profile says `admin`: the register of every salon with the ones awaiting a decision first, and a screen per salon carrying the commercial registration number, the owner's address, the review trail and five actions — approve, publish, turn down, close, and set the commission rate. Every one of them is an `is_admin()`-guarded function, because an admin is `authenticated` like everybody else (guarantee 31). **No notification is sent to the owner by any of it.** |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
 | **Blocking time out** | **Real.** From the calendar, an owner takes a period off sale — one stylist or the whole salon. `time_off` was already honoured by `available_slots()` and `create_booking()`, so a blocked hour vanishes from the customer's picker and cannot be booked even through the API. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
@@ -880,7 +913,13 @@ the code before them.
   paid, `paid_at` is never set), no location, no analytics. It says a salon sees
   `nullif(full_name, '')` and nothing else, and it sets out 0016's split: the person goes,
   the salon's record of the day it worked stays with the reference where the name was.
-  **If a migration starts collecting something new, that list is part of the change.**
+  **If a migration starts collecting something new, that list is part of the change** — and
+  so it was for 0021, which gave Saloni's own administrators sight of a commercial
+  registration number and an owner's sign-in address. Nothing new is collected, but the
+  policy said that number was "readable only by the account that owns the salon", which had
+  stopped being true. It now names the administrator, and says a refusal's reason is stored
+  and shown to that salon's owner alone. A policy that is merely out of date is a policy that
+  is wrong.
 - **Nobody who wrote it is a lawyer**, and the page says so above everything else rather
   than in a footnote. It also names the three blanks somebody has to fill: the company
   behind Saloni, a contact address for privacy questions, and the country the database is
@@ -894,10 +933,19 @@ the code before them.
   nobody had written down before.
 
 **Structural gaps:**
-- **Verification is a manual step.** A registered salon stays invisible to customers until someone
-  ticks `is_verified` then `is_published` in the Supabase dashboard. Fine at this volume, and the
-  constraint stops the order being skipped, but there is no admin screen and no notification telling
-  the owner they went live.
+- **Verification is still a human decision, but no longer a dashboard one.** A registered salon
+  stays invisible to customers until an administrator checks its commercial registration — that
+  part is deliberate and is the only human check in the product. What changed in 0021 is where
+  it happens: there is now an admin section in the app, so approving, turning down, publishing,
+  unpublishing and closing are all done from a screen with a review trail behind them. **What is
+  still missing is the notification**: an owner who is approved learns it by opening the app, and
+  one who is turned down learns it the same way. That is the next obvious thing to build on top
+  of the outbox 0010 already has.
+- **Two things the back office does not have.** There is no record of who changed a salon's
+  commission rate — `reviewed_by` covers the verification decision only — and no audit log
+  beyond the latest state of each salon. Both are worth adding before more than two people share
+  the job. And an administrator is still made by hand in the Supabase dashboard
+  (`update profiles set role = 'admin'`), deliberately: see guarantee 31.
 - **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
   and a second would silently never be shown. The schema permits more.
 - **The vendor portal is now entirely per-owner.** Registration, hours, interval, services, team,
@@ -943,13 +991,23 @@ the code before them.
    the URL before anything else.
 5. Compliance and the Capacitor wrap — `ROADMAP.md` Part B, Phases 4–5. Native push registers
    in the same table through the same function, so only the worker's last hop changes.
+6. **Tell an owner what happened to their salon.** The back office (0021) records every
+   decision and the owner reads it — but only by opening the app. The outbox 0010 built for
+   waitlist offers is the obvious channel: approved, turned down, published, closed. It is a
+   row and a worker branch rather than a feature, and it is the difference between a review
+   queue and a review queue somebody notices. **Do this before a second person starts using
+   the back office**, because two people each assuming the other told the salon is the failure
+   mode here.
+7. **Make yourself and your partner administrators.** One `update` per person in the Supabase
+   SQL Editor — `supabase/README.md` has it click by click. Nothing in the app can do this,
+   deliberately: see guarantee 31.
 
 ---
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (120 assertions);
-  UI changes with `scripts/browser-tests/` (422 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (127 assertions);
+  UI changes with `scripts/browser-tests/` (467 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

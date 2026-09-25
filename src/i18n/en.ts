@@ -413,7 +413,7 @@ export const en = {
 
   legalPrivOwnerH: 'If you run a salon',
   legalPrivOwnerB:
-    'Registering a salon also stores its name, its area, its telephone number and its commercial registration number. A person checks that registration before the salon appears to customers. The number itself is readable only by the account that owns the salon — not by customers, not by other salons, and not by a visitor who is not signed in.',
+    'Registering a salon also stores its name, its area, its telephone number and its commercial registration number. A person at Saloni checks that registration before the salon appears to customers, and can see the number and the address the owner signs in with in order to do so. Nobody else can: not customers, not other salons, and not a visitor who is not signed in. If a registration is turned down, the reason Saloni gives is stored and is shown to that salon’s owner, and to nobody else.',
 
   legalPrivPushH: 'Notifications',
   legalPrivPushB:

@@ -181,8 +181,9 @@ codebase: the modules under `src/data/` and the actions in `src/state/appReducer
   text and a button that only navigated, so no salon could ever exist and the entire vendor side
   was unreachable. It now creates the salon owned by the signed-in user, unverified and
   unpublished, with a default week of opening hours so the booking screen works from minute one.
-  Approval is a human step in the Supabase dashboard (`supabase/README.md`); still to do is an
-  admin screen and telling an owner when they go live.
+  Approval is still a human step, and deliberately so — but since 0021 it happens in the app
+  rather than the Supabase dashboard (see below). Still to do is telling an owner they went
+  live, which wants the outbox 0010 already has.
 - ~~Per-owner vendor data~~ — **built, apart from the waitlist.** `src/data/owner.ts` resolves the
   salon the signed-in user owns; the opening-hours and booking-interval editor writes
   `working_hours` and `salons.slot_step_minutes`; the services and team lists are the owner's own;
@@ -389,8 +390,16 @@ and all against Supabase. What follows is what stands between that and a publish
 13. **No staging.** Production is GitHub Pages built from the default branch, so every merge
     is a deploy. There is one database and it is the live one.
 14. **Moderation.** Nothing reviews an uploaded photograph or a review before it is public.
-15. **Verification is a dashboard chore.** No admin screen, and nothing tells an owner they
-    went live.
+15. ~~**Verification is a dashboard chore.**~~ **Built (0021).** Saloni's own back office is
+    in the app: the register of every salon awaiting-first, the commercial registration number
+    to check, and approve / publish / turn down / close / set the commission rate, each an
+    `is_admin()`-guarded function because an administrator signs in as `authenticated` like
+    everybody else. A refusal now carries a reason the owner reads, and correcting their
+    registration number re-queues them by trigger. **What is still missing is the
+    notification** — an owner learns they were approved or turned down by opening the app.
+    Also missing: any record of who changed a salon's commission rate, and an audit log beyond
+    each salon's latest state. Administrators are still made by hand in the dashboard, on
+    purpose.
 
 ### Polish, and honest to defer
 

@@ -28,6 +28,7 @@ supabase/
     0018_commission.sql          what Saloni is owed, recorded when the booking is made
     0019_close_salon.sql         closing a salon, so its owner can delete their account
     0020_closed_salon_memory.sql who closed it, so the portal can say so
+    0021_admin_back_office.sql   Saloni's own administration, in the app instead of here
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
@@ -285,29 +286,56 @@ that: a salon cannot be published unless it has been verified first.
 database. The dashboard connects with a key that bypasses that, which is why these steps work here
 and nowhere else.
 
-Approving is a two-part act, and the order matters.
+**Since migration 0021 this is done in the app, not here.** Sign in with an account whose
+profile says `admin` and the opening screen offers a third way in, **Saloni admin**, leading to
+the register of every salon with the ones awaiting a decision first. Tap one and you get its
+commercial registration number, its owner's address, who last reviewed it, and the actions:
+approve, put in the catalogue, turn down with a reason the owner reads, close, and set its
+commission rate. Use that. It records who decided and when, which is the thing this page cannot
+do and the reason any of it moved.
+
+### Making yourself an administrator
+
+This is the one step that has to happen here, and it happens once per person. There is
+deliberately no way to do it from inside the app: `profiles.role` is not writable by
+`authenticated` (0006) because a self-settable role was a one-line privilege escalation to the
+whole database, and a back office that can mint more administrators is a larger blast radius
+than two people typing one query.
 
 1. Open your project at **https://supabase.com/dashboard**.
-2. In the left sidebar click **Table Editor**.
-3. Choose the **salons** table from the list.
-4. Find the new row. `is_verified` and `is_published` will both be unticked, and `cr_number`
-   holds the commercial registration number they typed in.
-5. **Check that CR number is genuine** before going further — this is the whole point of the step.
-   You can look it up on the Ministry of Commerce site.
-6. Click the `is_verified` cell for that row and set it to **true**.
-7. Click the `is_published` cell and set it to **true**.
-8. Press **Save** if the editor asks.
+2. In the left sidebar click **SQL Editor**, then **New query**.
+3. Paste this, with your own sign-in address, and run it:
 
-The salon appears in the customer app on their next load. No deploy is needed.
+```sql
+update public.profiles p
+   set role = 'admin'
+  from auth.users u
+ where u.id = p.id
+   and lower(u.email) = lower('YOUR-SIGN-IN-EMAIL');
+```
+
+It should say `UPDATE 1`. If it says `UPDATE 0`, that address has never finished signing in to
+Saloni, so it has no profile row yet — sign in on the app once and run it again.
+
+4. Sign out and back in on the app. The **Saloni admin** option appears on the opening screen.
+
+Repeat for each person who should have it. To take it away, run the same statement with
+`role = 'customer'`.
+
+### The old way, still true
+
+If you would rather do it here, or need to while the app is unavailable, the underlying rule is
+unchanged: **approving is a two-part act and the order matters.** In **Table Editor** → **salons**,
+tick `is_verified` first, then `is_published`. Setting `is_published` first is refused with a
+message about `published_salons_are_verified` — that is the constraint doing its job.
 
 **To take a salon back down,** untick `is_published`. Leave `is_verified` ticked — you have still
 checked them, and unticking both is what you do only if the verification itself was wrong. Their
 existing bookings are untouched either way; hiding a salon stops new bookings, it does not cancel
 old ones.
 
-**If you set `is_published` before `is_verified`,** the database refuses the change with a message
-about `published_salons_are_verified`. That is the constraint doing its job — tick `is_verified`
-first and try again.
+What the dashboard cannot do is record *who* decided, or tell the owner anything. Both of those
+are why the app has the screen.
 
 ## If something goes wrong
 
@@ -460,7 +488,8 @@ select
       and tgname = 'bookings_cap_per_customer')      as "0017 cap on moves",
   bool_or(p.proname = 'commission_statement')        as "0018 commission",
   bool_or(p.proname = 'close_my_salon')              as "0019 close salon",
-  bool_or(p.proname = 'my_closed_salon')             as "0020 closed memory"
+  bool_or(p.proname = 'my_closed_salon')             as "0020 closed memory",
+  bool_or(p.proname = 'admin_salons')                as "0021 back office"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';

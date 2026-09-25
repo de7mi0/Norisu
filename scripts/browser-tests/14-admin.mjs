@@ -358,8 +358,11 @@ for (const arabic of [false, true]) {
         body.slice(0, 800).replace(/\n/g, ' '));
 
   // The old banner must not also be showing: two answers is worse than one.
-  check(`${L}: and is not also told it is merely awaiting review`,
-        arabic ? !/قيد المراجعة/.test(body) : !/awaiting review/i.test(body),
+  // Matched against the wording the app actually renders — an earlier version
+  // of this looked for "awaiting review", which is not a string in the app at
+  // all, so it passed whatever the screen did.
+  check(`${L}: and is not also told it is merely waiting on us`,
+        arabic ? !/بانتظارنا/.test(body) : !/Waiting on us/.test(body),
         body.slice(0, 800).replace(/\n/g, ' '));
 
   await page.close();

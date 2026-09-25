@@ -1,6 +1,6 @@
 # Browser checks
 
-422 checks that drive the built app in real Chromium, in **both languages**, against a
+467 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -22,6 +22,7 @@ scrambled inside Arabic text.
 | `11-commission.mjs` | What a salon owes Saloni: whole-month windows, and that a failed lookup never reads as "you owe nothing" |
 | `12-close-salon.mjs` | Closing a salon: that an owner can find it, that it cannot happen by accident, and that the deletion refusal now points somewhere real |
 | `13-closed-portal.mjs` | What the portal says to somebody who closed their salon and came back — written against a real report, not a review |
+| `14-admin.mjs` | Saloni's own back office: that it is offered to nobody but an administrator, that a refusal cannot be sent without a reason, and that the owner reads that reason back |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about
 data arriving: that a failed query says so instead of showing a zero, that walk-ins are
@@ -40,6 +41,22 @@ review. The owner closed a salon, came back, and the portal showed a salon again
 sample one, under "this account doesn't own one yet". 0019 had severed every link on
 purpose, so the app genuinely could not tell that case from an account that never had one.
 The checks are mostly about the sentence, because the sentence was the bug.
+
+`14-admin.mjs` has two checks worth more than the rest, and neither is about data
+arriving: that a customer **and a salon owner** are never offered the back office and
+the register is not even queried for them, and that a refusal cannot be sent with
+nothing written in it. The first is a courtesy rather than a boundary — every function
+behind that screen checks `is_admin()` itself — but a door somebody cannot walk through
+should not be drawn. The second is the whole reason denial moved out of the Supabase
+dashboard: a refusal the owner cannot read is the old silence with more machinery
+behind it.
+
+One check in it was wrong before it was right, and the correction is worth keeping.
+"…is not also told it is merely awaiting review" looked for the string `awaiting
+review`, which the app never renders — the banner says "Waiting on us". It therefore
+passed whatever the screen did. It was caught by running the file against the code
+before the change and noticing it passed there too. §12: a check that cannot fail is
+worse than none.
 
 `05-push.mjs` carries the other regression check written against a fault
 found in production rather than in review: a browser holding notification permission with
@@ -84,7 +101,7 @@ into `localStorage` so the app believes somebody is signed in.
 **That is also their limit, and it matters.** A stub answers whatever it is told to, so
 these prove the app *sends the right thing and renders the answer correctly* — they can
 say nothing about whether a grant or a policy would really allow it. The database
-assertions in `supabase/tests/` are the evidence for that half, and there are 120 of them.
+assertions in `supabase/tests/` are the evidence for that half, and there are 127 of them.
 
 `07-photos.mjs` is the exception to that limit, and worth knowing about: it builds a real
 JPEG carrying a fake EXIF GPS tag, feeds it through the actual file picker, and reads the
