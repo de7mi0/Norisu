@@ -72,6 +72,12 @@ export function Onboarding() {
   const existing = owner.salon;
   const editing = Boolean(existing);
 
+  // Turned down by Saloni (0021). Both halves are required: the reason is what
+  // makes the refusal actionable, and without it the ordinary "awaiting
+  // review" banner is the more honest thing to show.
+  const review = existing?.review;
+  const rejected = Boolean(editing && review?.rejectedAt && review.reason);
+
   const [draft, setDraft] = useState<SalonDraft>(existing?.profile ?? EMPTY);
   const [saving, setSaving] = useState(false);
 
@@ -135,26 +141,66 @@ export function Onboarding() {
           {editing ? t.businessProfileDesc : t.registerDesc}
         </p>
 
-        {/* Where they stand: still waiting on approval, live, or not yet registered. */}
-        <div
-          style={{
-            margin: '16px 24px 0',
-            background: existing?.isPublished ? color.tealSoft : color.cream,
-            border: `1px solid ${existing?.isPublished ? color.tealLine : color.creamLine}`,
-            borderRadius: 14,
-            padding: '13px 15px',
-            font: `600 11.5px/1.6 ${font.sans}`,
-            color: existing?.isPublished ? color.teal : '#8a6d14',
-          }}
-        >
-          {!editing
-            ? t.verificationNote
-            : existing?.isPublished
-              ? t.profileLive
-              : existing?.isVerified
-                ? t.profileVerifiedNotLive
-                : t.profileAwaitingReview}
-        </div>
+        {/* Where they stand: turned down, still waiting, live, or not yet
+            registered. Being turned down is the newest of these and the only
+            one that asks the owner to do something, so it gets its own block
+            with the reason in it — a refusal without one is the silence this
+            replaced. */}
+        {rejected ? (
+          <div
+            style={{
+              margin: '16px 24px 0',
+              background: '#fdeceb',
+              border: '1px solid #f6d4d1',
+              borderRadius: 14,
+              padding: '13px 15px',
+            }}
+          >
+            <div style={{ font: `700 12px ${font.sans}`, color: color.danger }}>
+              {t.vendorRejectedTitle}
+            </div>
+            {/* Written by an administrator, rendered as text and never as
+                markup — the same rule as every other string a person types. */}
+            <p
+              style={{
+                font: `500 12px/1.6 ${font.sans}`,
+                color: color.ink,
+                margin: '6px 0 0',
+              }}
+            >
+              {review?.reason}
+            </p>
+            <p
+              style={{
+                font: `600 11px/1.55 ${font.sans}`,
+                color: color.danger,
+                margin: '8px 0 0',
+              }}
+            >
+              {t.vendorRejectedFix}
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              margin: '16px 24px 0',
+              background: existing?.isPublished ? color.tealSoft : color.cream,
+              border: `1px solid ${existing?.isPublished ? color.tealLine : color.creamLine}`,
+              borderRadius: 14,
+              padding: '13px 15px',
+              font: `600 11.5px/1.6 ${font.sans}`,
+              color: existing?.isPublished ? color.teal : '#8a6d14',
+            }}
+          >
+            {!editing
+              ? t.verificationNote
+              : existing?.isPublished
+                ? t.profileLive
+                : existing?.isVerified
+                  ? t.profileVerifiedNotLive
+                  : t.profileAwaitingReview}
+          </div>
+        )}
 
         <div style={{ padding: '18px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <Field

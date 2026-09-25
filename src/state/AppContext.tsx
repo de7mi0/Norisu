@@ -92,6 +92,16 @@ import {
 } from '../data/vendorBookings';
 import { loadCommission, type CommissionState } from '../data/commission';
 import {
+  closeSalonAsAdmin,
+  loadAdminSalons,
+  publishSalon,
+  rejectSalon,
+  setCommission as setSalonCommission,
+  verifySalon,
+  type AdminFailure,
+  type AdminState,
+} from '../data/admin';
+import {
   demoAvailability,
   loadAvailability,
   totalMinutes,
@@ -509,6 +519,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     source: 'demo',
   });
 
+  // Saloni's own register of salons. Remote state, and asked for only in
+  // admin mode — an ordinary customer never issues the query at all, so the
+  // 42501 the database would answer is never the usual case.
+  const [admin, setAdmin] = useState<AdminState>({ salons: [], source: 'demo' });
+  // Bumped after every decision, because the status, the review trail and the
+  // counts all change together and re-reading is cheaper than patching a row
+  // in five places and getting one of them wrong.
+  const [adminNonce, setAdminNonce] = useState(0);
+
   // The waitlist, both sides of it. Reading is also what advances a lapsed
   // hold — there is no job runner, so the queue moves when somebody looks.
   const [myWaitlist, setMyWaitlist] = useState<MyWaitlist>({ entries: [], source: 'demo' });
@@ -598,6 +617,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [ownedSalonId, state.screen]);
+
+  useEffect(() => {
+    if (state.mode !== 'admin') return;
+    let cancelled = false;
+    setAdmin({ salons: [], source: 'loading' });
+    void loadAdminSalons().then((result) => {
+      if (!cancelled) setAdmin(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.mode, adminNonce]);
 
   const appointmentFailureText = useCallback(
     (failure: AppointmentFailure): string => {
@@ -1271,6 +1302,93 @@ export function AppProvider({ children }: { children: ReactNode }) {
     flash(t.closeDone);
   }, [flash, owner.salon?.id, refreshOwner, t]);
 
+  // ---------------------------------------------------------------------------
+  // The back office
+  //
+  // Each of these does the same three things: call the guarded function, say
+  // what happened in the viewer's own language, and re-read the register. The
+  // failures are named rather than generic because "that didn't work" is the
+  // least useful thing to tell somebody holding a decision about a business.
+  // ---------------------------------------------------------------------------
+
+  const adminFailureText = useCallback(
+    (failure: AdminFailure): string => {
+      const said: Record<AdminFailure, string> = {
+        notAdmin: t.adminNotAdmin,
+        needsVerify: t.adminNeedsVerify,
+        needsReason: t.adminNeedsReason,
+        closed: t.adminAlreadyClosed,
+        range: t.adminRateRange,
+        network: t.adminFailed,
+      };
+      return said[failure];
+    },
+    [t],
+  );
+
+  const runAdmin = useCallback(
+    async (work: () => Promise<AdminFailure | null>, done: string): Promise<boolean> => {
+      const failure = await work();
+      if (failure) {
+        flash(adminFailureText(failure));
+        return false;
+      }
+      setAdminNonce((n) => n + 1);
+      flash(done);
+      return true;
+    },
+    [adminFailureText, flash],
+  );
+
+  const adminVerify = useCallback(
+    (salonId: string, verified: boolean) =>
+      runAdmin(
+        () => verifySalon(salonId, verified),
+        verified ? t.adminVerifiedDone : t.adminUnverifiedDone,
+      ),
+    [runAdmin, t],
+  );
+
+  const adminPublish = useCallback(
+    (salonId: string, published: boolean) =>
+      runAdmin(
+        () => publishSalon(salonId, published),
+        published ? t.adminPublishedDone : t.adminUnpublishedDone,
+      ),
+    [runAdmin, t],
+  );
+
+  const adminReject = useCallback(
+    async (salonId: string, reason: string) => {
+      dispatch({ type: 'setAdminSaving', saving: true });
+      const ok = await runAdmin(() => rejectSalon(salonId, reason), t.adminRejectedDone);
+      dispatch({ type: 'setAdminSaving', saving: false });
+      if (ok) dispatch({ type: 'closeAdminReason' });
+      return ok;
+    },
+    [runAdmin, t],
+  );
+
+  const adminClose = useCallback(
+    async (salonId: string, reason: string) => {
+      dispatch({ type: 'setAdminSaving', saving: true });
+      const ok = await runAdmin(() => closeSalonAsAdmin(salonId, reason), t.adminClosedDone);
+      dispatch({ type: 'setAdminSaving', saving: false });
+      if (ok) dispatch({ type: 'closeAdminReason' });
+      return ok;
+    },
+    [runAdmin, t],
+  );
+
+  const adminSetRate = useCallback(
+    async (salonId: string, bps: number) => {
+      const ok = await runAdmin(() => setSalonCommission(salonId, bps), t.adminRateDone);
+      if (ok) dispatch({ type: 'setAdminRateForm', value: null });
+      return ok;
+    },
+    [runAdmin, t],
+  );
+
   const signOut = useCallback(() => {
     void endSession().then(() => flash(isArabic ? 'تم تسجيل الخروج' : 'Signed out'));
   }, [endSession, flash, isArabic]);
@@ -1704,6 +1822,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCoverPhoto,
       vendorReviews,
       commission,
+      admin,
+      adminVerify,
+      adminPublish,
+      adminReject,
+      adminClose,
+      adminSetRate,
       myWaitlist,
       salonWaitlist,
       leaveWaitlist,
@@ -1784,6 +1908,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCoverPhoto,
       vendorReviews,
       commission,
+      admin,
+      adminVerify,
+      adminPublish,
+      adminReject,
+      adminClose,
+      adminSetRate,
       myWaitlist,
       salonWaitlist,
       leaveWaitlist,

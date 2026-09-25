@@ -1,6 +1,6 @@
 export type Lang = 'en' | 'ar';
 
-export type Mode = 'customer' | 'vendor';
+export type Mode = 'customer' | 'vendor' | 'admin';
 
 export type CustomerScreen =
   | 'home'
@@ -32,7 +32,13 @@ export type VendorScreen =
   | 'v_waitlist'
   | 'v_earnings';
 
-export type Screen = CustomerScreen | VendorScreen;
+/**
+ * Saloni's own back office. Two screens: the register of every salon, and one
+ * salon with the four decisions on it.
+ */
+export type AdminScreen = 'a_queue' | 'a_salon';
+
+export type Screen = CustomerScreen | VendorScreen | AdminScreen;
 
 export interface Salon {
   id: string;

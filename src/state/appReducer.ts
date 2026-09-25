@@ -17,6 +17,7 @@ import {
   type AuthChannel,
   type AuthFailure,
 } from '../lib/auth';
+import { REASON_MAX_LENGTH } from '../data/admin';
 import { tile } from '../theme';
 
 export interface ServiceForm {
@@ -164,6 +165,21 @@ export interface AppState {
   legalTab: LegalTab;
 
   /**
+   * Saloni's back office. `adminSalonId` is which salon is open on the detail
+   * screen; the register itself is remote state in AppContext, like every
+   * other thing the database owns.
+   */
+  adminSalonId: string | null;
+  /**
+   * The sheet that asks why, shared by denying and closing because both need
+   * the same thing and neither may happen without it. `kind` says which verb
+   * is being confirmed.
+   */
+  adminReasonSheet: { kind: 'reject' | 'close'; text: string; saving: boolean } | null;
+  /** The commission field while it is being edited, as typed. */
+  adminRateForm: string | null;
+
+  /**
    * Which appointment the owner has open on the calendar, by id, and null when
    * the sheet is closed. Only the *choice* lives here; the appointment itself
    * is remote state on `vendorDay`.
@@ -234,6 +250,9 @@ export const initialState: AppState = {
   nameModal: false,
   nameForm: '',
   legalTab: 'privacy',
+  adminSalonId: null,
+  adminReasonSheet: null,
+  adminRateForm: null,
   apptSheet: null,
   svcModal: false,
   svcForm: { name: '', price: '', dur: '' },
@@ -274,19 +293,32 @@ export function initialStateFor(search: string): AppState {
   return { ...initialState, mode: 'customer', screen: 'legal', legalTab: tab };
 }
 
-/** Where the back arrow leads from each customer screen. */
-const BACK_MAP: Partial<Record<Screen, CustomerScreen>> = {
+/**
+ * Where the back arrow leads from each screen.
+ *
+ * Values widened from `CustomerScreen` to `Screen` when the back office
+ * arrived: its detail screen returns to its own register, not to the
+ * customer's home.
+ */
+const BACK_MAP: Partial<Record<Screen, Screen>> = {
   salon: 'home',
   staff: 'salon',
   time: 'staff',
   pay: 'time',
   reviews: 'salon',
   legal: 'profile',
+  a_salon: 'a_queue',
 };
 
 export type Action =
   | { type: 'setLang'; lang: Lang }
   | { type: 'pickMode'; mode: Mode }
+  | { type: 'openAdminSalon'; salonId: string }
+  | { type: 'openAdminReason'; kind: 'reject' | 'close' }
+  | { type: 'setAdminReason'; value: string }
+  | { type: 'setAdminSaving'; saving: boolean }
+  | { type: 'closeAdminReason' }
+  | { type: 'setAdminRateForm'; value: string | null }
   | { type: 'go'; screen: Screen }
   | { type: 'back' }
   | { type: 'openSalon'; salonId: string }
@@ -386,9 +418,49 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, lang: action.lang };
 
     case 'pickMode':
-      return action.mode === 'customer'
-        ? { ...state, mode: 'customer', screen: 'home' }
-        : { ...state, mode: 'vendor', screen: 'v_onboard', obBack: 'chooser' };
+      if (action.mode === 'customer') return { ...state, mode: 'customer', screen: 'home' };
+      // The back office opens on the register, because the first thing anybody
+      // coming here wants is the list of salons waiting on a decision.
+      if (action.mode === 'admin') {
+        return { ...state, mode: 'admin', screen: 'a_queue', adminSalonId: null };
+      }
+      return { ...state, mode: 'vendor', screen: 'v_onboard', obBack: 'chooser' };
+
+    case 'openAdminSalon':
+      return {
+        ...state,
+        screen: 'a_salon',
+        adminSalonId: action.salonId,
+        // Anything half-typed about the previous salon goes with it. Carrying
+        // a reason from one salon to the next is how the wrong one gets shut.
+        adminReasonSheet: null,
+        adminRateForm: null,
+      };
+
+    case 'openAdminReason':
+      return { ...state, adminReasonSheet: { kind: action.kind, text: '', saving: false } };
+
+    case 'setAdminReason':
+      return state.adminReasonSheet
+        ? {
+            ...state,
+            adminReasonSheet: {
+              ...state.adminReasonSheet,
+              text: clamp(action.value, REASON_MAX_LENGTH),
+            },
+          }
+        : state;
+
+    case 'setAdminSaving':
+      return state.adminReasonSheet
+        ? { ...state, adminReasonSheet: { ...state.adminReasonSheet, saving: action.saving } }
+        : state;
+
+    case 'closeAdminReason':
+      return { ...state, adminReasonSheet: null };
+
+    case 'setAdminRateForm':
+      return { ...state, adminRateForm: action.value === null ? null : clamp(action.value, 6) };
 
     case 'go':
       return { ...state, screen: action.screen };

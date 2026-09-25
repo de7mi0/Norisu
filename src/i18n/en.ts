@@ -542,6 +542,101 @@ export const en = {
   legalTermChangeB:
     'These terms change with the app, on this page. Carrying on using Saloni after a change means accepting it.',
 
+
+  // ---------------------------------------------------------------------
+  // Saloni's own back office (0021)
+  //
+  // Shown only to an account whose profile says admin. The wording assumes
+  // the reader is deciding about somebody else's livelihood, so it names
+  // what each action does to them rather than what it does to a row.
+  // ---------------------------------------------------------------------
+  chAdmin: 'Saloni admin',
+  chAdminSub: 'Review, approve and manage salons',
+
+  adminTitle: 'Salons',
+  adminSub: 'Every salon on Saloni',
+  adminLeave: 'Leave',
+  adminLoading: 'Loading the register…',
+  adminEmpty: 'No salon has registered yet.',
+  adminLoadFailed: 'Could not load the register. Check your connection and try again.',
+  adminDenied: 'This account is not a Saloni administrator.',
+  adminNoBackend: 'No database is connected, so there is no register to show.',
+  adminAwaitingLabel: 'awaiting review',
+  adminNothingWaiting: 'Nothing is waiting on a decision.',
+
+  adminStatusAwaiting: 'Awaiting review',
+  adminStatusVerified: 'Approved, not in catalogue',
+  adminStatusLive: 'In the catalogue',
+  adminStatusRejected: 'Turned down',
+  adminStatusClosed: 'Closed',
+
+  adminCr: 'Commercial registration',
+  adminCrNone: 'None given',
+  adminCrCheck: 'Check this number on the Ministry of Commerce register before approving.',
+  adminOwner: 'Owner',
+  adminOwnerGone: 'No owner attached',
+  adminRegistered: 'Registered',
+  adminReviewedBy: 'Reviewed by',
+  adminNotReviewed: 'Nobody has reviewed this yet',
+  adminServicesLabel: 'Services',
+  adminTeamLabel: 'Team',
+  adminUpcomingLabel: 'Upcoming',
+
+  adminRate: 'Saloni commission',
+  adminRateChange: 'Change',
+  adminRateSave: 'Save',
+  adminRateCancel: 'Cancel',
+  adminRateHint:
+    'Percent of the total bill including VAT. It applies to bookings made from now on — every booking keeps the rate it was made under, so this never re-prices an old invoice.',
+
+  adminApprove: 'Approve registration',
+  adminUnapprove: 'Withdraw approval',
+  adminPublish: 'Put in the catalogue',
+  adminUnpublish: 'Take out of the catalogue',
+  adminRejectAction: 'Turn down',
+  adminCloseAction: 'Close this salon',
+  adminPublishNeedsApproval: 'Approve the registration first.',
+  adminUnpublishNote: 'Taking a salon out stops new bookings. It cancels none.',
+
+  adminRejectedOn: 'Turned down',
+  adminClosedOn: 'Closed',
+  adminReasonGiven: 'Reason given',
+
+  adminReasonRejectTitle: 'Turn this salon down',
+  adminReasonRejectBody:
+    'The owner reads what you write here, so say what is wrong. This is reversible: correcting their commercial registration number puts them straight back in the queue.',
+  adminReasonCloseTitle: 'Close this salon',
+  adminReasonCloseBody:
+    'The salon stops trading, leaves the catalogue, and its services and team are archived. Its owner is detached and can then delete their account. What it has already done stays — the appointments it worked and the reviews written about it are other people’s records.',
+  adminReasonCloseCancels: 'appointments still to come will be cancelled.',
+  adminReasonLabel: 'Reason',
+  adminReasonPlaceholder: 'What the owner will read',
+  adminReasonRejectGo: 'Turn it down',
+  adminReasonCloseGo: 'Close it',
+  adminCancel: 'Cancel',
+
+  adminNotAdmin: 'This account is not a Saloni administrator.',
+  adminNeedsVerify: 'Approve the registration before putting the salon in the catalogue.',
+  adminNeedsReason: 'Say why first — the owner reads it.',
+  adminAlreadyClosed: 'This salon is already closed.',
+  adminRateRange: 'A commission rate is between 0 and 100 per cent.',
+  adminFailed: 'That did not go through. Check your connection and try again.',
+  adminVerifiedDone: 'Registration approved.',
+  adminUnverifiedDone: 'Approval withdrawn.',
+  adminPublishedDone: 'The salon is in the catalogue.',
+  adminUnpublishedDone: 'The salon is out of the catalogue.',
+  adminRejectedDone: 'Turned down. The owner can read why.',
+  adminClosedDone: 'The salon has been closed.',
+  adminRateDone: 'Commission rate saved.',
+
+  // The owner's half: what a refusal looks like from the other side.
+  closedBySaloniTitle: 'Saloni closed this salon',
+  closedReasonLabel: 'Reason given',
+
+  vendorRejectedTitle: 'Not approved yet',
+  vendorRejectedFix:
+    'Correct your commercial registration number above and save. That puts you back in the queue for review.',
+
 };
 
 /** Every dictionary carries the same keys; values are plain strings. */

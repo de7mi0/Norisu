@@ -85,7 +85,9 @@ export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
         }}
       >
         <div style={{ font: `700 12px ${font.sans}`, color: '#8a6d14' }}>
-          {t.closedPortalTitle}
+          {/* "You closed this salon" is false when Saloni did it — and that
+              owner is the one person who most needs to be told which it was. */}
+          {closed.bySaloni ? t.closedBySaloniTitle : t.closedPortalTitle}
         </div>
         <div
           style={{
@@ -99,6 +101,25 @@ export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
           {/* Through the i18n helper, never toLocaleDateString here — §4. */}
           <span>{dayLabel(new Date(closed.closedAt), isArabic ? 'ar' : 'en')}</span>
         </div>
+        {closed.bySaloni && closed.reason ? (
+          <div
+            style={{
+              marginTop: 7,
+              padding: '9px 11px',
+              borderRadius: 10,
+              background: color.surface,
+              border: `1px solid ${color.creamLine}`,
+            }}
+          >
+            <div style={{ font: `700 10px ${font.sans}`, color: color.mutedSoft }}>
+              {t.closedReasonLabel}
+            </div>
+            {/* An administrator's words, rendered as text and never as markup. */}
+            <p style={{ font: `500 11.5px/1.55 ${font.sans}`, color: color.ink, margin: '3px 0 0' }}>
+              {closed.reason}
+            </p>
+          </div>
+        ) : null}
         <p
           style={{
             font: `500 11.5px/1.5 ${font.sans}`,

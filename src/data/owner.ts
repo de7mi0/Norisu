@@ -31,6 +31,12 @@ export interface OwnerSalon {
   nameAr: string;
   isVerified: boolean;
   isPublished: boolean;
+  /**
+   * Where it stands with Saloni's review. Undefined when the read failed or
+   * there is no backend — the banner then falls back to "awaiting review",
+   * which is true but says less.
+   */
+  review?: SalonReview;
   /** The rest of the business profile, as the owner filled it in. */
   profile: SalonDraft;
   /** Spacing between the times the booking screen offers. */
@@ -83,12 +89,31 @@ export type OwnerStatus =
   | 'live'
   | 'error';
 
+/**
+ * Where a salon stands with Saloni, from its own owner's side.
+ *
+ * `rejectedAt` set means it was turned down and `reason` says why — written by
+ * an administrator through `admin_reject_salon()` (0021) and read back through
+ * `my_salon_review()`, because the column is in no SELECT grant. Correcting
+ * the commercial registration number clears all of this by trigger, which is
+ * what makes a refusal a message rather than a dead end.
+ */
+export interface SalonReview {
+  reviewedAt: string | null;
+  rejectedAt: string | null;
+  reason: string | null;
+}
+
 /** The salon this account closed: enough to say what happened, and no more. */
 export interface ClosedSalon {
   name: string;
   nameAr: string;
   /** ISO instant. */
   closedAt: string;
+  /** True when Saloni closed it rather than this account (0021). */
+  bySaloni: boolean;
+  /** Why, when Saloni closed it. Null for an owner closing their own. */
+  reason: string | null;
 }
 
 export interface OwnerState {
@@ -114,10 +139,51 @@ async function closedSalonFor(): Promise<ClosedSalon | undefined> {
     const { data, error } = await supabase.rpc('my_closed_salon');
     if (error) return undefined;
     const row = (Array.isArray(data) ? data[0] : data) as
-      | { name_en: string; name_ar: string; closed_at: string }
+      | {
+          name_en: string;
+          name_ar: string;
+          closed_at: string;
+          closed_by_saloni?: boolean;
+          reason?: string | null;
+        }
       | undefined;
     if (!row) return undefined;
-    return { name: row.name_en, nameAr: row.name_ar, closedAt: row.closed_at };
+    return {
+      name: row.name_en,
+      nameAr: row.name_ar,
+      closedAt: row.closed_at,
+      bySaloni: Boolean(row.closed_by_saloni),
+      reason: row.reason ?? null,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Where this salon stands with Saloni, and why if it was turned down.
+ *
+ * Allowed to fail on its own, exactly like the closed-salon read above: a
+ * refusal the owner cannot see is worse than the old silence, but losing the
+ * whole portal over it would be worse still. A null here shows the plain
+ * "awaiting review" banner, which is never wrong — only less useful.
+ */
+async function reviewFor(salonId: string): Promise<SalonReview | undefined> {
+  if (!supabase) return undefined;
+  try {
+    const { data, error } = await supabase.rpc('my_salon_review', { p_salon_id: salonId });
+    if (error) return undefined;
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { reviewed_at: string | null; rejected_at: string | null; rejection_reason: string | null }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      reviewedAt: row.reviewed_at ?? null,
+      rejectedAt: row.rejected_at ?? null,
+      // Defensive for the same reason my_salon_cr is: a stub answering the
+      // wrong shape must lose the sentence, not the screen.
+      reason: typeof row.rejection_reason === 'string' ? row.rejection_reason : null,
+    };
   } catch {
     return undefined;
   }
@@ -240,6 +306,11 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
     ]).catch(() => null);
     const crNumber = typeof cr?.data === 'string' ? cr.data : '';
 
+    // Asked for alongside the rest rather than on the business screen, because
+    // a refusal is the first thing the owner needs to know and the portal opens
+    // on that screen.
+    const review = await reviewFor(row.id);
+
     // is_salon_owner() lets an owner read these whatever their published or
     // archived state, so this is the full catalogue as the owner knows it.
     const [servicesResult, staffResult] = await Promise.all([
@@ -276,6 +347,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
           crNumber,
           phone: row.phone ?? '',
         },
+        review,
         slotStepMinutes: row.slot_step_minutes ?? 30,
         waitlistEnabled: row.waitlist_enabled ?? true,
         hours: weekFrom((hours ?? []) as WorkingHoursRow[]),

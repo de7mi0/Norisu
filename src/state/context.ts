@@ -7,6 +7,7 @@ import type {
   WalkInDraft,
 } from '../data/vendorBookings';
 import type { CommissionState } from '../data/commission';
+import type { AdminState } from '../data/admin';
 import type { SalonPhoto } from '../data/photos';
 import type { TimeBlock } from '../data/timeOff';
 import type { MyWaitlist, SalonWaitlist, WaitlistRequest } from '../data/waitlist';
@@ -116,6 +117,14 @@ export interface AppContextValue {
   closeMySalon: () => Promise<void>;
   /** What the salon owes Saloni this month and last. `'demo'` when it owns none. */
   commission: CommissionState;
+
+  /** Saloni's own register of salons, and the four decisions on each. */
+  admin: AdminState;
+  adminVerify: (salonId: string, verified: boolean) => Promise<boolean>;
+  adminPublish: (salonId: string, published: boolean) => Promise<boolean>;
+  adminReject: (salonId: string, reason: string) => Promise<boolean>;
+  adminClose: (salonId: string, reason: string) => Promise<boolean>;
+  adminSetRate: (salonId: string, bps: number) => Promise<boolean>;
   /**
    * Moves one of the owner's appointments through its lifecycle. Which moves
    * are legal is decided by the database, not by the caller.

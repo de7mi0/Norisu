@@ -15,7 +15,7 @@ import { AppProvider } from './state/AppContext';
 import { useApp } from './state/context';
 import { CUSTOMER_TAB_SCREENS, VENDOR_TAB_SCREENS } from './state/appReducer';
 import { color, font } from './theme';
-import type { CustomerScreen, VendorScreen } from './types';
+import type { AdminScreen, CustomerScreen, VendorScreen } from './types';
 
 import { Auth } from './screens/Auth';
 import { AssistantBot } from './screens/customer/AssistantBot';
@@ -43,6 +43,9 @@ import { Services } from './screens/vendor/Services';
 import { Staff } from './screens/vendor/Staff';
 import { VendorReviews } from './screens/vendor/VendorReviews';
 import { Waitlist } from './screens/vendor/Waitlist';
+
+import { AdminRegister } from './screens/admin/Register';
+import { AdminSalon } from './screens/admin/AdminSalon';
 
 const CUSTOMER_SCREENS: Record<CustomerScreen, () => React.ReactElement> = {
   home: Home,
@@ -73,6 +76,11 @@ const VENDOR_SCREENS: Record<VendorScreen, () => React.ReactElement> = {
   v_earnings: Earnings,
 };
 
+const ADMIN_SCREENS: Record<AdminScreen, () => React.ReactElement> = {
+  a_queue: AdminRegister,
+  a_salon: AdminSalon,
+};
+
 function CurrentScreen() {
   const { state } = useApp();
 
@@ -81,6 +89,13 @@ function CurrentScreen() {
   if (state.mode === 'customer') {
     const Screen = CUSTOMER_SCREENS[state.screen as CustomerScreen];
     return Screen ? <Screen /> : <Home />;
+  }
+
+  // The back office has no tab bar: it is two screens, and a bar with one
+  // destination is furniture. Leaving is the button in its own header.
+  if (state.mode === 'admin') {
+    const Screen = ADMIN_SCREENS[state.screen as AdminScreen];
+    return Screen ? <Screen /> : <AdminRegister />;
   }
 
   const Screen = VENDOR_SCREENS[state.screen as VendorScreen];

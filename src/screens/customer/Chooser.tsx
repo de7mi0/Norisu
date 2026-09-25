@@ -1,5 +1,6 @@
 import { LangToggle } from '../../components/LangToggle';
 import { useApp } from '../../state/context';
+import type { Mode } from '../../types';
 import { accountLabel } from '../../state/account';
 import { color, font } from '../../theme';
 
@@ -7,17 +8,33 @@ import { color, font } from '../../theme';
 export function Chooser() {
   const { t, arrow, dispatch, session, isArabic } = useApp();
   const signedIn = session.status === 'signedIn';
+  /**
+   * Saloni's own back office, offered only to an account whose profile says
+   * admin. Hiding it is a courtesy rather than the boundary — every function
+   * behind it checks `is_admin()` itself, because an administrator signs in as
+   * `authenticated` like everybody else and no grant can tell them apart. So
+   * somebody who forced this button would reach a screen that refuses them.
+   */
+  const isAdmin = session.profile?.role === 'admin';
 
-  const options = [
+  interface ModeOption {
+    key: Mode;
+    title: string;
+    subtitle: string;
+    style: React.CSSProperties;
+    subtitleOpacity: number;
+  }
+
+  const options: ModeOption[] = [
     {
-      key: 'customer' as const,
+      key: 'customer',
       title: t.chCust,
       subtitle: t.chCustSub,
       style: { background: color.gold, color: color.goldInk },
       subtitleOpacity: 0.7,
     },
     {
-      key: 'vendor' as const,
+      key: 'vendor',
       title: t.chVend,
       subtitle: t.chVendSub,
       style: {
@@ -28,6 +45,20 @@ export function Chooser() {
       subtitleOpacity: 0.6,
     },
   ];
+
+  if (isAdmin) {
+    options.push({
+      key: 'admin',
+      title: t.chAdmin,
+      subtitle: t.chAdminSub,
+      style: {
+        background: 'rgba(245,197,66,.12)',
+        border: '1px solid rgba(245,197,66,.3)',
+        color: color.goldSoft,
+      },
+      subtitleOpacity: 0.65,
+    });
+  }
 
   return (
     <div

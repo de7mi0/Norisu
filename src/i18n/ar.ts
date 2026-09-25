@@ -530,4 +530,94 @@ export const ar: Dictionary = {
   legalTermChangeB:
     'تتغيّر هذه الشروط مع التطبيق، في هذه الصفحة. والاستمرار في استخدام صالوني بعد تغيير يعني قبوله.',
 
+
+  // ---------------------------------------------------------------------
+  // إدارة صالوني (0021)
+  // ---------------------------------------------------------------------
+  chAdmin: 'إدارة صالوني',
+  chAdminSub: 'مراجعة الصالونات واعتمادها وإدارتها',
+
+  adminTitle: 'الصالونات',
+  adminSub: 'كل صالون في صالوني',
+  adminLeave: 'خروج',
+  adminLoading: 'نحمّل السجل…',
+  adminEmpty: 'لم يسجّل أي صالون بعد.',
+  adminLoadFailed: 'تعذّر تحميل السجل. تحقق من الاتصال وحاول مرة أخرى.',
+  adminDenied: 'هذا الحساب ليس حساب إدارة في صالوني.',
+  adminNoBackend: 'لا توجد قاعدة بيانات متصلة، فلا سجل لعرضه.',
+  adminAwaitingLabel: 'بانتظار المراجعة',
+  adminNothingWaiting: 'لا شيء ينتظر قراراً.',
+
+  adminStatusAwaiting: 'بانتظار المراجعة',
+  adminStatusVerified: 'معتمد، وغير منشور',
+  adminStatusLive: 'منشور في الدليل',
+  adminStatusRejected: 'مرفوض',
+  adminStatusClosed: 'مغلق',
+
+  adminCr: 'السجل التجاري',
+  adminCrNone: 'غير مذكور',
+  adminCrCheck: 'تحقق من هذا الرقم في سجل وزارة التجارة قبل الاعتماد.',
+  adminOwner: 'المالك',
+  adminOwnerGone: 'لا مالك مرتبط',
+  adminRegistered: 'تاريخ التسجيل',
+  adminReviewedBy: 'راجعه',
+  adminNotReviewed: 'لم يراجعه أحد بعد',
+  adminServicesLabel: 'الخدمات',
+  adminTeamLabel: 'الفريق',
+  adminUpcomingLabel: 'مواعيد قادمة',
+
+  adminRate: 'عمولة صالوني',
+  adminRateChange: 'تغيير',
+  adminRateSave: 'حفظ',
+  adminRateCancel: 'إلغاء',
+  adminRateHint:
+    'نسبة من إجمالي الفاتورة شاملةً ضريبة القيمة المضافة. تسري على الحجوزات من الآن فصاعداً — فكل حجز يحتفظ بالنسبة التي تم بها، ولا يُعاد تسعير فاتورة قديمة.',
+
+  adminApprove: 'اعتماد السجل التجاري',
+  adminUnapprove: 'سحب الاعتماد',
+  adminPublish: 'نشر في الدليل',
+  adminUnpublish: 'سحب من الدليل',
+  adminRejectAction: 'رفض',
+  adminCloseAction: 'إغلاق هذا الصالون',
+  adminPublishNeedsApproval: 'اعتمد السجل التجاري أولاً.',
+  adminUnpublishNote: 'سحب الصالون من الدليل يوقف الحجوزات الجديدة، ولا يلغي أي حجز قائم.',
+
+  adminRejectedOn: 'رُفض في',
+  adminClosedOn: 'أُغلق في',
+  adminReasonGiven: 'السبب المذكور',
+
+  adminReasonRejectTitle: 'رفض هذا الصالون',
+  adminReasonRejectBody:
+    'يقرأ المالك ما تكتبه هنا، فاذكر ما الخطأ. والرفض قابل للتراجع: تصحيح رقم السجل التجاري يعيده مباشرة إلى قائمة المراجعة.',
+  adminReasonCloseTitle: 'إغلاق هذا الصالون',
+  adminReasonCloseBody:
+    'يتوقف الصالون عن العمل، ويخرج من الدليل، وتُؤرشف خدماته وفريقه. ويُفصل مالكه عنه فيستطيع حذف حسابه بعدها. ويبقى ما أنجزه فعلاً — فالمواعيد التي عمل فيها والتقييمات المكتوبة عنه سجلات أشخاص آخرين.',
+  adminReasonCloseCancels: 'من المواعيد القادمة ستُلغى.',
+  adminReasonLabel: 'السبب',
+  adminReasonPlaceholder: 'ما سيقرأه المالك',
+  adminReasonRejectGo: 'ارفضه',
+  adminReasonCloseGo: 'أغلقه',
+  adminCancel: 'إلغاء',
+
+  adminNotAdmin: 'هذا الحساب ليس حساب إدارة في صالوني.',
+  adminNeedsVerify: 'اعتمد السجل التجاري قبل نشر الصالون في الدليل.',
+  adminNeedsReason: 'اذكر السبب أولاً — فالمالك يقرأه.',
+  adminAlreadyClosed: 'هذا الصالون مغلق بالفعل.',
+  adminRateRange: 'نسبة العمولة بين صفر ومئة بالمئة.',
+  adminFailed: 'لم يتم تنفيذ ذلك. تحقق من الاتصال وحاول مرة أخرى.',
+  adminVerifiedDone: 'تم اعتماد السجل التجاري.',
+  adminUnverifiedDone: 'تم سحب الاعتماد.',
+  adminPublishedDone: 'الصالون الآن في الدليل.',
+  adminUnpublishedDone: 'تم سحب الصالون من الدليل.',
+  adminRejectedDone: 'تم الرفض. يستطيع المالك قراءة السبب.',
+  adminClosedDone: 'تم إغلاق الصالون.',
+  adminRateDone: 'تم حفظ نسبة العمولة.',
+
+  closedBySaloniTitle: 'أغلقت صالوني هذا الصالون',
+  closedReasonLabel: 'السبب المذكور',
+
+  vendorRejectedTitle: 'لم يُعتمد بعد',
+  vendorRejectedFix:
+    'صحّح رقم السجل التجاري أعلاه واحفظ. هذا يعيدك إلى قائمة المراجعة.',
+
 };
