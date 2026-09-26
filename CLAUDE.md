@@ -29,6 +29,11 @@ built out as a real app. The implementation is the source of truth now.
 
 **Target platform:** native apps on the App Store and Google Play, reached by wrapping this same
 codebase with **Capacitor** — no rewrite. The web build is the development and testing surface.
+**Android is wrapped** (`android/`, `capacitor.config.ts`, `docs/android-app.md`); **iOS is not,
+and cannot be from here** — Xcode runs only on macOS, and `npx cap add ios` is the whole of it
+once there is a Mac. Nothing in the wrap has been run on a handset: the sandbox has no Android
+SDK and no device, so everything about the native build is written from the specifications and
+is unverified until the first real run.
 
 **Scale:** 76 TypeScript files, ~17,000 lines. ~4,000 lines of migrations, ~9,000 including tests and seed.
 
@@ -44,6 +49,16 @@ codebase with **Capacitor** — no rewrite. The web build is the development and
 | Lint | oxlint | 1.75 |
 | Backend | Supabase (Postgres + Auth + RLS) | client `@supabase/supabase-js` 2.112 |
 | Hosting | GitHub Pages via GitHub Actions | Node 22 in CI |
+
+**The native shell is Capacitor, and it changes almost nothing.** The same `dist/` the web
+build produces is bundled inside an Android app. Three things genuinely differ and each is
+isolated to one file: the **hardware back button** (`hooks/useHardwareBack.ts`) — Capacitor's
+default steps through WebView history and this app has none, so without it back closes the app
+from any screen; **safe areas**, because Android 15 forces edge-to-edge for apps targeting
+SDK 35+ and `.viewport` now carries `env(safe-area-inset-*)` padding, which is a no-op wherever
+the insets are zero; and **push**, which a system WebView cannot do, so `isPushSupported()`
+returns false there and the app says it cannot message you rather than asking for a permission
+it would never use. **Native push is not built** — see §10.
 
 **Deliberately absent: no CSS framework, no state library, no router.** Styling is inline styles
 plus a small `global.css`. Navigation is a `switch` on a screen name held in state. Do not
@@ -124,6 +139,11 @@ src/
                               appointment.tsx (the row the dashboard and calendar share)
                               and status.ts (one status → label map for both)
   hooks/useDragScroll.ts      mouse-drag for horizontal rails
+  hooks/useHardwareBack.ts  ★ the Android back button; a no-op in a browser
+  lib/native.ts             ★ whether this is the native shell, and which platform
+capacitor.config.ts           app id, name, and the folder the native build loads
+android/                      the generated Android Studio project (committed)
+docs/android-app.md           installing Android Studio and running it on a phone
 supabase/
   migrations/0001_schema.sql              14 tables, constraints, rating view
   migrations/0002_row_level_security.sql  30 policies + grants

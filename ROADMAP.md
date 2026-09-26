@@ -327,8 +327,21 @@ through the same function, and only the worker's last hop differs. A WhatsApp pr
   Migration 0015 caps bookings per account in the meantime.
 
 ### Phase 5 — Ship the apps
-- Wrap this same React codebase with **Capacitor**. No rewrite: the existing screens ship
-  as-is, with native push and deep links added.
+- ~~Wrap this same React codebase with **Capacitor**~~ — **Android done, iOS not.** No rewrite:
+  the existing screens ship as-is. `android/` is generated and committed, the hardware back
+  button is handled, safe areas are in, and `docs/android-app.md` is the click-by-click for
+  installing Android Studio and running it on a real phone. **None of it has run on a handset** —
+  no Android SDK and no device here — so the first real run is the test. **iOS needs a Mac**:
+  Xcode does not exist for Windows or Linux, and `npx cap add ios` is the whole of the work
+  once there is one.
+- **Native push is the real remaining piece**, and it is not a flag. `push_subscriptions` and
+  `register_push_device()` hold a device token whatever its shape, so the database does not
+  change — but the worker sends over web-push and native needs Firebase Cloud Messaging for
+  Android and APNs for iOS. A week, not an afternoon. It is also what finally makes push work
+  on an iPhone without asking people to add Saloni to their home screen.
+- **Publishing costs you instant deploys.** The web files are bundled inside the app, so a
+  change reaches people after a release and a review rather than in forty seconds. Worth
+  delaying the first submission until the app stops changing daily.
 - **Apple Developer Program** — an organisation account needs a **D-U-N-S number**, which
   takes time to obtain — and **Google Play Console**.
 - Bilingual store listings and screenshots, Apple privacy labels, Google data-safety form.
