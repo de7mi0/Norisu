@@ -4,14 +4,29 @@ import { Screen } from '../../components/Screen';
 import { PinIcon } from '../../components/icons';
 import { CATEGORIES, matchesCategory } from '../../data/salons';
 import { salonTags } from '../../i18n';
+import { searchSalons } from '../../lib/search';
+import { SEARCH_MAX_LENGTH } from '../../state/appReducer';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
-/** Discovery screen: featured salon, category filter, and nearby salons. */
+/** Discovery screen: search, featured salon, category filter, and nearby salons. */
 export function Home() {
   const { t, state, dispatch, isArabic, salons: allSalons, catalogSource } = useApp();
 
-  const salons = allSalons.filter((salon) => matchesCategory(salon, state.activeCat));
+  const query = state.query.trim();
+  const searching = query !== '';
+
+  /*
+    Searching takes over the screen rather than narrowing what is already on
+    it. Combining a query with the category rail is the obvious thing and the
+    wrong one: search "Rose" while the Barber chip is active and you get an
+    empty list with no clue why. So a query ignores the category, and the rail,
+    the headline and the featured card step aside while one is typed.
+  */
+  const salons = searching
+    ? searchSalons(allSalons, query)
+    : allSalons.filter((salon) => matchesCategory(salon, state.activeCat));
+
   // The first published salon is the one featured at the top.
   const featured = allSalons[0];
 
@@ -75,6 +90,70 @@ export function Home() {
       </div>
 
       {/*
+        The search field. A real <input type="search"> with a label, so the
+        keyboard offers a search key and assistive tech announces it — and
+        `dir` follows the app, so an Arabic caret starts on the right.
+      */}
+      <div style={{ padding: '14px 24px 0' }}>
+        <label htmlFor="salon-search" className="visually-hidden">
+          {t.searchLabel}
+        </label>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 9,
+            background: color.surfaceSand,
+            border: `1px solid ${searching ? color.goldDeep : color.lineSand}`,
+            borderRadius: 14,
+            padding: '0 12px',
+          }}
+        >
+          <span aria-hidden="true" style={{ color: color.mutedSoft, fontSize: 14, flex: 'none' }}>
+            ⌕
+          </span>
+          <input
+            id="salon-search"
+            type="search"
+            value={state.query}
+            onChange={(event) => dispatch({ type: 'setQuery', value: event.target.value })}
+            placeholder={t.searchPlaceholder}
+            maxLength={SEARCH_MAX_LENGTH}
+            dir={isArabic ? 'rtl' : 'ltr'}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              padding: '11px 0',
+              font: `500 13.5px ${font.sans}`,
+              color: color.ink,
+            }}
+          />
+          {searching ? (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'setQuery', value: '' })}
+              aria-label={t.searchClear}
+              style={{
+                flex: 'none',
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                background: color.lineSand,
+                color: color.inkSoft,
+                font: `700 12px ${font.sans}`,
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {/*
         Only shown when the catalogue is not live, so it is obvious that these
         salons are samples rather than real rows. Silent in the normal case.
       */}
@@ -103,146 +182,152 @@ export function Home() {
         </div>
       ) : null}
 
-      <div style={{ padding: '18px 24px 0' }}>
-        <div
-          style={{ font: `500 11px ${font.sans}`, letterSpacing: '.24em', color: color.goldDeep }}
-        >
-          {t.featEyebrow}
+      {/* Hidden while searching: a hero and a category rail above a list of
+          results are noise, and the rail would look like it still applies. */}
+      {searching ? null : (
+        <>
+        <div style={{ padding: '18px 24px 0' }}>
+          <div
+            style={{ font: `500 11px ${font.sans}`, letterSpacing: '.24em', color: color.goldDeep }}
+          >
+            {t.featEyebrow}
+          </div>
+          <h1 style={{ font: `600 32px/1.02 ${font.serif}`, marginTop: 6, marginBottom: 0 }}>
+            {t.headline1}
+            <br />
+            {t.headline2}
+          </h1>
         </div>
-        <h1 style={{ font: `600 32px/1.02 ${font.serif}`, marginTop: 6, marginBottom: 0 }}>
-          {t.headline1}
-          <br />
-          {t.headline2}
-        </h1>
-      </div>
 
-      <button
-        type="button"
-        onClick={() => featured && dispatch({ type: 'openSalon', salonId: featured.id })}
-        className="press"
-        style={{
-          display: 'block',
-          width: 'calc(100% - 48px)',
-          margin: '16px 24px 0',
-          position: 'relative',
-          height: 250,
-          borderRadius: 24,
-          overflow: 'hidden',
-          background: 'repeating-linear-gradient(125deg,#efe9dd 0 14px,#e7e0d2 14px 28px)',
-        }}
-      >
-        {featured?.photo ? (
-          // The stripe on the button behind stays as the backdrop, so a
-          // photograph that is still loading looks like the salons that have
-          // none rather than like a hole.
-          <Photo
-            src={featured.photo}
-            tile="transparent"
-            style={{ position: 'absolute', inset: 0 }}
-          />
-        ) : (
+        <button
+          type="button"
+          onClick={() => featured && dispatch({ type: 'openSalon', salonId: featured.id })}
+          className="press"
+          style={{
+            display: 'block',
+            width: 'calc(100% - 48px)',
+            margin: '16px 24px 0',
+            position: 'relative',
+            height: 250,
+            borderRadius: 24,
+            overflow: 'hidden',
+            background: 'repeating-linear-gradient(125deg,#efe9dd 0 14px,#e7e0d2 14px 28px)',
+          }}
+        >
+          {featured?.photo ? (
+            // The stripe on the button behind stays as the backdrop, so a
+            // photograph that is still loading looks like the salons that have
+            // none rather than like a hole.
+            <Photo
+              src={featured.photo}
+              tile="transparent"
+              style={{ position: 'absolute', inset: 0 }}
+            />
+          ) : (
+            <span
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#b7ad97',
+                font: `500 10px ${font.mono}`,
+                letterSpacing: '.12em',
+              }}
+            >
+              SALON INTERIOR
+            </span>
+          )}
           <span
             style={{
               position: 'absolute',
               inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#b7ad97',
-              font: `500 10px ${font.mono}`,
-              letterSpacing: '.12em',
+              background: 'linear-gradient(180deg,rgba(0,0,0,0) 42%,rgba(20,15,3,.82) 100%)',
             }}
-          >
-            SALON INTERIOR
-          </span>
-        )}
-        <span
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(180deg,rgba(0,0,0,0) 42%,rgba(20,15,3,.82) 100%)',
-          }}
-        />
-        {featured && featured.discount > 0 ? (
+          />
+          {featured && featured.discount > 0 ? (
+            <span
+              style={{
+                position: 'absolute',
+                top: 14,
+                insetInlineEnd: 14,
+                background: color.gold,
+                color: color.goldInkAlt,
+                font: `700 12px ${font.sans}`,
+                padding: '6px 11px',
+                borderRadius: 10,
+              }}
+              className="ltr-run"
+            >
+              -{featured.discount}%
+            </span>
+          ) : null}
           <span
             style={{
               position: 'absolute',
-              top: 14,
-              insetInlineEnd: 14,
-              background: color.gold,
-              color: color.goldInkAlt,
-              font: `700 12px ${font.sans}`,
-              padding: '6px 11px',
-              borderRadius: 10,
-            }}
-            className="ltr-run"
-          >
-            -{featured.discount}%
-          </span>
-        ) : null}
-        <span
-          style={{
-            position: 'absolute',
-            insetInline: 18,
-            bottom: 16,
-            color: '#fff',
-            textAlign: 'start',
-            display: 'block',
-          }}
-        >
-          <span style={{ display: 'block', font: `600 26px/1 ${font.serif}` }}>
-            {featured ? (isArabic ? featured.ar : featured.name) : ''}
-          </span>
-          <span
-            style={{ display: 'block', font: `700 17px ${font.arabicDisplay}`, color: color.goldSoft }}
-          >
-            {featured ? (isArabic ? featured.name : featured.ar) : ''}
-          </span>
-          <span
-            style={{
-              display: 'flex',
-              gap: 12,
-              alignItems: 'center',
-              marginTop: 7,
-              font: `500 12px ${font.sans}`,
-              color: '#ece7dd',
+              insetInline: 18,
+              bottom: 16,
+              color: '#fff',
+              textAlign: 'start',
+              display: 'block',
             }}
           >
-            {featured?.rating != null ? (
-              <span style={{ color: color.goldSoft }}>★ {featured.rating}</span>
-            ) : null}
-            <span>{featured ? salonTags(featured, state.lang) : ''}</span>
-          </span>
-        </span>
-      </button>
-
-      <div
-        className="scr hscroll"
-        style={{ display: 'flex', gap: 9, padding: '20px 24px 0', overflowX: 'auto' }}
-      >
-        {CATEGORIES.map(([id, arabicName]) => {
-          const active = state.activeCat === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => dispatch({ type: 'setCategory', category: id })}
-              aria-pressed={active}
+            <span style={{ display: 'block', font: `600 26px/1 ${font.serif}` }}>
+              {featured ? (isArabic ? featured.ar : featured.name) : ''}
+            </span>
+            <span
+              style={{ display: 'block', font: `700 17px ${font.arabicDisplay}`, color: color.goldSoft }}
+            >
+              {featured ? (isArabic ? featured.name : featured.ar) : ''}
+            </span>
+            <span
               style={{
-                whiteSpace: 'nowrap',
-                padding: '9px 16px',
-                borderRadius: 22,
-                font: `600 12.5px ${font.sans}`,
-                background: active ? color.ink : color.surfaceSand,
-                color: active ? '#fff' : color.inkSoft,
-                border: `1px solid ${active ? color.ink : color.lineSand}`,
+                display: 'flex',
+                gap: 12,
+                alignItems: 'center',
+                marginTop: 7,
+                font: `500 12px ${font.sans}`,
+                color: '#ece7dd',
               }}
             >
-              {isArabic ? arabicName : id}
-            </button>
-          );
-        })}
-      </div>
+              {featured?.rating != null ? (
+                <span style={{ color: color.goldSoft }}>★ {featured.rating}</span>
+              ) : null}
+              <span>{featured ? salonTags(featured, state.lang) : ''}</span>
+            </span>
+          </span>
+        </button>
+
+        <div
+          className="scr hscroll"
+          style={{ display: 'flex', gap: 9, padding: '20px 24px 0', overflowX: 'auto' }}
+        >
+          {CATEGORIES.map(([id, arabicName]) => {
+            const active = state.activeCat === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => dispatch({ type: 'setCategory', category: id })}
+                aria-pressed={active}
+                style={{
+                  whiteSpace: 'nowrap',
+                  padding: '9px 16px',
+                  borderRadius: 22,
+                  font: `600 12.5px ${font.sans}`,
+                  background: active ? color.ink : color.surfaceSand,
+                  color: active ? '#fff' : color.inkSoft,
+                  border: `1px solid ${active ? color.ink : color.lineSand}`,
+                }}
+              >
+                {isArabic ? arabicName : id}
+              </button>
+            );
+          })}
+        </div>
+        </>
+      )}
 
       <div
         style={{
@@ -252,9 +337,60 @@ export function Home() {
           padding: '22px 24px 0',
         }}
       >
-        <h2 style={{ font: `600 20px ${font.serif}`, margin: 0 }}>{t.nearYou}</h2>
-        <span style={{ font: `500 11px ${font.sans}`, color: color.goldLink }}>{t.seeAll}</span>
+        <h2 style={{ font: `600 20px ${font.serif}`, margin: 0 }}>
+          {searching ? t.searchResults : t.nearYou}
+        </h2>
+        {searching ? (
+          // How many, so an empty result is plainly an empty result and a
+          // single match does not read as "we only have one salon".
+          <span style={{ font: `600 11px ${font.sans}`, color: color.mutedSoft }}>
+            {salons.length}
+          </span>
+        ) : (
+          <span style={{ font: `500 11px ${font.sans}`, color: color.goldLink }}>{t.seeAll}</span>
+        )}
       </div>
+
+      {searching && salons.length === 0 ? (
+        <div style={{ padding: '18px 24px 0' }}>
+          <div
+            style={{
+              background: color.surfaceWarm,
+              border: `1px solid ${color.lineWarm}`,
+              borderRadius: 14,
+              padding: '16px 17px',
+            }}
+          >
+            <div style={{ font: `700 13px ${font.sans}`, color: color.ink }}>
+              {t.searchNoneTitle}
+            </div>
+            <p
+              style={{
+                font: `500 12px/1.65 ${font.sans}`,
+                color: color.mutedSoft,
+                margin: '6px 0 0',
+              }}
+            >
+              {t.searchNoneBody}
+            </p>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'setQuery', value: '' })}
+              className="press"
+              style={{
+                marginTop: 11,
+                background: color.ink,
+                color: color.goldSoft,
+                borderRadius: 10,
+                padding: '8px 13px',
+                font: `700 11.5px ${font.sans}`,
+              }}
+            >
+              {t.searchShowAll}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ padding: '14px 24px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {salons.map((salon) => (

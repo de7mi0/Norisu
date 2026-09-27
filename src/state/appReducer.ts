@@ -82,6 +82,16 @@ export interface AppState {
   slotTime: string | null;
   payId: string;
   activeCat: string;
+  /**
+   * What the customer has typed into the search field on Explore.
+   *
+   * UI state, so it belongs in the reducer: the catalogue it filters is
+   * already loaded, and nothing is asked of the database (see `lib/search.ts`).
+   * A non-empty query takes over the screen — the featured salon, the headline
+   * and the category rail step aside — because searching within a category
+   * silently returns nothing and reads as a fault.
+   */
+  query: string;
   saved: Record<string, boolean>;
   bookTab: 'upcoming' | 'past';
   /** True while the time picker is moving an existing booking. */
@@ -220,6 +230,7 @@ export const initialState: AppState = {
   slotTime: null,
   payId: 'applepay',
   activeCat: 'All',
+  query: '',
   saved: {},
   bookTab: 'upcoming',
   reschedule: false,
@@ -323,6 +334,7 @@ export type Action =
   | { type: 'back' }
   | { type: 'openSalon'; salonId: string }
   | { type: 'setCategory'; category: string }
+  | { type: 'setQuery'; value: string }
   | { type: 'toggleService'; serviceId: string }
   | { type: 'toggleSaved'; salonId: string }
   | { type: 'pickStaff'; staffId: string }
@@ -490,7 +502,15 @@ export function appReducer(state: AppState, action: Action): AppState {
       };
 
     case 'setCategory':
+      // Deliberately does NOT clear the query. It cannot need to: the category
+      // rail is the only thing that dispatches this, and it is hidden while a
+      // search is running, so the two filters can never both be set. Clearing
+      // here would be a line that never runs, defending an invariant that is
+      // actually held by the screen.
       return { ...state, activeCat: action.category };
+
+    case 'setQuery':
+      return { ...state, query: clamp(action.value, SEARCH_MAX_LENGTH) };
 
     case 'toggleService':
       return {
@@ -861,6 +881,13 @@ export function appReducer(state: AppState, action: Action): AppState {
 }
 
 /** Screens that show the customer tab bar and floating help button. */
+/**
+ * The longest search the app will hold. Long enough for any salon's full name
+ * in either script, short enough that a paste of something else cannot become
+ * the state the whole home screen renders from.
+ */
+export const SEARCH_MAX_LENGTH = 60;
+
 export const CUSTOMER_TAB_SCREENS: CustomerScreen[] = ['home', 'bookings', 'profile', 'reviews'];
 
 /** Screens that show the vendor tab bar. */

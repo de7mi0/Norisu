@@ -11,6 +11,14 @@ export const en = {
   headline1: 'Book beauty,',
   headline2: 'beautifully.',
   nearYou: 'Near you',
+  searchLabel: 'Search salons',
+  searchPlaceholder: 'Search by name, area or service',
+  searchClear: 'Clear search',
+  searchResults: 'Results',
+  searchNoneTitle: 'No salon matches that',
+  searchNoneBody:
+    'Check the spelling, or try part of the name — searching for “rose” finds “Rose & Oud”. Only salons Saloni has approved appear here.',
+  searchShowAll: 'Show all salons',
   seeAll: 'See all',
   noSalons: 'No salons in this category yet.',
 

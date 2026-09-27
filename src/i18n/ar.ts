@@ -13,6 +13,14 @@ export const ar: Dictionary = {
   headline1: 'احجز الجمال',
   headline2: 'بأناقة.',
   nearYou: 'قريب منك',
+  searchLabel: 'ابحث عن صالون',
+  searchPlaceholder: 'ابحث بالاسم أو الحي أو الخدمة',
+  searchClear: 'مسح البحث',
+  searchResults: 'النتائج',
+  searchNoneTitle: 'لا يوجد صالون مطابق',
+  searchNoneBody:
+    'تحقّق من الإملاء، أو جرّب جزءاً من الاسم — فالبحث عن «وردة» يجد «وردة وعود». ولا تظهر هنا إلا الصالونات التي اعتمدتها صالوني.',
+  searchShowAll: 'عرض كل الصالونات',
   seeAll: 'عرض الكل',
   noSalons: 'لا توجد صالونات في هذه الفئة بعد.',
 
