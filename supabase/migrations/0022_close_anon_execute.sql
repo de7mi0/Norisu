@@ -5,6 +5,28 @@
 -- was deciding which. Written down because the next person to read that screen
 -- deserves the answer rather than the panic.
 --
+-- ALL SIXTY, ACCOUNTED FOR, and what each becomes after this migration:
+--
+--   37  authenticated_security_definer_function_executable   -> 34, all correct
+--   19  anon_security_definer_function_executable            ->  4, all correct
+--    2  function_search_path_mutable                         ->  0
+--    1  extension_in_public (btree_gist)                     ->  1, deliberate
+--    1  auth_leaked_password_protection                      ->  1, not SQL
+--
+-- The 34 remaining "signed-in users can execute" warnings are this app's entire
+-- RPC surface — create_booking, the admin_* set, the waitlist, the vendor
+-- reads. Every one of them MUST be callable by a signed-in user; that is what
+-- the app calls. Each guards itself in its first line, which is the boundary,
+-- and the assertions are the evidence. Only the three trigger functions were
+-- wrong to be in that list, and they are revoked below.
+--
+-- auth_leaked_password_protection is a dashboard toggle rather than anything
+-- SQL can reach, and it is a no-op for Saloni either way: there is no password
+-- anywhere in this app (CLAUDE.md §6 — sign-in is a six-digit passcode), so
+-- there is nothing for HaveIBeenPwned to be checked against. Worth enabling
+-- anyway, because it costs nothing and becomes correct the day somebody adds
+-- password sign-in.
+--
 -- WHAT WAS NOT WRONG. "Public Can Execute SECURITY DEFINER Function" was raised
 -- against most of this schema's functions. Every one of them was called as an
 -- anonymous visitor before this migration was written, and every one refused:

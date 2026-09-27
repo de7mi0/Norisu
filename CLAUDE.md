@@ -805,6 +805,16 @@ rebuilding that constraint on a live database.
 Assertion 84 was sharpened rather than added to: it now checks **which role** can reach a
 function, not merely whether the name is on a list, so this class of mistake fails the suite.
 
+**All sixty warnings, and what 0022 leaves.** 37 "signed-in users can execute" → 34, which
+is this app's entire RPC surface and has to be callable by a signed-in user; 19 "anon can
+execute" → 4, the three policy helpers plus `available_slots()`; 2 mutable search paths → 0;
+`btree_gist` in `public` stays, deliberately; and `auth_leaked_password_protection` is a
+dashboard toggle that is **a no-op for Saloni either way** — there is no password anywhere in
+this app (§6), so there is nothing for HaveIBeenPwned to check. Worth enabling regardless,
+because it costs nothing and becomes correct the day password sign-in is ever added. **The
+advisor will still show ~40 warnings after all this, and that is the right number** — it flags
+shape, and the shape of a guarded RPC is indistinguishable from the shape of an open one.
+
 Both are closed, along with the sender functions 0010 adds — `claim_pending_notifications()` would
 have been the worst of them, returning the phone number and name of everybody with a message
 queued. **The durable fix is assertion 84**, which enumerates every `security definer` function
