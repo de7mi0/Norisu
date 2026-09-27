@@ -171,11 +171,26 @@ for (const arabic of [false, true]) {
   check('EN: a word that is not in the name does not match it',
         body.includes('No salon matches that'), body.slice(0, 300).replace(/\n/g, ' '));
 
-  // An area, because "a salon near me in Olaya" is a real way to look.
+  // Names only, deliberately. An earlier version also matched the district,
+  // the tags and the category, which made the field feel loose: a word that
+  // happened to be in somebody's tag list returned salons whose names shared
+  // nothing with what was typed, and that reads as the search being wrong.
   await type(page, 'olaya');
   body = await listed(page);
-  check('EN: searching by district works', body.includes('Maison Noir'),
+  check('EN: a district is NOT matched — this searches names',
+        body.includes('No salon matches that'), body.slice(0, 300).replace(/\n/g, ' '));
+
+  await type(page, 'bridal');
+  body = await listed(page);
+  check('EN: nor is a tag', body.includes('No salon matches that'),
         body.slice(0, 300).replace(/\n/g, ' '));
+
+  // And the field says so, rather than promising something it does not do.
+  // The first version's placeholder read "Search by name, area or service" —
+  // services were never searchable at all.
+  const placeholder = await field(page).getAttribute('placeholder');
+  check('EN: the placeholder promises only what it delivers',
+        placeholder === 'Search by salon name', `placeholder read "${placeholder}"`);
 
   // The category rail must not be on screen while searching. Leaving it there
   // is the version of this that looks right and reads as a fault: a "Barber"

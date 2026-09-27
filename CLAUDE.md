@@ -73,7 +73,7 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
-  browser-tests/              499 Chromium checks in both languages; see its README
+  browser-tests/              501 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -84,7 +84,7 @@ src/
     supabase.ts               client; `isSupabaseConfigured` false ⇒ demo mode
     auth.ts                 ★ passcode sign-in, identifier normalisation, profile reads
     images.ts               ★ resize, orientation, and removing a photograph's GPS
-    search.ts               ★ finding a salon by name; folds Arabic so it matches
+    search.ts               ★ finding a salon by name only; folds Arabic so it matches
     database.types.ts         row types for the tables the app reads
   data/
     repository.ts           ★ loads the catalogue from Supabase, maps rows → app types
@@ -237,6 +237,16 @@ digits folded to Latin, Latin accents stripped. Without it `ورده` does not f
 always searched whichever the app is showing, because a salon's Latin name is what is on its
 shopfront. A query **replaces** the category filter rather than combining with it: searching
 inside a category returns an empty list with no visible cause, which reads as a fault.
+
+**It matches the salon's NAME and nothing else**, which is a narrowing from how it first
+shipped. That version also matched the district, the tags and the category, and the field felt
+loose: a word that happened to sit in somebody's tag list returned salons whose names shared
+nothing with what was typed, which reads as the search being wrong rather than broad. The
+placeholder was worse — it read "Search by name, area or service" when services were never
+searchable at all, so it promised something that did not exist. A field that says *search by
+salon name* answers with salons whose name matches, and the browser checks now pin that from
+both directions: a district and a tag must **not** match, and the placeholder is asserted
+verbatim.
 
 **Bidi gotcha — already fixed, do not regress.** Latin-and-digit runs like `-20%` and `0.8 km`
 reorder inside Arabic text. They are wrapped in `.ltr-run` (`direction: ltr; unicode-bidi: isolate`).
@@ -642,7 +652,7 @@ repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` =
 | Payment | Simulated. **No card details are ever requested or collected.** |
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
-| **Finding a salon** | **Real.** A search field at the top of Explore, matching the salon's name, district, tags and category in **both** languages — and folding Arabic so `ورده` finds `وردة`. It filters the catalogue already in memory rather than querying, so it works on the sample data too. **Service names are not searched yet**: they are loaded per salon rather than for the catalogue. |
+| **Finding a salon** | **Real.** A search field at the top of Explore, matching the salon's **name** in both languages — and folding Arabic so `ورده` finds `وردة`. It filters the catalogue already in memory rather than querying, so it works on the sample data too. **Names only, deliberately**: district, tags and category were matched in the first version and deliberately removed, and service names are not searched at all. |
 | **Availability** | **Real.** Times come from `working_hours`, the chosen services' length and the bookings already made, via `available_slots()`. Taken times are shown greyed rather than hidden. Falls back to the sample grid with no backend. |
 
 ---
@@ -1021,7 +1031,7 @@ the code before them.
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (127 assertions);
-  UI changes with `scripts/browser-tests/` (499 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (501 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.
