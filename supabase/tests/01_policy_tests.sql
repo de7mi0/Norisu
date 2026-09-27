@@ -4102,6 +4102,32 @@ do $$
 declare
   leaked text;
 begin
+  -- ANON is checked separately and far more tightly than `authenticated`,
+  -- because the two mistakes are different sizes. This half was added after
+  -- Supabase's Security Advisor prompted a look: twelve functions that need a
+  -- session were reachable by an anonymous visitor, because 0005 ended them
+  -- with `revoke all ... from public` and nothing else. Both revokes are
+  -- required — revoking from PUBLIC leaves Supabase's named grants, and
+  -- revoking from `anon` by name leaves the PUBLIC grant, whose `=X` in proacl
+  -- anon inherits through. Either alone looks like it worked. 0022 closes it.
+  select string_agg(p.proname, ', ' order by p.proname) into leaked
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prosecdef
+    and has_function_privilege('anon', p.oid, 'EXECUTE')
+    -- The only four an anonymous visitor may execute. The three helpers are
+    -- NOT optional: row policies are evaluated as the querying role, so
+    -- revoking them blanks the customer catalogue for every signed-out
+    -- visitor. Assertion 128 proves that, so nobody "tidies" them away.
+    and p.proname not in (
+      'available_slots', 'is_admin', 'is_salon_owner', 'salon_is_public'
+    );
+
+  if leaked is not null then
+    raise exception 'FAIL 84a: function(s) an anonymous visitor can execute: %', leaked;
+  end if;
+
   select string_agg(p.proname, ', ' order by p.proname) into leaked
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
@@ -4126,15 +4152,17 @@ begin
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
-      -- Trigger functions: a trigger fires without an execute check.
-      'handle_new_user', 'offer_cancelled_slot', 'enforce_booking_status_transition'
+      -- Trigger functions used to be listed here. 0022 removed every grant on
+      -- them instead: a trigger fires without an execute check, so nobody
+      -- needs to be able to call one, and Postgres refuses anyway (0A000).
+      'placeholder_that_matches_nothing'
     );
 
   if leaked is not null then
-    raise exception 'FAIL 84: internal function(s) reachable from the browser: %', leaked;
+    raise exception 'FAIL 84b: internal function(s) reachable from the browser: %', leaked;
   end if;
 
-  raise notice 'PASS 84: no internal function is reachable from the browser';
+  raise notice 'PASS 84: nothing is reachable by anon but the four that must be, and nothing else leaks';
 end
 $$;
 reset role;
@@ -6688,6 +6716,83 @@ begin
   reset role;
 
   raise notice 'PASS 127: Saloni sets what a salon owes; the salon still cannot read or change it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 128. An anonymous visitor reaches the catalogue and nothing else.
+--
+--      Both halves matter and they pull against each other, which is why they
+--      are one assertion. Supabase's Security Advisor flags every
+--      `security definer` function as "callable without signing in" and
+--      recommends revoking EXECUTE. Doing that to the three policy helpers
+--      takes the customer side of the app down: row policies are evaluated as
+--      the querying role, so `anon` must be able to execute what they call, and
+--      `salons_select_published` calls is_admin(). This pins the line so the
+--      next person reading that screen cannot tidy the catalogue into
+--      darkness — and cannot loosen the other side either.
+--
+--      HONEST ABOUT ITS OWN WEIGHT. Each half was broken and each break IS
+--      caught, but by an EARLIER assertion: revoking is_admin() from anon
+--      trips the first check that reads as a visitor, and removing
+--      salon_stats' owner guard trips 46b. So this rarely reports first, and
+--      its value is not redundancy — it is that the two requirements pull in
+--      opposite directions and are stated together here, where somebody
+--      acting on a Security Advisor warning meets both at once. 84a is the
+--      check that genuinely fires alone, on the grant itself.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  salon   uuid := 'ee000000-0000-0000-0000-0000000000e5';
+  seen    integer;
+  refused integer := 0;
+begin
+  -- Half one: browsing works with no account at all. The unpublished salons
+  -- these tests have created are what force is_admin() to be evaluated, which
+  -- is the branch that breaks if its grant is removed.
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+
+  begin
+    select count(*) into seen from salons;
+  exception when others then
+    raise exception 'FAIL 128a: a signed-out visitor cannot read the catalogue: % %', sqlstate, sqlerrm;
+  end;
+
+  if seen = 0 then
+    raise exception 'FAIL 128b: the catalogue is empty to a signed-out visitor';
+  end if;
+
+  -- And only the published ones, which is the policy still doing its job
+  -- rather than the grant having been widened.
+  if seen <> (select count(*) from salons where is_published) then
+    raise exception 'FAIL 128c: a signed-out visitor sees unpublished salons';
+  end if;
+
+  -- Half two: everything that needs a session refuses one that has none. Each
+  -- of these is a function the advisor called "callable without signing in".
+  begin perform count(*) from salon_stats(salon, current_date);
+    exception when others then refused := refused + 1; end;
+  begin perform count(*) from salon_reviews(salon);
+    exception when others then refused := refused + 1; end;
+  begin perform count(*) from salon_waitlist(salon);
+    exception when others then refused := refused + 1; end;
+  begin perform count(*) from my_waitlist();
+    exception when others then refused := refused + 1; end;
+  begin perform reply_to_review(gen_random_uuid(), 'hello');
+    exception when others then refused := refused + 1; end;
+  begin perform handle_new_user();
+    exception when others then refused := refused + 1; end;
+
+  reset role;
+
+  if refused <> 6 then
+    raise exception 'FAIL 128d: % of 6 session-only functions answered an anonymous caller', 6 - refused;
+  end if;
+
+  raise notice 'PASS 128: a signed-out visitor reads the catalogue and reaches nothing else';
 end
 $$;
 reset role;

@@ -161,6 +161,9 @@ supabase/
                                       the Supabase dashboard and into the app: a
                                       review trail, six is_admin()-guarded
                                       functions, and a refusal the owner reads
+  migrations/0022_close_anon_execute.sql  the other half of the 0010 lesson:
+                                      BOTH revokes are needed, and three
+                                      functions must stay anon-executable
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -168,7 +171,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   127 assertions
+  tests/01_policy_tests.sql   128 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -367,7 +370,7 @@ functions in 0003–0012 —
 0021's back office — `admin_salons()`, `admin_verify_salon()`, `admin_publish_salon()`,
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
 own `my_salon_review()`.
-30 RLS policies (plus four on storage.objects). 127 assertions.
+30 RLS policies (plus four on storage.objects). 128 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -583,7 +586,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-127 assertions, drops it. Each of 53–127 was checked against a database with its own protection
+128 assertions, drops it. Each of 53–128 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -774,6 +777,33 @@ it. Two did:
 - `waitlist_matches()` has no guard, so any visitor could list the customer ids waiting at any salon.
 - `offer_next_for_slot()` has no guard, so any account could force offers and spend other people's
   one turn at a slot.
+
+**And the other half of that same lesson, found in 0022 by Supabase's own Security Advisor.**
+It reported sixty warnings and zero errors, and most were shape rather than substance: every
+function it called "callable without signing in" was called as an anonymous visitor and every
+one refused — `is_salon_owner()` answers 42501 on the first line, and a trigger function cannot
+be called at all (`0A000`). **Nothing leaked.** But twelve functions that need a session were
+genuinely reachable by `anon`, and the reason completes the rule:
+
+- `revoke all on function f from public` leaves Supabase's **named** grants to anon and
+  authenticated — that is the 0010 finding.
+- `revoke execute on function f from anon` leaves the **PUBLIC** grant, which anon inherits
+  through. `proacl` still reads `{=X/postgres,…}` and that leading `=X` *is* public.
+- **Neither works alone. Both are required, every time.** 0005 wrote only the first, which is
+  why `salon_day()` was out of anon's reach and `salon_stats()` — its neighbour in the same
+  migration — was not.
+
+**Three functions must stay anon-executable and the advisor is wrong about them.** Row policies
+are evaluated as the querying role, so `anon` needs EXECUTE on everything a policy calls.
+`salons_select_published` calls `is_admin()`, and an unpublished salon — which production always
+has — forces that branch. Revoking it answers `permission denied for function is_admin` and
+**the customer catalogue goes blank for every signed-out visitor**. Proven, not assumed, and
+assertion 128 exists so nobody tidies it away. `btree_gist` stays in `public` for a related
+reason: the exclusion constraint behind guarantee 1 depends on it, and moving it means
+rebuilding that constraint on a live database.
+
+Assertion 84 was sharpened rather than added to: it now checks **which role** can reach a
+function, not merely whether the name is on a list, so this class of mistake fails the suite.
 
 Both are closed, along with the sender functions 0010 adds — `claim_pending_notifications()` would
 have been the worst of them, returning the phone number and name of everybody with a message
@@ -1020,7 +1050,7 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (127 assertions);
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (128 assertions);
   UI changes with `scripts/browser-tests/` (499 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
