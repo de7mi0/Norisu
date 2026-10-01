@@ -1,6 +1,6 @@
 # Browser checks
 
-499 checks that drive the built app in real Chromium, in **both languages**, against a
+501 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -23,7 +23,7 @@ scrambled inside Arabic text.
 | `12-close-salon.mjs` | Closing a salon: that an owner can find it, that it cannot happen by accident, and that the deletion refusal now points somewhere real |
 | `13-closed-portal.mjs` | What the portal says to somebody who closed their salon and came back — written against a real report, not a review |
 | `14-admin.mjs` | Saloni's own back office: that it is offered to nobody but an administrator, that a refusal cannot be sent without a reason, and that the owner reads that reason back |
-| `15-search.mjs` | Finding a salon by name on Explore, and the Arabic folding that decides whether the field feels like it works |
+| `15-search.mjs` | Finding a salon by name on Explore, the Arabic folding that decides whether the field feels like it works, and that a district or a tag is **not** matched |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about
 data arriving: that a failed query says so instead of showing a zero, that walk-ins are
@@ -67,9 +67,14 @@ find `وردة`, `مِيزُون` must find `ميزون`, and `نوأر` must fi
 identical to somebody reading the screen and differs by a byte, so a raw `includes()`
 returns nothing and the field looks broken rather than empty.
 
-One of its checks was wrong first time and worth recording: it asserted the Arabic headline
-read `احجزي الجمال،`, which the app has never said — the string is `احجز الجمال`. It failed
-loudly rather than passing vacuously, which is the good version of being wrong.
+Two of its checks were wrong first time and both are worth recording. One asserted the Arabic
+headline read `احجزي الجمال،`, which the app has never said — the string is `احجز الجمال`. It
+failed loudly rather than passing vacuously, which is the good version of being wrong.
+
+The other is the reason the placeholder is now asserted verbatim. The field shipped saying
+"Search by name, area or service" while services were never searchable, and nothing here
+caught it: every check drove the field and read the results, and none of them read the label
+the field shows. A promise in the interface is as testable as behaviour, and was not tested.
 
 `05-push.mjs` carries the other regression check written against a fault
 found in production rather than in review: a browser holding notification permission with

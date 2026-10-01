@@ -1,4 +1,3 @@
-import { salonCategory, salonTags } from '../i18n';
 import type { Salon } from '../types';
 
 /**
@@ -77,30 +76,26 @@ export function normalize(text: string): string {
 }
 
 /**
- * Everything about a salon worth matching against, in both languages.
+ * What a salon is matched against: its name, in both languages, and nothing
+ * else.
+ *
+ * Names only is a deliberate narrowing, asked for after the first version also
+ * matched the district, the tags and the category. Those made the field feel
+ * loose — typing a word that happened to be in somebody's tag list returned
+ * salons whose names shared nothing with what was typed, which reads as the
+ * search being wrong rather than as the search being broad. A field that says
+ * "search by salon name" should answer with salons whose name matches.
  *
  * Both languages always, whichever the app is showing: somebody reading the
  * Arabic app may still type a salon's Latin name, because that is often what
  * is on its shopfront and on its receipts.
  *
- * Service names are deliberately not in here. They are loaded per salon rather
- * than for the catalogue, so including them would mean widening what the home
- * screen holds — worth doing when somebody asks to search by treatment, and
- * not before.
+ * Service names are not here either, and that is a second, separate decision —
+ * they are loaded per salon rather than for the catalogue, so searching them
+ * would mean widening what the home screen holds.
  */
 function haystack(salon: Salon): string {
-  return normalize(
-    [
-      salon.name,
-      salon.ar,
-      salon.area,
-      salon.arArea,
-      salonTags(salon, 'en'),
-      salonTags(salon, 'ar'),
-      salonCategory(salon, 'en'),
-      salonCategory(salon, 'ar'),
-    ].join(' '),
-  );
+  return normalize([salon.name, salon.ar].join(' '));
 }
 
 /**
