@@ -29,6 +29,7 @@ supabase/
     0019_close_salon.sql         closing a salon, so its owner can delete their account
     0020_closed_salon_memory.sql who closed it, so the portal can say so
     0021_admin_back_office.sql   Saloni's own administration, in the app instead of here
+    0022_close_anon_execute.sql  what the Security Advisor was right about, and wrong about
   functions/send-notifications/  the worker that sends them; deployed, never delivered
   seed.sql                       the four demo salons and their services
   tests/                         local-only harness and assertions
