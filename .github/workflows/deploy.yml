@@ -34,7 +34,9 @@ jobs:
 
       - run: npm ci
 
-      # Runs `tsc -b` before `vite build`, so a type error fails the deploy.
+      # Runs `tsc -b` before `vite build`, so a type error fails the deploy,
+      # and scripts/check-secrets.mjs before and after, so a secret key
+      # committed by mistake fails it too instead of going live.
       - run: npm run build
 
       - uses: actions/upload-pages-artifact@v3

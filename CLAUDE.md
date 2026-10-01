@@ -66,7 +66,7 @@ introduce Tailwind, Redux, Zustand or React Router without asking — their abse
 not an oversight.
 
 **Commands:** `npm run dev` · `npm run build` (runs `tsc -b` first, so a type error fails the
-deploy) · `npm run lint` · `./scripts/test-db.sh` · the browser checks in
+deploy, and `scripts/check-secrets.mjs` before and after — see §8) · `npm run lint` · `./scripts/test-db.sh` · the browser checks in
 `scripts/browser-tests/` (see its README — Playwright is installed ad hoc, not a dependency) ·
 `node --experimental-strip-types scripts/test-notification-text.mjs`
 
@@ -88,6 +88,8 @@ scripts/
   pg-stop.sh                  stops it again; the cluster's files stay in /var/tmp
   build-setup-sql.sh          concatenates migrations into supabase/setup.sql
   build-function-bundle.sh    inlines the worker into one pasteable file
+  check-secrets.mjs           fails the build if a secret is committed or in the site
+  test-check-secrets.mjs      13 checks that it catches what it claims to
   browser-tests/              501 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
@@ -640,6 +642,21 @@ GitHub Pages build needs no secrets configuration.
 **The secret key (`sb_secret_…` / `service_role`) bypasses every policy. It must never be in this
 repo, in the app, or in a chat.** Supabase renamed its keys: `sb_publishable_` = old `anon`,
 `sb_secret_` = old `service_role`.
+
+**`scripts/check-secrets.mjs` enforces that, because `npm run build` runs it twice.** Before
+building it reads every file git tracks; after, every file in `dist/`. It refuses an
+`sb_secret_` key, an old-style key whose JWT role is anything but `anon`, a private-key
+block, and — in any `.env*` file — a variable *named* like a secret (`SECRET`, `PRIVATE`,
+`SERVICE_ROLE`, `PASSWORD`) with a value, which is how the VAPID private key or the worker
+secret would arrive. Comments are not read, so the warnings in `.env` itself pass.
+`node scripts/test-check-secrets.mjs` proves each rule (13 checks), and was run with a rule
+removed to confirm it fails.
+
+**Taking `.env` out of git was considered and rejected**, after an outside review suggested
+it: the deploy builds from the committed file, and a `VITE_` value ships to every browser
+wherever it is stored, so ignoring the file would break the site and protect nothing. **What
+the check cannot do is stop a secret reaching GitHub** — the deploy runs after the push. A
+failure means the key is already public and must be replaced in Supabase, not just deleted.
 
 ---
 
