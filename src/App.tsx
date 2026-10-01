@@ -11,6 +11,7 @@ import {
   UserIcon,
 } from './components/icons';
 import { useDragScroll } from './hooks/useDragScroll';
+import { useHardwareBack } from './hooks/useHardwareBack';
 import { AppProvider } from './state/AppContext';
 import { useApp } from './state/context';
 import { CUSTOMER_TAB_SCREENS, VENDOR_TAB_SCREENS } from './state/appReducer';
@@ -298,8 +299,12 @@ function Overlays() {
 }
 
 function AppShell() {
-  const { state, dir } = useApp();
+  const { state, dispatch, dir } = useApp();
   useDragScroll();
+  // The Android hardware back button. A no-op in any browser; without it the
+  // native app closes on the first press, because navigation here is a screen
+  // name in state rather than WebView history for Capacitor to step through.
+  useHardwareBack(state, dispatch);
 
   // Keep the document in step with the in-app language for assistive tech.
   useEffect(() => {

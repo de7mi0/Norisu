@@ -172,6 +172,33 @@ input {
   border: 0;
 }
 
+/*
+ * Safe areas — the status bar at the top, the gesture line or navigation bar
+ * at the bottom, and the rounded corners or cutouts on some handsets.
+ *
+ * Padding goes on `.viewport` rather than on each screen because it is
+ * `position: relative`, which makes it the containing block for the screens
+ * inside it — and an absolutely positioned child resolves `inset: 0` against
+ * its parent's PADDING box, not its border box. So one rule here moves every
+ * screen, the tab bar and the floating overlays together, and no screen has to
+ * know about any of it.
+ *
+ * The fallbacks are `0px`, so this is a no-op everywhere the insets are zero:
+ * every desktop browser, every phone browser with a normal chrome, and the
+ * phone-frame layout above. It only does anything inside the native shell.
+ *
+ * NOT VERIFIED ON A DEVICE. The sandbox has no Android SDK and no handset, so
+ * this is written from how the insets are specified rather than from seeing it.
+ * It is the first thing to look at on the first real run.
+ */
+.viewport {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  box-sizing: border-box;
+}
+
 @keyframes rise {
   from {
     opacity: 0;

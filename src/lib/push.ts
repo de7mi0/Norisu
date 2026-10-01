@@ -18,6 +18,7 @@
  * to send, so the app keeps its existing honest wording instead of offering to
  * notify somebody and then not doing it.
  */
+import { isNativeApp } from './native';
 import { supabase } from './supabase';
 
 const vapidPublicKey: string = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? '';
@@ -46,6 +47,18 @@ export interface PushFailure {
  * design around, not a bug — see `isInstalled()`.
  */
 export function isPushSupported(): boolean {
+  // Not inside the native shell. Web push needs the browser's own push
+  // service, which a system WebView does not provide, so anything here would
+  // either fail or — worse — ask for permission and then never deliver.
+  //
+  // NATIVE PUSH IS NOT BUILT YET. It is a real piece of work rather than a
+  // flag: `push_subscriptions` and `register_push_device()` hold a device
+  // token whatever its shape, but the worker sends over web-push today and
+  // native needs Firebase Cloud Messaging for Android and APNs for iOS. Until
+  // then the app says it cannot message you (`waitlistNoPush`), which is true,
+  // and the seat is still held and still waiting when the app is next opened.
+  if (isNativeApp()) return false;
+
   return (
     typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&
@@ -253,6 +266,12 @@ export type PushState = 'off' | 'unsupported' | 'install' | 'ask' | 'on' | 'deni
 export function pushState(): PushState {
   if (!isPushConfigured) return 'off';
   if (!isPushSupported()) {
+    // "Add it to your home screen" is the fix in an iPhone browser tab and
+    // nonsense inside an installed app — the native build IS the installed
+    // app, and adding it again would change nothing. It falls through to
+    // `unsupported`, whose wording ("we can't message you yet") is exactly
+    // right while native push is unbuilt.
+    if (isNativeApp()) return 'unsupported';
     const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
     const isApple = /iPhone|iPad|iPod/.test(ua);
     return isApple && !isInstalled() ? 'install' : 'unsupported';

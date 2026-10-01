@@ -25,3 +25,11 @@ dist-ssr
 
 # Screenshots the browser checks write as they run.
 shots/
+
+# Android signing keys. The upload keystore is what proves a release is yours:
+# lose it and you cannot update the app on Google Play, leak it and somebody
+# else can sign one. It belongs in a password manager, never in git.
+*.jks
+*.keystore
+android/keystore.properties
+android/local.properties
