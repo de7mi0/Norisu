@@ -175,6 +175,14 @@ export const en = {
   addStaff: '+ Add team member',
 
   photoGallery: 'Photo gallery',
+  cropTitle: "Frame your photo",
+  cropUse: "Use photo",
+  cropHint: "Drag to move · pinch or use the slider to zoom",
+  cropZoom: "Zoom",
+  cropShape: "Shape",
+  cropWide: "Wide",
+  cropSquare: "Square",
+  cropOriginal: "Original",
   galleryDesc:
     'High-quality photos boost bookings by up to 3×. The first photo is your cover.',
   cover: 'COVER',

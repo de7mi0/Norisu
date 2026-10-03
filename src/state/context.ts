@@ -1,5 +1,6 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { PublicReviews } from '../data/customerReviews';
+import type { CropRect } from '../lib/images';
 import type { Availability } from '../data/availability';
 import type {
   AppointmentStatus,
@@ -106,7 +107,8 @@ export interface AppContextValue {
   photos: SalonPhoto[];
   /** True while one is being prepared and uploaded. */
   photoBusy: boolean;
-  addPhoto: (file: File) => Promise<void>;
+  /** Uploads a photograph, cropped to `crop` when the owner framed it. */
+  addPhoto: (file: File, crop?: CropRect) => Promise<void>;
   removePhoto: (photo: SalonPhoto) => Promise<void>;
   setCoverPhoto: (photoId: string) => Promise<void>;
   /** That salon's own reviews, unpublished ones included. */

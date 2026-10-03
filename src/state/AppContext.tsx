@@ -117,6 +117,7 @@ import {
   type ReviewFailure,
 } from '../data/customerReviews';
 import { isSupabaseConfigured } from '../lib/supabase';
+import type { CropRect } from '../lib/images';
 import {
   CODE_LENGTH,
   deleteAccount as deleteAccountRow,
@@ -750,13 +751,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * catalogue, which is the whole thing this is meant to fix.
    */
   const addPhoto = useCallback(
-    async (file: File) => {
+    async (file: File, crop?: CropRect) => {
       if (!ownedSalonId) {
         flash(t.photoNeedSalon);
         return;
       }
       setPhotoBusy(true);
-      const result = await uploadPhotoRow(ownedSalonId, file, photos.length === 0 ? 'cover' : 'gallery');
+      const result = await uploadPhotoRow(ownedSalonId, file, photos.length === 0 ? 'cover' : 'gallery', crop);
       setPhotoBusy(false);
       if ('error' in result) {
         flash(photoFailureText(result.error));

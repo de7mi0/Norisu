@@ -1,8 +1,10 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { VENDOR_GALLERY } from '../../data/vendor';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
+import { canFrame } from '../../lib/images';
+import { PhotoCropSheet } from './PhotoCropSheet';
 
 /**
  * The salon's photographs.
@@ -22,6 +24,9 @@ export function Gallery() {
 
   const picker = useRef<HTMLInputElement>(null);
   const ownsSalon = owner.salon !== null;
+  // Picked but not yet framed. Uploading waits for the crop sheet, so what
+  // reaches the salon's page is what the owner chose to show.
+  const [framing, setFraming] = useState<File | null>(null);
 
   return (
     <Screen bottomInset={40}>
@@ -69,7 +74,12 @@ export function Gallery() {
           const file = event.target.files?.[0];
           // Cleared so choosing the same file twice in a row still fires.
           event.target.value = '';
-          if (file) void addPhoto(file);
+          // A file that cannot be framed goes straight on, so the owner hears
+          // why it was refused rather than meeting a sheet with no picture.
+          if (file) {
+            if (canFrame(file)) setFraming(file);
+            else void addPhoto(file);
+          }
         }}
       />
 
@@ -239,6 +249,21 @@ export function Gallery() {
         >
           {t.photoEmpty}
         </p>
+      ) : null}
+      {framing ? (
+        <PhotoCropSheet
+          file={framing}
+          isCover={photos.length === 0}
+          onCancel={() => setFraming(null)}
+          onUnreadable={() => {
+            setFraming(null);
+            void addPhoto(framing);
+          }}
+          onConfirm={(crop) => {
+            setFraming(null);
+            void addPhoto(framing, crop);
+          }}
+        />
       ) : null}
     </Screen>
   );
