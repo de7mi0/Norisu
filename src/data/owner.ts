@@ -257,7 +257,7 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
       // catalogue's `select *` was handing each salon's commercial registration
       // number to anonymous visitors. The owner's own comes back from
       // my_salon_cr() below.
-      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled')
+      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cities, maps_url, latitude, longitude, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled')
       .eq('owner_id', userId)
       // One salon per owner for now; the schema permits more.
       .order('created_at', { ascending: true })
@@ -343,7 +343,12 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
           categoryAr: row.category_ar ?? '',
           areaEn: row.area_en ?? '',
           areaAr: row.area_ar ?? '',
-          city: row.city ?? '',
+          // Before 0023 a salon had one city; it is the whole list until the
+          // owner adds more.
+          cities: row.cities?.length ? row.cities : row.city ? [row.city] : [],
+          mapsUrl: row.maps_url ?? '',
+          latitude: row.latitude == null ? null : Number(row.latitude),
+          longitude: row.longitude == null ? null : Number(row.longitude),
           crNumber,
           phone: row.phone ?? '',
         },
@@ -448,9 +453,45 @@ export interface SalonDraft {
   categoryAr: string;
   areaEn: string;
   areaAr: string;
-  city: string;
+  /** Every city the salon serves, English names from `data/cities.ts`. */
+  cities: string[];
+  /** A Google Maps share link, or empty. The database refuses any other host. */
+  mapsUrl: string;
+  /** Filled by "use my current location"; both or neither. */
+  latitude: number | null;
+  longitude: number | null;
   crNumber: string;
   phone: string;
+}
+
+/**
+ * The columns 0023 added, plus `city`, which stays as the first of `cities` so
+ * everything that still reads the single column keeps working.
+ */
+function locationColumns(draft: SalonDraft) {
+  const cities = [...new Set(draft.cities.map((city) => city.trim()).filter(Boolean))];
+  return {
+    city: cities[0] ?? 'Riyadh',
+    cities: cities.length ? cities : ['Riyadh'],
+    maps_url: draft.mapsUrl.trim() || null,
+    latitude: draft.latitude,
+    longitude: draft.longitude,
+  };
+}
+
+/**
+ * Whether a pasted link is one the database will accept (0023). Checked here
+ * too so the owner is told on the field, not by a failed save. Kept identical
+ * to the constraint — a looser copy would let through what the database then
+ * refuses with nothing useful to say.
+ */
+export function isGoogleMapsUrl(value: string): boolean {
+  return (
+    value.length <= 500 &&
+    /^https:\/\/((www\.)?google\.(com|com\.[a-z]{2}|co\.[a-z]{2}|[a-z]{2})\/maps|maps\.google\.(com|com\.[a-z]{2}|co\.[a-z]{2}|[a-z]{2})\/|maps\.app\.goo\.gl\/|goo\.gl\/maps\/)/.test(
+      value,
+    )
+  );
 }
 
 export type RegisterFailure =
@@ -458,6 +499,7 @@ export type RegisterFailure =
   | 'notSignedIn'
   | 'missingName'
   | 'missingCr'
+  | 'badMapsUrl'
   | 'alreadyOwns'
   | 'network';
 
@@ -508,6 +550,7 @@ export async function createSalon(
   if (!userId) return { error: 'notSignedIn' };
   if (!draft.nameEn.trim() || !draft.nameAr.trim()) return { error: 'missingName' };
   if (!draft.crNumber.trim()) return { error: 'missingCr' };
+  if (draft.mapsUrl.trim() && !isGoogleMapsUrl(draft.mapsUrl.trim())) return { error: 'badMapsUrl' };
 
   // One salon per owner today. The schema permits more, but every screen in the
   // portal assumes one, so a second would silently never be shown.
@@ -525,7 +568,7 @@ export async function createSalon(
       category_ar: draft.categoryAr.trim(),
       area_en: draft.areaEn.trim(),
       area_ar: draft.areaAr.trim(),
-      city: draft.city.trim() || 'Riyadh',
+      ...locationColumns(draft),
       cr_number: draft.crNumber.trim(),
       phone: draft.phone.trim() || null,
       // Neither is sent any more: 0015 revoked INSERT on them, so sending even
@@ -751,6 +794,7 @@ export async function saveProfile(
   if (!supabase) return 'notConfigured';
   if (!draft.nameEn.trim() || !draft.nameAr.trim()) return 'missingName';
   if (!draft.crNumber.trim()) return 'missingCr';
+  if (draft.mapsUrl.trim() && !isGoogleMapsUrl(draft.mapsUrl.trim())) return 'badMapsUrl';
 
   const { error } = await supabase
     .from('salons')
@@ -761,7 +805,7 @@ export async function saveProfile(
       category_ar: draft.categoryAr.trim(),
       area_en: draft.areaEn.trim(),
       area_ar: draft.areaAr.trim(),
-      city: draft.city.trim() || 'Riyadh',
+      ...locationColumns(draft),
       cr_number: draft.crNumber.trim(),
       phone: draft.phone.trim() || null,
       updated_at: new Date().toISOString(),

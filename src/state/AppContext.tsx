@@ -109,6 +109,7 @@ import {
 } from '../data/availability';
 import { VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
+import { CITIES } from '../data/cities';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
   CODE_LENGTH,
@@ -121,6 +122,18 @@ import {
 import { dayLabel, dictionaryFor, formatMoney } from '../i18n';
 import type { Booking, CustomerScreen, Lang } from '../types';
 
+const CITY_STORAGE_KEY = 'saloni.city';
+
+/** The city chosen on an earlier visit, if it is still one the app lists. */
+function storedCity(): string | null {
+  try {
+    const value = window.localStorage.getItem(CITY_STORAGE_KEY);
+    return value && CITIES.some((city) => city.id === value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // `?legal` is resolved into the very first state rather than dispatched from
   // an effect, so a store reviewer following a policy link lands on the policy
@@ -128,7 +141,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // `?claim` below, the parameter is deliberately *left in the address bar*:
   // re-reading a policy is idempotent, and a reviewer who reloads or shares
   // the link should get the same page back.
-  const [state, dispatch] = useReducer(appReducer, window.location.search, initialStateFor);
+  const [state, dispatch] = useReducer(appReducer, window.location.search, (search: string) => ({
+    ...initialStateFor(search),
+    city: storedCity(),
+  }));
+
+  // The chosen city is a per-device convenience, so browser storage is the
+  // right home for it — and it is read and written defensively, because
+  // storage can be missing or refused (private windows, blocked site data) and
+  // the app must work exactly the same without it.
+  useEffect(() => {
+    try {
+      if (state.city) window.localStorage.setItem(CITY_STORAGE_KEY, state.city);
+      else window.localStorage.removeItem(CITY_STORAGE_KEY);
+    } catch {
+      // Not remembered this time; nothing else depends on it.
+    }
+  }, [state.city]);
 
   // The catalogue starts as the bundled sample data so the app renders
   // immediately, then swaps to live rows once they arrive.
@@ -352,16 +381,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Moving an appointment keeps its original length, which no longer matches
   // whatever is in the cart, so the duration comes from the booking itself.
+  const rescheduleTarget = useMemo(
+    () =>
+      state.reschedule && state.rescheduleId
+        ? [...upcomingBookings, ...pastBookings].find((booking) => booking.id === state.rescheduleId)
+        : undefined,
+    [pastBookings, state.reschedule, state.rescheduleId, upcomingBookings],
+  );
+
   const rescheduleMinutes = useMemo(() => {
-    if (!state.reschedule || !state.rescheduleId) return 0;
-    const target = [...upcomingBookings, ...pastBookings].find(
-      (booking) => booking.id === state.rescheduleId,
-    );
+    const target = rescheduleTarget;
     if (!target?.startsAt || !target.endsAt) return 0;
     return Math.round(
       (new Date(target.endsAt).getTime() - new Date(target.startsAt).getTime()) / 60000,
     );
-  }, [pastBookings, state.reschedule, state.rescheduleId, upcomingBookings]);
+  }, [rescheduleTarget]);
 
   const bookingMinutes = state.reschedule
     ? rescheduleMinutes
@@ -369,7 +403,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // "any" is a UI affordance, not a staff row; the database reads null as
   // "any professional" and counts the salon's capacity instead.
-  const chosenStaffId = state.staffId && state.staffId !== 'any' ? state.staffId : null;
+  //
+  // Moving a booking asks about that booking's own specialist, never the one
+  // last tapped while browsing. startReschedule leaves state.staffId alone, so
+  // using it here sent whichever stylist the customer had most recently picked
+  // — often at a different salon. The database, asked when a stylist from
+  // salon B is free at salon A, truthfully answered "never", and every time
+  // on the screen showed as taken.
+  const chosenStaffId = state.reschedule
+    ? (rescheduleTarget?.requestedStaffId ?? null)
+    : state.staffId && state.staffId !== 'any'
+      ? state.staffId
+      : null;
 
   useEffect(() => {
     // Only the time picker needs this, and only live rows can be asked about:
@@ -995,6 +1040,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             en: 'Your commercial registration number is required.',
             ar: 'رقم السجل التجاري مطلوب.',
           },
+          badMapsUrl: {
+            en: 'The location link must be a Google Maps link — use Share in Google Maps and copy it.',
+            ar: 'رابط الموقع يجب أن يكون من خرائط Google — استخدم «مشاركة» في الخرائط وانسخه.',
+          },
           alreadyOwns: {
             en: 'This account already has a salon.',
             ar: 'هذا الحساب يملك صالوناً بالفعل.',
@@ -1160,6 +1209,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           missingCr: {
             en: 'Your commercial registration number is required.',
             ar: 'رقم السجل التجاري مطلوب.',
+          },
+          badMapsUrl: {
+            en: 'The location link must be a Google Maps link — use Share in Google Maps and copy it.',
+            ar: 'رابط الموقع يجب أن يكون من خرائط Google — استخدم «مشاركة» في الخرائط وانسخه.',
           },
         };
         const message = messages[failure] ?? {

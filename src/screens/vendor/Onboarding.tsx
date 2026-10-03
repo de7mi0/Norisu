@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { CloseSalonSheet } from '../../components/CloseSalonSheet';
+import { SALON_CATEGORIES, findCategory } from '../../data/categories';
+import { CITIES, MAX_CITIES } from '../../data/cities';
+import { isGoogleMapsUrl } from '../../data/owner';
+import { mapsLink } from '../../lib/maps';
 import { BottomBar, Screen, ScreenHeader } from '../../components/Screen';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
@@ -29,10 +33,16 @@ const EMPTY: SalonDraft = {
   categoryAr: '',
   areaEn: '',
   areaAr: '',
-  city: 'Riyadh',
+  cities: [],
+  mapsUrl: '',
+  latitude: null,
+  longitude: null,
   crNumber: '',
   phone: '',
 };
+
+/** The draft's free-text fields — the ones typed into a plain input. */
+type TextKey = 'nameEn' | 'nameAr' | 'categoryEn' | 'categoryAr' | 'areaEn' | 'areaAr' | 'mapsUrl' | 'crNumber' | 'phone';
 
 /**
  * Long enough for any real value, short enough to bound what is stored — and
@@ -42,20 +52,17 @@ const EMPTY: SalonDraft = {
  * would have refused on save with nothing useful to say. Trimming as it is
  * typed is the kinder half of the same rule.
  */
-const CAPS: Record<keyof SalonDraft, number> = {
+const CAPS: Record<TextKey, number> = {
   nameEn: 80,
   nameAr: 80,
   categoryEn: 60,
   categoryAr: 60,
   areaEn: 80,
   areaAr: 80,
-  city: 60,
+  mapsUrl: 500,
   crNumber: 30,
   phone: 20,
 };
-
-/** The longest of them, for inputs that share one attribute. */
-const MAX = 80;
 
 export function Onboarding() {
   const {
@@ -91,10 +98,59 @@ export function Onboarding() {
     }
   }, [existing, loadedFor]);
 
-  const set = (key: keyof SalonDraft) => (value: string) =>
+  const set = (key: TextKey) => (value: string) =>
     setDraft((current) => ({ ...current, [key]: value.slice(0, CAPS[key]) }));
 
-  const ready = Boolean(draft.nameEn.trim() && draft.nameAr.trim() && draft.crNumber.trim());
+  // "Other" is chosen explicitly, or implied by a stored category that is not
+  // on the list — a salon registered before the list existed typed its own.
+  const [otherCategory, setOtherCategory] = useState(false);
+  const listedCategory = findCategory(draft.categoryEn, draft.categoryAr);
+  const showOther = otherCategory || Boolean(draft.categoryEn && !listedCategory);
+
+  const toggleCity = (id: string) =>
+    setDraft((current) => ({
+      ...current,
+      cities: current.cities.includes(id)
+        ? current.cities.filter((city) => city !== id)
+        : current.cities.length >= MAX_CITIES
+          ? current.cities
+          : [...current.cities, id],
+    }));
+
+  // 'idle' | 'asking' | 'failed': whether the browser gave us a position.
+  const [locating, setLocating] = useState<'idle' | 'asking' | 'failed'>('idle');
+  const useCurrentLocation = () => {
+    if (!('geolocation' in navigator)) {
+      setLocating('failed');
+      return;
+    }
+    setLocating('asking');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        // Six decimals is about ten centimetres, and is what numeric(9,6) holds.
+        const round = (n: number) => Math.round(n * 1e6) / 1e6;
+        setDraft((current) => ({
+          ...current,
+          latitude: round(position.coords.latitude),
+          longitude: round(position.coords.longitude),
+        }));
+        setLocating('idle');
+      },
+      () => setLocating('failed'),
+      { enableHighAccuracy: true, timeout: 15000 },
+    );
+  };
+
+  const mapsUrlBad = draft.mapsUrl.trim() !== '' && !isGoogleMapsUrl(draft.mapsUrl.trim());
+  const hasLocation = Boolean(draft.mapsUrl.trim() && !mapsUrlBad) || draft.latitude != null;
+
+  const ready = Boolean(
+    draft.nameEn.trim() &&
+      draft.nameAr.trim() &&
+      draft.crNumber.trim() &&
+      draft.cities.length > 0 &&
+      !mapsUrlBad,
+  );
 
   const submit = async () => {
     if (!ready || saving) return;
@@ -228,20 +284,79 @@ export function Onboarding() {
                 dir="ltr"
                 inputMode="numeric"
               />
-              <Field
-                label={isArabic ? 'الفئة (بالإنجليزية)' : 'Category (English)'}
-                value={draft.categoryEn}
-                onChange={set('categoryEn')}
-                placeholder="Hair"
-                dir="ltr"
-              />
-              <Field
-                label={isArabic ? 'الفئة (بالعربية)' : 'Category (Arabic)'}
-                value={draft.categoryAr}
-                onChange={set('categoryAr')}
-                placeholder="شعر"
-                dir="rtl"
-              />
+              <div>
+                <FieldLabel label={t.salonCategory} />
+                <ChipRow>
+                  {SALON_CATEGORIES.map((category) => (
+                    <Chip
+                      key={category.en}
+                      label={isArabic ? category.ar : category.en}
+                      selected={!showOther && listedCategory === category}
+                      onClick={() => {
+                        setOtherCategory(false);
+                        setDraft((current) => ({
+                          ...current,
+                          categoryEn: category.en,
+                          categoryAr: category.ar,
+                        }));
+                      }}
+                    />
+                  ))}
+                  <Chip
+                    label={t.categoryOther}
+                    selected={showOther}
+                    onClick={() => {
+                      setOtherCategory(true);
+                      if (listedCategory) {
+                        setDraft((current) => ({ ...current, categoryEn: '', categoryAr: '' }));
+                      }
+                    }}
+                  />
+                </ChipRow>
+              </div>
+              {showOther ? (
+                <>
+                  <Field
+                    label={isArabic ? 'الفئة (بالإنجليزية)' : 'Category (English)'}
+                    value={draft.categoryEn}
+                    onChange={set('categoryEn')}
+                    max={CAPS.categoryEn}
+                    placeholder="Kids' haircuts"
+                    dir="ltr"
+                  />
+                  <Field
+                    label={isArabic ? 'الفئة (بالعربية)' : 'Category (Arabic)'}
+                    value={draft.categoryAr}
+                    onChange={set('categoryAr')}
+                    max={CAPS.categoryAr}
+                    placeholder="قص شعر الأطفال"
+                    dir="rtl"
+                  />
+                </>
+              ) : null}
+              <div>
+                <FieldLabel label={t.salonCities} required />
+                <p style={{ font: `500 11px/1.5 ${font.sans}`, color: color.mutedFaint, margin: '0 0 8px' }}>
+                  {t.salonCitiesHint}
+                </p>
+                <ChipRow>
+                  {CITIES.map((city) => (
+                    <Chip
+                      key={city.id}
+                      label={isArabic ? city.ar : city.id}
+                      selected={draft.cities.includes(city.id)}
+                      onClick={() => toggleCity(city.id)}
+                    />
+                  ))}
+                  {/* A city typed freehand before the list existed stays
+                      visible and removable rather than silently dropped. */}
+                  {draft.cities
+                    .filter((value) => !CITIES.some((city) => city.id === value))
+                    .map((value) => (
+                      <Chip key={value} label={value} selected onClick={() => toggleCity(value)} />
+                    ))}
+                </ChipRow>
+              </div>
               <Field
                 label={isArabic ? 'الحي (بالإنجليزية)' : 'District (English)'}
                 value={draft.areaEn}
@@ -257,12 +372,6 @@ export function Onboarding() {
                 dir="rtl"
               />
               <Field
-                label={isArabic ? 'المدينة' : 'City'}
-                value={draft.city}
-                onChange={set('city')}
-                placeholder="Riyadh"
-              />
-              <Field
                 label={isArabic ? 'الهاتف' : 'Phone'}
                 value={draft.phone}
                 onChange={set('phone')}
@@ -270,6 +379,77 @@ export function Onboarding() {
                 dir="ltr"
                 inputMode="tel"
               />
+              <div>
+                <FieldLabel label={t.salonLocation} />
+                <p style={{ font: `500 11px/1.5 ${font.sans}`, color: color.mutedFaint, margin: '0 0 8px' }}>
+                  {t.salonLocationHint}
+                </p>
+                <Field
+                  label={t.mapsLinkLabel}
+                  value={draft.mapsUrl}
+                  onChange={set('mapsUrl')}
+                  max={CAPS.mapsUrl}
+                  placeholder="https://maps.app.goo.gl/…"
+                  dir="ltr"
+                  inputMode="url"
+                />
+                {mapsUrlBad ? (
+                  <p role="alert" style={{ font: `600 11px/1.5 ${font.sans}`, color: color.danger, margin: '6px 0 0' }}>
+                    {t.mapsLinkInvalid}
+                  </p>
+                ) : null}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+                  <button
+                    type="button"
+                    onClick={useCurrentLocation}
+                    disabled={locating === 'asking'}
+                    className="press"
+                    style={{
+                      background: color.surfaceSand,
+                      border: `1px solid ${color.lineSand}`,
+                      borderRadius: 10,
+                      padding: '8px 12px',
+                      font: `600 11.5px ${font.sans}`,
+                      color: color.ink,
+                    }}
+                  >
+                    📍 {locating === 'asking' ? t.locating : t.useCurrentLocation}
+                  </button>
+                  {draft.latitude != null ? (
+                    <button
+                      type="button"
+                      onClick={() => setDraft((current) => ({ ...current, latitude: null, longitude: null }))}
+                      className="press"
+                      style={{ font: `600 11.5px ${font.sans}`, color: color.mutedSoft, textDecoration: 'underline' }}
+                    >
+                      {t.removePin}
+                    </button>
+                  ) : null}
+                  {hasLocation ? (
+                    <a
+                      href={mapsLink(draft)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ font: `600 11.5px ${font.sans}`, color: color.goldLink }}
+                    >
+                      {t.checkOnMap}
+                    </a>
+                  ) : null}
+                </div>
+                {draft.latitude != null ? (
+                  <p style={{ font: `600 11px ${font.sans}`, color: color.teal, margin: '6px 0 0' }}>
+                    ✓ {t.pinSaved}{' '}
+                    <span className="ltr-run">
+                      {draft.latitude.toFixed(4)}, {draft.longitude?.toFixed(4)}
+                    </span>
+                  </p>
+                ) : null}
+                {locating === 'failed' ? (
+                  <p role="alert" style={{ font: `600 11px/1.5 ${font.sans}`, color: color.danger, margin: '6px 0 0' }}>
+                    {t.locationFailed}
+                  </p>
+                ) : null}
+              </div>
         {/*
           Only once the salon exists — there is nothing to close before that,
           and the registration form should not offer it. It sits at the very
@@ -342,29 +522,63 @@ interface FieldProps {
   placeholder?: string;
   required?: boolean;
   dir?: 'ltr' | 'rtl';
-  inputMode?: 'text' | 'numeric' | 'tel';
+  inputMode?: 'text' | 'numeric' | 'tel' | 'url';
+  max?: number;
 }
 
-function Field({ label, value, onChange, placeholder, required, dir, inputMode }: FieldProps) {
+function FieldLabel({ label, required }: { label: string; required?: boolean }) {
+  return (
+    <span
+      style={{
+        display: 'block',
+        font: `600 11px ${font.sans}`,
+        color: color.mutedSoft,
+        marginBottom: 6,
+      }}
+    >
+      {label}
+      {required ? <span style={{ color: color.goldDeep }}> *</span> : null}
+    </span>
+  );
+}
+
+function ChipRow({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>{children}</div>;
+}
+
+/** A toggle in a list of choices; aria-pressed says which are on. */
+function Chip({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className="press"
+      style={{
+        padding: '8px 13px',
+        borderRadius: 20,
+        font: `600 12px ${font.sans}`,
+        background: selected ? color.ink : color.surfaceSand,
+        color: selected ? '#fff' : color.inkSoft,
+        border: `1px solid ${selected ? color.ink : color.lineSand}`,
+      }}
+    >
+      {selected ? '✓ ' : ''}
+      {label}
+    </button>
+  );
+}
+
+function Field({ label, value, onChange, placeholder, required, dir, inputMode, max = 80 }: FieldProps) {
   return (
     <label style={{ display: 'block' }}>
-      <span
-        style={{
-          display: 'block',
-          font: `600 11px ${font.sans}`,
-          color: color.mutedSoft,
-          marginBottom: 6,
-        }}
-      >
-        {label}
-        {required ? <span style={{ color: color.goldDeep }}> *</span> : null}
-      </span>
+      <FieldLabel label={label} required={required} />
       <input
         type="text"
         value={value}
         dir={dir}
         inputMode={inputMode}
-        maxLength={MAX}
+        maxLength={max}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         style={{

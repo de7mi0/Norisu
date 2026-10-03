@@ -29,6 +29,13 @@ export interface SalonRow {
   phone: string | null;
   is_published: boolean;
   city?: string;
+  /** Every city the salon serves (0023). */
+  cities?: string[] | null;
+  /** A Google Maps link the owner pasted (0023). */
+  maps_url?: string | null;
+  /** numeric in Postgres, so it may arrive as a string. */
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   cr_number?: string | null;
   /** Only read on the owner's own row, which RLS lets them see unpublished. */
   is_verified?: boolean;

@@ -6797,4 +6797,80 @@ end
 $$;
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- 129. A salon's cities and map link are its owner's to write, and nobody
+--      else's — and the link can only point at Google Maps.
+--
+--      The link is opened from inside the app on a customer's tap, which
+--      lends it the app's trust. If any URL were accepted, an owner could
+--      send every customer who wants directions to a page of their choosing.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1290000-0000-0000-0000-000000000001';
+  rival  uuid := 'c1290000-0000-0000-0000-000000000002';
+  salon  uuid := 'c1290000-0000-0000-0000-0000000000a1';
+  seen   record;
+  n      integer;
+begin
+  -- Its own salon, because earlier assertions close the shared fixtures.
+  insert into auth.users (id) values (owner_), (rival);
+  insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published)
+  values (salon, owner_, 'map-test', 'Map Test', 'اختبار', true, true);
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  update salons
+     set cities = array['Riyadh', 'Jeddah'],
+         maps_url = 'https://maps.app.goo.gl/abc123',
+         latitude = 24.7136, longitude = 46.6753
+   where id = salon;
+  reset role;
+
+  select cities, maps_url into seen from salons where id = salon;
+  if seen.cities <> array['Riyadh', 'Jeddah'] or seen.maps_url is null then
+    raise exception 'FAIL 129a: the owner could not set their cities and map link';
+  end if;
+
+  -- Any other host is refused, including one dressed up to look like Google.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    update salons set maps_url = 'https://maps.google.com.evil.example/x' where id = salon;
+    raise exception 'FAIL 129b: a map link to another site was accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update salons set maps_url = 'https://evil.example/maps' where id = salon;
+    raise exception 'FAIL 129c: a map link to another site was accepted';
+  exception when check_violation then null;
+  end;
+  reset role;
+
+  -- A rival owner's update reaches no rows.
+  perform auth.login_as(rival);
+  set local role authenticated;
+  update salons set cities = array['Dammam'] where id = salon;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 129d: another salon''s owner rewrote this salon''s cities';
+  end if;
+
+  -- And a signed-out visitor can read both, because the catalogue needs them.
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  begin
+    select cities, maps_url into seen from salons where id = salon;
+  exception when others then
+    raise exception 'FAIL 129e: a signed-out visitor cannot read a salon''s cities: %', sqlerrm;
+  end;
+  reset role;
+
+  raise notice 'PASS 129: cities and the map link are the owner''s, and the link is Google Maps only';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

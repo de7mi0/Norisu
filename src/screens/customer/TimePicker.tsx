@@ -55,7 +55,9 @@ export function TimePicker() {
           backIcon={backIcon}
           backLabel={isArabic ? 'رجوع' : 'Back'}
           title={t.selectDateTime}
-          subtitle={`${t.step2} · ${t.withWord} ${staffName}`}
+          // Not while moving a booking: staffName is whoever was last tapped
+          // while browsing, which need not be this booking's specialist.
+          subtitle={state.reschedule ? t.step2 : `${t.step2} · ${t.withWord} ${staffName}`}
         />
 
         {state.reschedule ? (

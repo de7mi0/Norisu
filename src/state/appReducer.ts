@@ -92,6 +92,14 @@ export interface AppState {
    * silently returns nothing and reads as a fault.
    */
   query: string;
+  /**
+   * The city Explore is showing, as its English id from `data/cities.ts`, or
+   * null for the whole Kingdom. Remembered on this device (see AppContext),
+   * because somebody in Jeddah should not have to choose Jeddah every visit.
+   */
+  city: string | null;
+  /** True while the city chooser is open over Explore. */
+  citySheet: boolean;
   saved: Record<string, boolean>;
   bookTab: 'upcoming' | 'past';
   /** True while the time picker is moving an existing booking. */
@@ -231,6 +239,8 @@ export const initialState: AppState = {
   payId: 'applepay',
   activeCat: 'All',
   query: '',
+  city: null,
+  citySheet: false,
   saved: {},
   bookTab: 'upcoming',
   reschedule: false,
@@ -335,6 +345,9 @@ export type Action =
   | { type: 'openSalon'; salonId: string }
   | { type: 'setCategory'; category: string }
   | { type: 'setQuery'; value: string }
+  | { type: 'setCity'; city: string | null }
+  | { type: 'openCitySheet' }
+  | { type: 'closeCitySheet' }
   | { type: 'toggleService'; serviceId: string }
   | { type: 'toggleSaved'; salonId: string }
   | { type: 'pickStaff'; staffId: string }
@@ -511,6 +524,15 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'setQuery':
       return { ...state, query: clamp(action.value, SEARCH_MAX_LENGTH) };
+
+    case 'setCity':
+      return { ...state, city: action.city, citySheet: false };
+
+    case 'openCitySheet':
+      return { ...state, citySheet: true };
+
+    case 'closeCitySheet':
+      return { ...state, citySheet: false };
 
     case 'toggleService':
       return {

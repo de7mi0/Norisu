@@ -1,6 +1,7 @@
 import { Photo } from '../../components/Photo';
 import { Screen } from '../../components/Screen';
 import { dayLabel, translateStatus } from '../../i18n';
+import { mapsLink } from '../../lib/maps';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -369,19 +370,30 @@ export function Bookings() {
                     {t.bookCancel}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => flash(t.openingMaps)}
-                  style={{
-                    flex: 1,
-                    textAlign: 'center',
-                    padding: 12,
-                    font: `600 12px ${font.sans}`,
-                    color: color.goldLink,
-                  }}
-                >
-                  {t.directions}
-                </button>
+                {/* Opens the salon's real location. It used to show "Opening
+                    in Maps…" and open nothing; a salon that has not given a
+                    location gets no button rather than a pretend one. */}
+                {(() => {
+                  const place = salons.find((candidate) => candidate.id === booking.salonId);
+                  const href = place ? mapsLink(place) : '';
+                  return href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        flex: 1,
+                        textAlign: 'center',
+                        padding: 12,
+                        font: `600 12px ${font.sans}`,
+                        color: color.goldLink,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      {t.directions}
+                    </a>
+                  ) : null;
+                })()}
               </div>
             )}
           </article>

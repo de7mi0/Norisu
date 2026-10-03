@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Photo } from '../../components/Photo';
 import { BottomBar, Screen } from '../../components/Screen';
-import { ChatIcon, PhoneIcon } from '../../components/icons';
+import { ChatIcon, PhoneIcon, PinIcon } from '../../components/icons';
 import { SALON_PHONE } from '../../data/salons';
 import { priceNow } from '../../data/services';
 import { localizeUnits, salonCategory } from '../../i18n';
+import { mapsLink } from '../../lib/maps';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -24,7 +25,27 @@ export function SalonDetail() {
     backIcon,
     flash,
     openConversation,
+    catalogSource,
   } = useApp();
+
+  // The sample salons keep their sample number so the offline demo still has
+  // a Call button; a real salon shows its own, or none if it gave none.
+  const phone = salon.phone ?? (catalogSource === 'live' ? undefined : SALON_PHONE);
+  const directions = mapsLink(salon);
+  const secondaryAction = {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    background: color.surfaceSand,
+    border: `1.5px solid ${color.lineSand}`,
+    color: color.ink,
+    borderRadius: 14,
+    padding: 13,
+    font: `700 13px ${font.sans}`,
+    textDecoration: 'none',
+  } as const;
 
   const saved = Boolean(state.saved[salon.id]);
   const hasSelection = selectedServices.length > 0;
@@ -294,27 +315,20 @@ export function SalonDetail() {
             <ChatIcon />
             {t.message}
           </button>
-          <button
-            type="button"
-            onClick={() => flash(`${isArabic ? 'جارٍ الاتصال ' : 'Calling '}${SALON_PHONE}`)}
-            className="press"
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              background: color.surfaceSand,
-              border: `1.5px solid ${color.lineSand}`,
-              color: color.ink,
-              borderRadius: 14,
-              padding: 13,
-              font: `700 13px ${font.sans}`,
-            }}
-          >
-            <PhoneIcon />
-            {t.callNow}
-          </button>
+          {/* A real tel: link to the salon's own number. It used to show one
+              invented number for every salon in a toast and dial nothing. */}
+          {phone ? (
+            <a href={`tel:${phone.replace(/[^+0-9]/g, '')}`} className="press" style={secondaryAction}>
+              <PhoneIcon />
+              {t.callNow}
+            </a>
+          ) : null}
+          {directions ? (
+            <a href={directions} target="_blank" rel="noopener noreferrer" className="press" style={secondaryAction}>
+              <PinIcon />
+              {t.directions}
+            </a>
+          ) : null}
         </div>
 
         <div style={{ padding: '22px 24px 0' }}>
