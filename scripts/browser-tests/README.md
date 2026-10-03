@@ -1,6 +1,6 @@
 # Browser checks
 
-501 checks that drive the built app in real Chromium, in **both languages**, against a
+607 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -23,6 +23,7 @@ scrambled inside Arabic text.
 | `12-close-salon.mjs` | Closing a salon: that an owner can find it, that it cannot happen by accident, and that the deletion refusal now points somewhere real |
 | `13-closed-portal.mjs` | What the portal says to somebody who closed their salon and came back — written against a real report, not a review |
 | `14-admin.mjs` | Saloni's own back office: that it is offered to nobody but an administrator, that a refusal cannot be sent without a reason, and that the owner reads that reason back |
+| `16-testing-feedback.mjs` | The owner's own testing list: typing staying in the field typed, visible field names, "See all", choosing a city, category and city lists on registration, Google Maps links, the two causes of "every time taken", and writing a review |
 | `15-search.mjs` | Finding a salon by name on Explore, the Arabic folding that decides whether the field feels like it works, and that a district or a tag is **not** matched |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about

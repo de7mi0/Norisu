@@ -19,7 +19,7 @@
  * image on the salon's own page.
  */
 import { supabase } from '../lib/supabase';
-import { fileExtension, prepareImage, type ImageFailure } from '../lib/images';
+import { fileExtension, prepareImage, type CropRect, type ImageFailure } from '../lib/images';
 import type { SalonMediaRow } from '../lib/database.types';
 
 export const BUCKET = 'salon-photos';
@@ -97,10 +97,11 @@ export async function uploadPhoto(
   salonId: string,
   file: File,
   kind: PhotoKind = 'gallery',
+  crop?: CropRect,
 ): Promise<SalonPhoto | { error: PhotoFailure }> {
   if (!supabase) return { error: 'notConfigured' };
 
-  const prepared = await prepareImage(file);
+  const prepared = await prepareImage(file, crop);
   if ('error' in prepared) return { error: prepared.error };
 
   const path = `${salonId}/${kind}/${crypto.randomUUID()}.${fileExtension()}`;

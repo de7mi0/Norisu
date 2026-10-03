@@ -179,6 +179,43 @@ export function Dashboard() {
       {/* Gone once the figures and the schedule below are genuinely theirs. */}
       <SampleDataNotice section={stats ? undefined : 'dashboard'} />
 
+      {/* Every booking needs a chair, and a chair is a team member. With none,
+          the customer's time picker has nothing to offer — which is how an
+          owner testing their own salon saw every time as taken. Said here,
+          where the owner looks first, with the fix one tap away. */}
+      {owner.salon && !owner.salon.staff.some((person) => person.isActive) ? (
+        <div
+          role="status"
+          style={{
+            margin: '16px 24px 0',
+            background: color.cream,
+            border: `1px solid ${color.creamLine}`,
+            borderRadius: 14,
+            padding: '13px 15px',
+          }}
+        >
+          <div style={{ font: `700 12px ${font.sans}`, color: '#8a6d14' }}>{t.noTeamTitle}</div>
+          <p style={{ font: `500 11.5px/1.55 ${font.sans}`, color: color.mutedSoft, margin: '5px 0 0' }}>
+            {t.noTeamBody}
+          </p>
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'go', screen: 'v_staff' })}
+            className="press"
+            style={{
+              marginTop: 10,
+              background: color.ink,
+              color: color.goldSoft,
+              borderRadius: 10,
+              padding: '8px 13px',
+              font: `700 11.5px ${font.sans}`,
+            }}
+          >
+            {t.addStaff}
+          </button>
+        </div>
+      ) : null}
+
       <div
         style={{
           display: 'flex',

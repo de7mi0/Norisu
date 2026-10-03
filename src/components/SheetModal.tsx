@@ -37,16 +37,26 @@ export function SheetModal({
   const titleId = useId();
   const sheet = useRef<HTMLFormElement>(null);
 
+  // Callers pass `onCancel` as an inline arrow, so it is a new function on
+  // every render — and every keystroke renders. Depending on it re-ran the
+  // effect below on each character typed, which moved focus back to the first
+  // field: typing a price landed in the name. Read it through a ref instead,
+  // so the effect runs once, when the sheet opens.
+  const cancel = useRef(onCancel);
+  useEffect(() => {
+    cancel.current = onCancel;
+  }, [onCancel]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Escape') cancel.current();
     };
     document.addEventListener('keydown', onKeyDown);
     // Move focus into the sheet so keyboard users land on the first field.
     // `preventScroll` stops the browser scrolling the screen behind the sheet.
     sheet.current?.querySelector('input')?.focus({ preventScroll: true });
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
+  }, []);
 
   return (
     <div
@@ -149,8 +159,18 @@ export function SheetField({
   const id = useId();
   return (
     <div style={style}>
-      {/* The placeholder carries the visible label, as designed; this keeps it announced. */}
-      <label htmlFor={id} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+      {/* Visible, not only announced: a placeholder vanishes the moment a
+          field has a value, so an edit sheet showed "150" and "45" with
+          nothing saying which was the price and which the minutes. */}
+      <label
+        htmlFor={id}
+        style={{
+          display: 'block',
+          font: `600 11px ${font.sans}`,
+          color: color.mutedSoft,
+          marginBottom: 5,
+        }}
+      >
         {label}
       </label>
       <input

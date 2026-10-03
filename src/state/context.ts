@@ -1,4 +1,6 @@
 import { createContext, useContext, type Dispatch } from 'react';
+import type { PublicReviews } from '../data/customerReviews';
+import type { CropRect } from '../lib/images';
 import type { Availability } from '../data/availability';
 import type {
   AppointmentStatus,
@@ -105,7 +107,8 @@ export interface AppContextValue {
   photos: SalonPhoto[];
   /** True while one is being prepared and uploaded. */
   photoBusy: boolean;
-  addPhoto: (file: File) => Promise<void>;
+  /** Uploads a photograph, cropped to `crop` when the owner framed it. */
+  addPhoto: (file: File, crop?: CropRect) => Promise<void>;
   removePhoto: (photo: SalonPhoto) => Promise<void>;
   setCoverPhoto: (photoId: string) => Promise<void>;
   /** That salon's own reviews, unpublished ones included. */
@@ -201,6 +204,10 @@ export interface AppContextValue {
   /** Moves the booking being rescheduled to the slot now selected. */
   rescheduleBooking: () => Promise<void>;
   cancelBooking: (bookingId: string) => Promise<void>;
+  /** The current salon's published reviews, for its Reviews screen. */
+  publicReviews: PublicReviews;
+  /** Writes the customer's review of a completed booking. True when saved. */
+  submitReview: (booking: Booking, rating: number, body: string) => Promise<boolean>;
 
   /** Shows a transient toast; a second call replaces the first. */
   flash: (message: string) => void;

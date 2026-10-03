@@ -74,12 +74,16 @@ function anyProfessionalOption(): StaffMember {
   };
 }
 
+/** The 0023 columns, read on their own — see fetchCatalog. */
+type SalonLocationRow = Pick<SalonRow, 'id' | 'cities' | 'maps_url' | 'latitude' | 'longitude'>;
+
 function mapSalon(
   row: SalonRow,
   index: number,
   services: Service[],
   rating: SalonRatingRow | undefined,
   photos: SalonPhoto[],
+  location: SalonLocationRow | undefined,
 ): Salon {
   // The salon-level badge and "from" price are derived from its live services.
   const discount = services.reduce((max, service) => Math.max(max, service.discount), 0);
@@ -109,6 +113,11 @@ function mapSalon(
     // real picture of the place than a stripe pretending to be one.
     photo: photos.find((photo) => photo.isCover)?.url || photos[0]?.url,
     tile: TILES[index % TILES.length],
+    cities: location?.cities?.length ? location.cities : row.city ? [row.city] : [],
+    mapsUrl: location?.maps_url || undefined,
+    latitude: location?.latitude == null ? undefined : Number(location.latitude),
+    longitude: location?.longitude == null ? undefined : Number(location.longitude),
+    phone: row.phone || undefined,
   };
 }
 
@@ -156,7 +165,7 @@ export async function loadCatalog(): Promise<Catalog> {
 async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
   if (!supabase) throw new Error('Supabase is not configured');
 
-  const [salonsResult, servicesResult, staffResult, ratingsResult, mediaResult] = await Promise.all([
+  const [salonsResult, servicesResult, staffResult, ratingsResult, mediaResult, locationResult] = await Promise.all([
     supabase
       .from('salons')
       // Named rather than `*` since 0015: SELECT on `cr_number` is revoked from
@@ -199,6 +208,18 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
       .order('sort_order')
       .abortSignal(signal)
       .returns<SalonMediaRow[]>(),
+    // Asked for separately, like the photographs, so the catalogue does not
+    // depend on migration 0023 having been applied: a database without
+    // `cities` refuses this read alone, and every salon falls back to its one
+    // `city`. Folding these into the query above would blank the whole
+    // catalogue for every visitor in the window between deploying the app and
+    // running the migration.
+    supabase
+      .from('salons')
+      .select('id, cities, maps_url, latitude, longitude')
+      .eq('is_published', true)
+      .abortSignal(signal)
+      .returns<SalonLocationRow[]>(),
   ]);
 
   const failure =
@@ -235,6 +256,10 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
     (photosBySalon[row.salon_id] ??= []).push(mapPhoto(row));
   }
 
+  const locationBySalon = new Map(
+    (locationResult.error ? [] : (locationResult.data ?? [])).map((row) => [row.id, row]),
+  );
+
   const salons = (salonsResult.data ?? []).map((row, index) =>
     mapSalon(
       row,
@@ -242,6 +267,7 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
       servicesBySalon[row.id] ?? [],
       ratingBySalon.get(row.id),
       photosBySalon[row.id] ?? [],
+      locationBySalon.get(row.id),
     ),
   );
 

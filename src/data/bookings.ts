@@ -227,6 +227,12 @@ interface JoinedBooking extends BookingRow {
   booking_items: BookingItemRow[];
   salons: { name_en: string; name_ar: string } | null;
   staff: { name_en: string; name_ar: string } | null;
+  /**
+   * The customer's own review of this booking, if any. One-to-one
+   * (reviews.booking_id is unique), which PostgREST may return as an object
+   * or a one-element array, so both are read.
+   */
+  reviews?: { id: string } | { id: string }[] | null;
 }
 
 const TILES = [tile.taupeMid, tile.sandMid, tile.blush, tile.stone];
@@ -246,6 +252,8 @@ function mapBooking(row: JoinedBooking, index: number): Booking {
     salon: row.salons?.name_en ?? '',
     salonAr: row.salons?.name_ar ?? '',
     salonId: row.salon_id,
+    requestedStaffId: row.staff_requested ? row.staff_id : null,
+    reviewed: Array.isArray(row.reviews) ? row.reviews.length > 0 : Boolean(row.reviews),
     // Straight from the snapshot, never looked up again.
     services: items.map((item) => item.name_en).join(' · '),
     servicesAr: items.map((item) => item.name_ar).join(' · '),
@@ -275,10 +283,10 @@ export async function loadMyBookings(): Promise<Booking[]> {
   const { data, error } = await supabase
     .from('bookings')
     .select(
-      'id, reference, salon_id, staff_id, starts_at, ends_at, status, total_halalas,' +
+      'id, reference, salon_id, staff_id, staff_requested, starts_at, ends_at, status, total_halalas,' +
         ' booking_items (name_en, name_ar, duration_minutes, unit_price_halalas,' +
         ' discount_percent, quantity),' +
-        ' salons (name_en, name_ar), staff (name_en, name_ar)',
+        ' salons (name_en, name_ar), staff (name_en, name_ar), reviews (id)',
     )
     .order('starts_at', { ascending: false })
     .returns<JoinedBooking[]>();

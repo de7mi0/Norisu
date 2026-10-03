@@ -2,6 +2,8 @@ import { LangToggle } from '../../components/LangToggle';
 import { Photo } from '../../components/Photo';
 import { Screen } from '../../components/Screen';
 import { PinIcon } from '../../components/icons';
+import { SheetModal } from '../../components/SheetModal';
+import { CITIES, cityLabel, servesCity } from '../../data/cities';
 import { CATEGORIES, matchesCategory } from '../../data/salons';
 import { salonTags } from '../../i18n';
 import { searchSalons } from '../../lib/search';
@@ -23,12 +25,21 @@ export function Home() {
     empty list with no clue why. So a query ignores the category, and the rail,
     the headline and the featured card step aside while one is typed.
   */
+  /*
+    The city narrows browsing, not searching. Typing a salon's name is asking
+    for that salon, wherever it is — and a name search that silently returned
+    nothing because the salon is in another city is the same "empty for no
+    visible reason" the category rule above exists to avoid. Each result
+    shows its district and city, so where it is stays plain.
+  */
+  const inCity = allSalons.filter((salon) => servesCity(salon.cities, state.city));
   const salons = searching
     ? searchSalons(allSalons, query)
-    : allSalons.filter((salon) => matchesCategory(salon, state.activeCat));
+    : inCity.filter((salon) => matchesCategory(salon, state.activeCat));
 
-  // The first published salon is the one featured at the top.
-  const featured = allSalons[0];
+  // The first published salon in the chosen city is the one featured at the top.
+  const featured = inCity[0];
+  const cityName = state.city ? cityLabel(state.city, isArabic) : t.allCities;
 
   return (
     <Screen bottomInset={88}>
@@ -72,19 +83,27 @@ export function Home() {
           >
             {t.location}
           </span>
-          <span
+          {/* Was a fixed "Riyadh, Al Olaya" that looked like a control and
+              did nothing. Saloni covers the Kingdom, so it chooses a city. */}
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'openCitySheet' })}
+            aria-haspopup="dialog"
+            aria-label={`${t.chooseCity}: ${cityName}`}
             style={{
               font: `600 15px ${font.sans}`,
               display: 'flex',
               alignItems: 'center',
               gap: 5,
+              color: color.ink,
+              padding: 0,
             }}
           >
-            {t.city}
+            {cityName}
             <span style={{ color: '#e0a92b', fontSize: 9 }} aria-hidden="true">
               ▾
             </span>
-          </span>
+          </button>
         </div>
         <LangToggle variant="pill" />
       </div>
@@ -346,9 +365,20 @@ export function Home() {
           <span style={{ font: `600 11px ${font.sans}`, color: color.mutedSoft }}>
             {salons.length}
           </span>
-        ) : (
-          <span style={{ font: `500 11px ${font.sans}`, color: color.goldLink }}>{t.seeAll}</span>
-        )}
+        ) : state.activeCat !== 'All' ? (
+          // "See all" was a label that looked like a link and did nothing.
+          // It now undoes the one thing that hides salons here — the category
+          // — and is only offered while a category is hiding some. With "All"
+          // chosen every salon in the city is already listed, so a link to
+          // "see all" of them would be the same dead end again.
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'setCategory', category: 'All' })}
+            style={{ font: `600 11px ${font.sans}`, color: color.goldLink }}
+          >
+            {t.seeAll}
+          </button>
+        ) : null}
       </div>
 
       {searching && salons.length === 0 ? (
@@ -468,7 +498,28 @@ export function Home() {
             </span>
           </button>
         ))}
-        {salons.length === 0 ? (
+        {!searching && state.city && inCity.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <p style={{ font: `500 12px ${font.sans}`, color: color.mutedFaint, margin: 0 }}>
+              {t.cityNone}
+            </p>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'setCity', city: null })}
+              className="press"
+              style={{
+                marginTop: 11,
+                background: color.ink,
+                color: color.goldSoft,
+                borderRadius: 10,
+                padding: '8px 13px',
+                font: `700 11.5px ${font.sans}`,
+              }}
+            >
+              {t.cityNoneShowAll}
+            </button>
+          </div>
+        ) : salons.length === 0 && !searching ? (
           <p
             style={{
               textAlign: 'center',
@@ -481,6 +532,59 @@ export function Home() {
           </p>
         ) : null}
       </div>
+
+      {state.citySheet ? (
+        <SheetModal
+          title={t.chooseCity}
+          cancelLabel={t.cancel}
+          saveLabel={null}
+          onCancel={() => dispatch({ type: 'closeCitySheet' })}
+          onSave={() => dispatch({ type: 'closeCitySheet' })}
+        >
+          <div
+            role="listbox"
+            aria-label={t.chooseCity}
+            style={{ maxHeight: '50vh', overflowY: 'auto', margin: '0 -4px 14px', padding: '0 4px' }}
+          >
+            {[{ id: null, label: t.allCities }, ...CITIES.map((city) => ({ id: city.id, label: isArabic ? city.ar : city.id }))].map(
+              (option) => {
+                const chosen = state.city === option.id;
+                const count = allSalons.filter((salon) => servesCity(salon.cities, option.id)).length;
+                return (
+                  <button
+                    key={option.id ?? 'all'}
+                    type="button"
+                    role="option"
+                    aria-selected={chosen}
+                    onClick={() => dispatch({ type: 'setCity', city: option.id })}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      width: '100%',
+                      padding: '12px 4px',
+                      borderBottom: `1px solid ${color.lineFaint}`,
+                      font: `${chosen ? 700 : 500} 14px ${font.sans}`,
+                      color: color.ink,
+                      textAlign: 'start',
+                    }}
+                  >
+                    <span>
+                      {chosen ? '✓ ' : ''}
+                      {option.label}
+                    </span>
+                    {/* How many salons are there, so a city with none is not a
+                        surprise after choosing it. */}
+                    <span className="ltr-run" style={{ font: `600 11px ${font.sans}`, color: color.mutedFaint }}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              },
+            )}
+          </div>
+        </SheetModal>
+      ) : null}
     </Screen>
   );
 }

@@ -172,6 +172,10 @@ for (const arabic of [false, true]) {
   await page.setInputFiles('input[type="file"]', {
     name: 'from-my-phone.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(bytes),
   });
+  // Framing comes first now; taking it as offered uploads the whole picture
+  // in the default shape, which is what these checks are about.
+  await page.waitForTimeout(800);
+  await page.getByRole('button', { name: arabic ? 'استخدم الصورة' : 'Use photo' }).click();
   await page.waitForTimeout(2500);
 
   const up = db.uploads[0];
@@ -201,6 +205,100 @@ for (const arabic of [false, true]) {
         body.includes(arabic ? 'الغلاف' : 'COVER'),
         body.slice(0, 200).replace(/\n/g, ' '));
   await page.close();
+}
+
+// Framing: what is uploaded is the part the owner chose, at the shape chosen.
+// The picture is red on its left half and blue on its right, so where the
+// crop landed can be read off the uploaded pixels rather than trusted.
+{
+  const jpegOf = (buf) => {
+    const start = buf.indexOf(Buffer.from([0xff, 0xd8, 0xff]));
+    const end = buf.lastIndexOf(Buffer.from([0xff, 0xd9]));
+    return start >= 0 && end > start ? buf.subarray(start, end + 2) : Buffer.alloc(0);
+  };
+  const inspect = (page, buf) => page.evaluate(async (bytes) => {
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }));
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d'); ctx.drawImage(bitmap, 0, 0);
+    const at = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
+    return { w: bitmap.width, h: bitmap.height, left: at(4, bitmap.height >> 1),
+             mid: at(bitmap.width >> 1, bitmap.height >> 1), right: at(bitmap.width - 5, bitmap.height >> 1) };
+  }, Array.from(jpegOf(buf)));
+  const halves = (page) => page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2400; canvas.height = 1200;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ff0000'; ctx.fillRect(0, 0, 1200, 1200);
+    ctx.fillStyle = '#0000ff'; ctx.fillRect(1200, 0, 1200, 1200);
+    return Array.from(new Uint8Array(await new Promise((resolve) =>
+      canvas.toBlob((b) => b.arrayBuffer().then(resolve), 'image/jpeg', 0.95))));
+  });
+  const red = ([r, g, b]) => r > 200 && g < 60 && b < 60;
+  const blue = ([r, g, b]) => b > 200 && r < 60 && g < 60;
+
+  for (const arabic of [false, true]) {
+    const L = arabic ? 'AR' : 'EN';
+    db.media = []; db.uploads = [];
+    const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+    await install(page);
+    await toGallery(page, arabic);
+    const bytes = Buffer.from(await halves(page));
+    const use = () => page.getByRole('button', { name: arabic ? 'استخدم الصورة' : 'Use photo' });
+
+    // The first photograph is the cover, so it is offered wide.
+    await page.setInputFiles('input[type="file"]', { name: 'a.jpg', mimeType: 'image/jpeg', buffer: bytes });
+    await page.waitForTimeout(800);
+    check(`${L}: choosing a photograph opens the framing sheet first`, await use().isVisible());
+    check(`${L}: nothing is uploaded before it is framed`, db.uploads.length === 0);
+    check(`${L}: a cover is offered wide`,
+          (await page.getByRole('radio', { name: arabic ? 'عريضة' : 'Wide' }).getAttribute('aria-checked')) === 'true');
+    await use().click();
+    await page.waitForTimeout(2500);
+    let shot = db.uploads[0] ? await inspect(page, db.uploads[0].bytes) : null;
+    check(`${L}: a wide frame uploads a 16:9 picture`,
+          shot && Math.abs(shot.w / shot.h - 16 / 9) < 0.02, JSON.stringify(shot));
+
+    // The second: square, dragged hard to one side — only red should be left.
+    await page.setInputFiles('input[type="file"]', { name: 'b.jpg', mimeType: 'image/jpeg', buffer: bytes });
+    await page.waitForTimeout(800);
+    check(`${L}: a gallery photograph is offered square`,
+          (await page.getByRole('radio', { name: arabic ? 'مربعة' : 'Square' }).getAttribute('aria-checked')) === 'true');
+    const frame = page.getByRole('application');
+    const box = await frame.boundingBox();
+    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width + 400, box.y + box.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await use().click();
+    await page.waitForTimeout(2500);
+    shot = db.uploads[1] ? await inspect(page, db.uploads[1].bytes) : null;
+    check(`${L}: a square frame uploads a square picture`, shot && shot.w === shot.h, JSON.stringify(shot));
+    check(`${L}: dragging chooses which part is kept`,
+          shot && red(shot.left) && red(shot.mid) && red(shot.right), JSON.stringify(shot));
+
+    // The third: zoomed in twice — half the pixels each way, never enlarged.
+    await page.setInputFiles('input[type="file"]', { name: 'c.jpg', mimeType: 'image/jpeg', buffer: bytes });
+    await page.waitForTimeout(800);
+    await page.getByRole('slider', { name: arabic ? 'التكبير' : 'Zoom' }).fill('2');
+    await page.waitForTimeout(200);
+    await use().click();
+    await page.waitForTimeout(2500);
+    shot = db.uploads[2] ? await inspect(page, db.uploads[2].bytes) : null;
+    check(`${L}: zooming in keeps a smaller part of the picture`,
+          shot && Math.abs(shot.w - 600) <= 2 && Math.abs(shot.h - 600) <= 2, JSON.stringify(shot));
+    check(`${L}: centred where it was zoomed, across the join`,
+          shot && red(shot.left) && blue(shot.right), JSON.stringify(shot));
+
+    // Cancelling uploads nothing.
+    const before = db.uploads.length;
+    await page.setInputFiles('input[type="file"]', { name: 'd.jpg', mimeType: 'image/jpeg', buffer: bytes });
+    await page.waitForTimeout(800);
+    await page.getByRole('dialog').getByRole('button', { name: arabic ? 'إلغاء' : 'Cancel' }).click();
+    await page.waitForTimeout(800);
+    check(`${L}: cancelling the framing uploads nothing`, db.uploads.length === before);
+    await page.close();
+  }
 }
 
 // The things that must be refused, and said out loud rather than swallowed.

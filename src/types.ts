@@ -66,6 +66,17 @@ export interface Salon {
    */
   photo?: string;
   tile: string;
+  /**
+   * Every city the salon serves (0023), English names from `data/cities.ts`.
+   * What the customer's city filter compares against.
+   */
+  cities: string[];
+  /** Where it is, for "Directions". All absent when the owner has given none. */
+  mapsUrl?: string;
+  latitude?: number;
+  longitude?: number;
+  /** The salon's own number, for "Call". Absent when it gave none. */
+  phone?: string;
 }
 
 export interface Service {
@@ -156,6 +167,15 @@ export interface Booking {
   startsAt?: string;
   endsAt?: string;
   salonId?: string;
+  /**
+   * The specialist the customer named, or null when they took "any
+   * professional" — not merely whoever was assigned. Rescheduling asks for
+   * this person's free times and nobody else's, because reschedule_booking()
+   * keeps a named specialist and re-picks an unnamed one.
+   */
+  requestedStaffId?: string | null;
+  /** True once the customer has reviewed it; a booking takes one review. */
+  reviewed?: boolean;
   totalHalalas?: number;
 }
 

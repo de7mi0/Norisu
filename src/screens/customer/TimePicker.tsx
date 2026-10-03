@@ -20,10 +20,17 @@ export function TimePicker() {
     salon,
     myWaitlist,
     session,
+    salonStaff,
   } = useApp();
 
   const loading = availability.source === 'loading';
-  const closed = availability.source === 'closed';
+  // A salon with nobody on its team has no chair to sell, so the database
+  // answers every time as taken — and the screen used to call that "fully
+  // booked" and offer a waitlist that could never move. It is a salon still
+  // setting up, and says so. "any" is the UI's own row, not a person.
+  const noTeam =
+    availability.source === 'live' && !salonStaff.some((person) => person.id !== 'any');
+  const closed = availability.source === 'closed' || noTeam;
   const dayIsFull = !loading && !closed && availability.slots.every((slot) => !slot.free);
   const slotChosen = state.slotTime != null;
 
@@ -48,7 +55,9 @@ export function TimePicker() {
           backIcon={backIcon}
           backLabel={isArabic ? 'رجوع' : 'Back'}
           title={t.selectDateTime}
-          subtitle={`${t.step2} · ${t.withWord} ${staffName}`}
+          // Not while moving a booking: staffName is whoever was last tapped
+          // while browsing, which need not be this booking's specialist.
+          subtitle={state.reschedule ? t.step2 : `${t.step2} · ${t.withWord} ${staffName}`}
         />
 
         {state.reschedule ? (
@@ -162,7 +171,7 @@ export function TimePicker() {
                 textAlign: 'center',
               }}
             >
-              {t.closedThisDay}
+              {noTeam ? t.noTeamYet : t.closedThisDay}
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>

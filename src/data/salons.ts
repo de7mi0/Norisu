@@ -16,6 +16,7 @@ export const SALONS: Salon[] = [
     discount: 20,
     priceFrom: 150,
     tile: tile.sand,
+    cities: ['Riyadh'],
   },
   {
     id: 'barber',
@@ -31,6 +32,7 @@ export const SALONS: Salon[] = [
     discount: 15,
     priceFrom: 80,
     tile: tile.taupe,
+    cities: ['Riyadh'],
   },
   {
     id: 'rose',
@@ -46,6 +48,7 @@ export const SALONS: Salon[] = [
     discount: 25,
     priceFrom: 120,
     tile: tile.blush,
+    cities: ['Riyadh'],
   },
   {
     id: 'kingdom',
@@ -61,6 +64,7 @@ export const SALONS: Salon[] = [
     discount: 0,
     priceFrom: 80,
     tile: tile.stone,
+    cities: ['Riyadh'],
   },
 ];
 

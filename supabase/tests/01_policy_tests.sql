@@ -4116,12 +4116,15 @@ begin
   where n.nspname = 'public'
     and p.prosecdef
     and has_function_privilege('anon', p.oid, 'EXECUTE')
-    -- The only four an anonymous visitor may execute. The three helpers are
+    -- The only five an anonymous visitor may execute. The three helpers are
     -- NOT optional: row policies are evaluated as the querying role, so
     -- revoking them blanks the customer catalogue for every signed-out
     -- visitor. Assertion 128 proves that, so nobody "tidies" them away.
+    -- public_reviews (0024) is browsing, like available_slots; its guard is
+    -- inside and assertion 130 proves it.
     and p.proname not in (
-      'available_slots', 'is_admin', 'is_salon_owner', 'salon_is_public'
+      'available_slots', 'is_admin', 'is_salon_owner', 'salon_is_public',
+      'public_reviews'
     );
 
   if leaked is not null then
@@ -4143,7 +4146,7 @@ begin
       'salon_day', 'salon_reviews', 'salon_stats', 'salon_waitlist',
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
       'delete_my_account', 'commission_statement', 'close_my_salon',
-      'my_closed_salon', 'my_salon_review',
+      'my_closed_salon', 'my_salon_review', 'public_reviews',
       -- Saloni's own back office (0021). Each is guarded by is_admin() in its
       -- first line rather than by a grant, because an administrator signs in
       -- as `authenticated` like everybody else.
@@ -4162,7 +4165,7 @@ begin
     raise exception 'FAIL 84b: internal function(s) reachable from the browser: %', leaked;
   end if;
 
-  raise notice 'PASS 84: nothing is reachable by anon but the four that must be, and nothing else leaks';
+  raise notice 'PASS 84: nothing is reachable by anon but the five that must be, and nothing else leaks';
 end
 $$;
 reset role;
@@ -6793,6 +6796,175 @@ begin
   end if;
 
   raise notice 'PASS 128: a signed-out visitor reads the catalogue and reaches nothing else';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 129. A salon's cities and map link are its owner's to write, and nobody
+--      else's — and the link can only point at Google Maps.
+--
+--      The link is opened from inside the app on a customer's tap, which
+--      lends it the app's trust. If any URL were accepted, an owner could
+--      send every customer who wants directions to a page of their choosing.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1290000-0000-0000-0000-000000000001';
+  rival  uuid := 'c1290000-0000-0000-0000-000000000002';
+  salon  uuid := 'c1290000-0000-0000-0000-0000000000a1';
+  seen   record;
+  n      integer;
+begin
+  -- Its own salon, because earlier assertions close the shared fixtures.
+  insert into auth.users (id) values (owner_), (rival);
+  insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published)
+  values (salon, owner_, 'map-test', 'Map Test', 'اختبار', true, true);
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  update salons
+     set cities = array['Riyadh', 'Jeddah'],
+         maps_url = 'https://maps.app.goo.gl/abc123',
+         latitude = 24.7136, longitude = 46.6753
+   where id = salon;
+  reset role;
+
+  select cities, maps_url into seen from salons where id = salon;
+  if seen.cities <> array['Riyadh', 'Jeddah'] or seen.maps_url is null then
+    raise exception 'FAIL 129a: the owner could not set their cities and map link';
+  end if;
+
+  -- Any other host is refused, including one dressed up to look like Google.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    update salons set maps_url = 'https://maps.google.com.evil.example/x' where id = salon;
+    raise exception 'FAIL 129b: a map link to another site was accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update salons set maps_url = 'https://evil.example/maps' where id = salon;
+    raise exception 'FAIL 129c: a map link to another site was accepted';
+  exception when check_violation then null;
+  end;
+  reset role;
+
+  -- A rival owner's update reaches no rows.
+  perform auth.login_as(rival);
+  set local role authenticated;
+  update salons set cities = array['Dammam'] where id = salon;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 129d: another salon''s owner rewrote this salon''s cities';
+  end if;
+
+  -- And a signed-out visitor can read both, because the catalogue needs them.
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  begin
+    select cities, maps_url into seen from salons where id = salon;
+  exception when others then
+    raise exception 'FAIL 129e: a signed-out visitor cannot read a salon''s cities: %', sqlerrm;
+  end;
+  reset role;
+
+  raise notice 'PASS 129: cities and the map link are the owner''s, and the link is Google Maps only';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 130. A salon's page shows its reviews with a short name and nothing else
+--      about the reviewer — and a customer can write one only about a visit
+--      the salon has completed.
+--
+--      public_reviews() is open to anybody, because browsing is. It reads
+--      profiles, which nobody else may, so what it returns is the boundary:
+--      a full surname or an id here is a leak to every visitor.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_   uuid := 'c1300000-0000-0000-0000-000000000001';
+  cust     uuid := 'c1300000-0000-0000-0000-000000000002';
+  salon    uuid := 'c1300000-0000-0000-0000-0000000000a1';
+  hidden   uuid := 'c1300000-0000-0000-0000-0000000000a2';
+  staff_   uuid := 'c1300000-0000-0000-0000-0000000000b1';
+  done_    uuid := 'c1300000-0000-0000-0000-0000000000d1';
+  upcoming uuid := 'c1300000-0000-0000-0000-0000000000d2';
+  seen     record;
+  n        integer;
+begin
+  insert into auth.users (id) values (owner_), (cust);
+  update profiles set full_name = 'Nora Al-Qahtani' where id = cust;
+  insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published)
+  values (salon, owner_, 'review-test', 'Review Test', 'اختبار', true, true),
+         (hidden, owner_, 'review-hidden', 'Hidden', 'مخفي', false, false);
+  insert into staff (id, salon_id, name_en, name_ar) values (staff_, salon, 'S', 'س');
+  insert into bookings (id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+                        subtotal_halalas, total_halalas)
+  values (done_, 'SL-R1300001', cust, salon, staff_, now() - interval '2 days',
+          now() - interval '2 days' + interval '45 minutes', 'completed', 15000, 17250),
+         (upcoming, 'SL-R1300002', cust, salon, staff_, now() + interval '2 days',
+          now() + interval '2 days' + interval '45 minutes', 'confirmed', 15000, 17250);
+  insert into booking_items (booking_id, name_en, name_ar, duration_minutes, unit_price_halalas)
+  values (done_, 'Signature Haircut', 'قص شعر', 45, 15000);
+
+  -- The customer reviews the visit they had...
+  perform auth.login_as(cust);
+  set local role authenticated;
+  insert into reviews (booking_id, salon_id, customer_id, rating, body)
+  values (done_, salon, cust, 4, 'Lovely');
+
+  -- ...and not the one they have not.
+  begin
+    insert into reviews (booking_id, salon_id, customer_id, rating, body)
+    values (upcoming, salon, cust, 5, 'Will be great');
+    raise exception 'FAIL 130a: a booking that has not happened was reviewed';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- A signed-out visitor reads it, with a short name and what it was for.
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  select * into seen from public_reviews(salon);
+  reset role;
+
+  if seen.review_id is null or seen.body <> 'Lovely' then
+    raise exception 'FAIL 130b: a published review is not on the salon''s page';
+  end if;
+  if seen.author <> 'Nora A.' then
+    raise exception 'FAIL 130c: the reviewer is shown as "%", not first name and initial', seen.author;
+  end if;
+  if seen.services_en <> 'Signature Haircut' then
+    raise exception 'FAIL 130d: the review does not say what the visit was for';
+  end if;
+
+  -- Nothing about an unpublished review, or a salon that is not public.
+  update reviews set is_published = false where booking_id = done_;
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  select count(*) into n from public_reviews(salon);
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 130e: a review the salon page hides was handed to a visitor';
+  end if;
+
+  update reviews set is_published = true, salon_id = salon where booking_id = done_;
+  update salons set is_published = false where id = salon;
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  select count(*) into n from public_reviews(salon);
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 130f: an unpublished salon''s reviews were handed to a visitor';
+  end if;
+
+  raise notice 'PASS 130: reviews show a short name to visitors, and only a completed visit can be reviewed';
 end
 $$;
 reset role;

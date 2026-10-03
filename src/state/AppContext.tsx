@@ -109,7 +109,15 @@ import {
 } from '../data/availability';
 import { VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
+import { CITIES } from '../data/cities';
+import {
+  loadPublicReviews,
+  writeReview,
+  type PublicReviews,
+  type ReviewFailure,
+} from '../data/customerReviews';
 import { isSupabaseConfigured } from '../lib/supabase';
+import type { CropRect } from '../lib/images';
 import {
   CODE_LENGTH,
   deleteAccount as deleteAccountRow,
@@ -121,6 +129,18 @@ import {
 import { dayLabel, dictionaryFor, formatMoney } from '../i18n';
 import type { Booking, CustomerScreen, Lang } from '../types';
 
+const CITY_STORAGE_KEY = 'saloni.city';
+
+/** The city chosen on an earlier visit, if it is still one the app lists. */
+function storedCity(): string | null {
+  try {
+    const value = window.localStorage.getItem(CITY_STORAGE_KEY);
+    return value && CITIES.some((city) => city.id === value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // `?legal` is resolved into the very first state rather than dispatched from
   // an effect, so a store reviewer following a policy link lands on the policy
@@ -128,7 +148,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // `?claim` below, the parameter is deliberately *left in the address bar*:
   // re-reading a policy is idempotent, and a reviewer who reloads or shares
   // the link should get the same page back.
-  const [state, dispatch] = useReducer(appReducer, window.location.search, initialStateFor);
+  const [state, dispatch] = useReducer(appReducer, window.location.search, (search: string) => ({
+    ...initialStateFor(search),
+    city: storedCity(),
+  }));
+
+  // The chosen city is a per-device convenience, so browser storage is the
+  // right home for it — and it is read and written defensively, because
+  // storage can be missing or refused (private windows, blocked site data) and
+  // the app must work exactly the same without it.
+  useEffect(() => {
+    try {
+      if (state.city) window.localStorage.setItem(CITY_STORAGE_KEY, state.city);
+      else window.localStorage.removeItem(CITY_STORAGE_KEY);
+    } catch {
+      // Not remembered this time; nothing else depends on it.
+    }
+  }, [state.city]);
 
   // The catalogue starts as the bundled sample data so the app renders
   // immediately, then swaps to live rows once they arrive.
@@ -352,16 +388,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Moving an appointment keeps its original length, which no longer matches
   // whatever is in the cart, so the duration comes from the booking itself.
+  const rescheduleTarget = useMemo(
+    () =>
+      state.reschedule && state.rescheduleId
+        ? [...upcomingBookings, ...pastBookings].find((booking) => booking.id === state.rescheduleId)
+        : undefined,
+    [pastBookings, state.reschedule, state.rescheduleId, upcomingBookings],
+  );
+
   const rescheduleMinutes = useMemo(() => {
-    if (!state.reschedule || !state.rescheduleId) return 0;
-    const target = [...upcomingBookings, ...pastBookings].find(
-      (booking) => booking.id === state.rescheduleId,
-    );
+    const target = rescheduleTarget;
     if (!target?.startsAt || !target.endsAt) return 0;
     return Math.round(
       (new Date(target.endsAt).getTime() - new Date(target.startsAt).getTime()) / 60000,
     );
-  }, [pastBookings, state.reschedule, state.rescheduleId, upcomingBookings]);
+  }, [rescheduleTarget]);
 
   const bookingMinutes = state.reschedule
     ? rescheduleMinutes
@@ -369,7 +410,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // "any" is a UI affordance, not a staff row; the database reads null as
   // "any professional" and counts the salon's capacity instead.
-  const chosenStaffId = state.staffId && state.staffId !== 'any' ? state.staffId : null;
+  //
+  // Moving a booking asks about that booking's own specialist, never the one
+  // last tapped while browsing. startReschedule leaves state.staffId alone, so
+  // using it here sent whichever stylist the customer had most recently picked
+  // — often at a different salon. The database, asked when a stylist from
+  // salon B is free at salon A, truthfully answered "never", and every time
+  // on the screen showed as taken.
+  const chosenStaffId = state.reschedule
+    ? (rescheduleTarget?.requestedStaffId ?? null)
+    : state.staffId && state.staffId !== 'any'
+      ? state.staffId
+      : null;
 
   useEffect(() => {
     // Only the time picker needs this, and only live rows can be asked about:
@@ -391,13 +443,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       excludeBookingId: state.rescheduleId,
     }).then((result) => {
       if (cancelled) return;
-      // A failed live lookup falls back to sample times; keep the scripted full
-      // day consistent with the demo path above.
-      setAvailability(
-        result.source === 'error'
-          ? { ...demoAvailability(state.dateIdx), source: 'error' }
-          : result,
-      );
+      // A failed live lookup falls back to sample times — but never to the
+      // sample week's scripted full day. That script exists for the offline
+      // waitlist demo; applied to a real salon after a slow request, it told a
+      // customer the fifth day was fully booked when nobody had asked the
+      // salon at all.
+      setAvailability(result.source === 'error' ? { ...demoAvailability(), source: 'error' } : result);
     });
 
     return () => {
@@ -700,13 +751,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * catalogue, which is the whole thing this is meant to fix.
    */
   const addPhoto = useCallback(
-    async (file: File) => {
+    async (file: File, crop?: CropRect) => {
       if (!ownedSalonId) {
         flash(t.photoNeedSalon);
         return;
       }
       setPhotoBusy(true);
-      const result = await uploadPhotoRow(ownedSalonId, file, photos.length === 0 ? 'cover' : 'gallery');
+      const result = await uploadPhotoRow(ownedSalonId, file, photos.length === 0 ? 'cover' : 'gallery', crop);
       setPhotoBusy(false);
       if ('error' in result) {
         flash(photoFailureText(result.error));
@@ -996,6 +1047,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             en: 'Your commercial registration number is required.',
             ar: 'رقم السجل التجاري مطلوب.',
           },
+          badMapsUrl: {
+            en: 'The location link must be a Google Maps link — use Share in Google Maps and copy it.',
+            ar: 'رابط الموقع يجب أن يكون من خرائط Google — استخدم «مشاركة» في الخرائط وانسخه.',
+          },
           alreadyOwns: {
             en: 'This account already has a salon.',
             ar: 'هذا الحساب يملك صالوناً بالفعل.',
@@ -1161,6 +1216,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           missingCr: {
             en: 'Your commercial registration number is required.',
             ar: 'رقم السجل التجاري مطلوب.',
+          },
+          badMapsUrl: {
+            en: 'The location link must be a Google Maps link — use Share in Google Maps and copy it.',
+            ar: 'رابط الموقع يجب أن يكون من خرائط Google — استخدم «مشاركة» في الخرائط وانسخه.',
           },
         };
         const message = messages[failure] ?? {
@@ -1778,6 +1837,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [bookingFailureText, flash, isArabic, refreshBookings],
   );
 
+  // A salon's reviews, read when its Reviews screen is open. Remote state, so
+  // it lives here like availability does; the sample catalogue keeps its
+  // sample reviews, because its salons are not rows anybody could review.
+  const [publicReviews, setPublicReviews] = useState<PublicReviews>({ source: 'loading', reviews: [] });
+  useEffect(() => {
+    if (state.screen !== 'reviews') return;
+    if (!isSupabaseConfigured || catalogSource !== 'live') {
+      setPublicReviews({ source: 'demo', reviews: [] });
+      return;
+    }
+    let cancelled = false;
+    setPublicReviews({ source: 'loading', reviews: [] });
+    void loadPublicReviews(salon.id).then((result) => {
+      if (!cancelled) setPublicReviews(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogSource, salon.id, state.screen]);
+
+  const submitReview = useCallback(
+    async (booking: Booking, rating: number, body: string): Promise<boolean> => {
+      if (!booking.id || !booking.salonId) return false;
+      const failure = await writeReview({
+        bookingId: booking.id,
+        salonId: booking.salonId,
+        customerId: userId,
+        rating,
+        body,
+      });
+      if (failure) {
+        const messages: Record<ReviewFailure, { en: string; ar: string }> = {
+          notConfigured: { en: 'Not saved — no database is connected.', ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.' },
+          notSignedIn: { en: 'Sign in to write a review.', ar: 'سجّل الدخول لكتابة تقييم.' },
+          notCompleted: {
+            en: 'You can review this visit once the salon marks it complete.',
+            ar: 'يمكنك تقييم هذه الزيارة بعد أن يؤكد الصالون اكتمالها.',
+          },
+          already: { en: 'You have already reviewed this visit.', ar: 'لقد قيّمت هذه الزيارة من قبل.' },
+          network: {
+            en: 'Could not post your review. Check your connection and try again.',
+            ar: 'تعذّر نشر تقييمك. تحقق من الاتصال وحاول مرة أخرى.',
+          },
+        };
+        const message = messages[failure];
+        flash(isArabic ? message.ar : message.en);
+        if (failure === 'already') {
+          dispatch({ type: 'closeReview' });
+          await refreshBookings();
+        }
+        return false;
+      }
+      dispatch({ type: 'closeReview' });
+      await refreshBookings();
+      flash(isArabic ? 'شكرًا — نُشر تقييمك' : 'Thank you — your review is posted');
+      return true;
+    },
+    [flash, isArabic, refreshBookings, userId],
+  );
+
   const openConversation = useCallback(
     (target: 'chat' | 'bot') => {
       dispatch({ type: 'openConversation', target, from: state.screen as CustomerScreen });
@@ -1861,6 +1980,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastReference,
       rescheduleBooking,
       cancelBooking,
+      publicReviews,
+      submitReview,
       flash,
       sendChat,
       sendBot,
@@ -1942,6 +2063,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastReference,
       rescheduleBooking,
       cancelBooking,
+      publicReviews,
+      submitReview,
       staffName,
       state,
       t,

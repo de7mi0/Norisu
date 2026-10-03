@@ -6,7 +6,6 @@ export const en = {
   chVendSub: 'Manage bookings & staff',
 
   location: 'LOCATION',
-  city: 'Riyadh, Al Olaya',
   featEyebrow: 'THIS WEEK · FEATURED',
   headline1: 'Book beauty,',
   headline2: 'beautifully.',
@@ -53,7 +52,25 @@ export const en = {
   verificationNote:
     'Register now and set up your hours, services and team straight away. Your salon appears to customers once we have checked your commercial registration.',
   registering: 'Registering…',
-  registerNeedsFields: 'Name and CR number required',
+  registerNeedsFields: 'Name, CR number and a city required',
+  salonCategory: "Category",
+  categoryOther: "Other",
+  salonCities: "Cities you serve",
+  salonCitiesHint: "Pick every city where customers can book you. Customers browsing a city see the salons that serve it.",
+  salonLocation: "Location on the map",
+  salonLocationHint: "So customers can get directions. In Google Maps, find your salon, tap Share, copy the link and paste it here — or, if you are at the salon now, use your current location.",
+  mapsLinkLabel: "Google Maps link",
+  mapsLinkInvalid: "This is not a Google Maps link. In Google Maps, tap Share and copy the link it gives you.",
+  useCurrentLocation: "Use my current location",
+  locating: "Finding you…",
+  removePin: "Remove pin",
+  checkOnMap: "Check on the map ↗",
+  pinSaved: "Pinned at",
+  locationFailed: "Could not get your location. Allow location access for this site, or paste a Google Maps link instead.",
+  allCities: "All of Saudi Arabia",
+  chooseCity: "Choose a city",
+  cityNone: "No salons in this city yet.",
+  cityNoneShowAll: "Show all cities",
   hoursNeedSalon:
     'These settings belong to a salon. Sign in with the account that owns one to change them.',
   bookingInterval: 'Booking interval',
@@ -68,6 +85,9 @@ export const en = {
   hoursAffectBooking: 'Changes apply to the booking screen straight away. Appointments already made are not moved.',
   checkingTimes: 'Checking what is free…',
   closedThisDay: 'The salon is closed on this day.',
+  noTeamYet: 'This salon is not taking online bookings yet.',
+  noTeamTitle: 'Customers cannot book you yet',
+  noTeamBody: 'Every appointment needs a team member to take it. Until you add one, customers see every time as taken.',
   sampleTimesNotice: 'Showing sample times — live availability is unavailable right now.',
   reschedulingNote: 'Rescheduling — choose a new time',
 
@@ -87,6 +107,18 @@ export const en = {
   backHome: 'Back to home',
 
   ratingsReviews: 'Ratings & reviews',
+  writeReview: "Write a review",
+  postReview: "Post review",
+  yourRating: "Your rating",
+  reviewBodyLabel: "Tell others about your visit (optional)",
+  reviewBodyPlaceholder: "What went well, what could be better…",
+  reviewFinalNote: "Your review appears on the salon’s page with your first name and initial. Once posted it cannot be edited; the salon can reply but cannot change or remove it.",
+  reviewedThanks: "You reviewed this visit",
+  reviewAfterComplete: "You can review this visit once the salon marks it complete.",
+  reviewsNone: "No reviews yet — be the first after your visit.",
+  reviewsError: "Could not load reviews. Check your connection and try again.",
+  verifiedVisit: "Verified visit",
+  salonReplied: "The salon replied",
   myBookings: 'My bookings',
   upcoming: 'Upcoming',
   past: 'Past',
@@ -143,6 +175,14 @@ export const en = {
   addStaff: '+ Add team member',
 
   photoGallery: 'Photo gallery',
+  cropTitle: "Frame your photo",
+  cropUse: "Use photo",
+  cropHint: "Drag to move · pinch or use the slider to zoom",
+  cropZoom: "Zoom",
+  cropShape: "Shape",
+  cropWide: "Wide",
+  cropSquare: "Square",
+  cropOriginal: "Original",
   galleryDesc:
     'High-quality photos boost bookings by up to 3×. The first photo is your cover.',
   cover: 'COVER',
@@ -403,7 +443,7 @@ export const en = {
   legalPrivCollectB:
     'Only what a booking needs. Every item below is stored because a screen you use depends on it.',
   legalPrivCollectL:
-    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. A review is shown on the salon’s page and to the salon itself, with your name beside it.',
+    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. On the salon’s page it is shown with your first name and the first letter of your second — “Nora A.” — and to the salon itself with the name you gave.',
 
   legalPrivNeverH: 'What Saloni never asks for',
   legalPrivNeverB:

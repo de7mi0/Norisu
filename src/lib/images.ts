@@ -38,6 +38,15 @@ export const MAX_OUTPUT_BYTES = 3 * 1024 * 1024;
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
 
+/**
+ * Whether a file is worth showing on the framing sheet at all. The cheap
+ * checks only; the full ones run again in `prepareImage()`, which is where the
+ * owner is told why a file was refused.
+ */
+export function canFrame(file: File): boolean {
+  return ACCEPTED.includes(file.type) && file.size <= MAX_SOURCE_BYTES;
+}
+
 /** Quality steps tried in order until the result fits. */
 const QUALITY_STEPS = [0.82, 0.7, 0.55, 0.4];
 
@@ -46,6 +55,18 @@ export type ImageFailure =
   | 'tooLarge'
   | 'unreadable'
   | 'tooBigAfterAll';
+
+/**
+ * The part of the photograph to keep, in the decoded image's own pixels —
+ * after orientation, so "the top" is the top the owner saw while framing it.
+ * Chosen on the crop sheet; absent means the whole photograph.
+ */
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface PreparedImage {
   blob: Blob;
@@ -102,7 +123,10 @@ function toBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null
  * thing to do, and the codes are translated by the dictionaries so the reason
  * reads in Arabic too — the same shape as `lib/auth.ts` and `lib/push.ts`.
  */
-export async function prepareImage(file: File): Promise<PreparedImage | { error: ImageFailure }> {
+export async function prepareImage(
+  file: File,
+  crop?: CropRect,
+): Promise<PreparedImage | { error: ImageFailure }> {
   if (!ACCEPTED.includes(file.type)) return { error: 'notAnImage' };
   if (file.size > MAX_SOURCE_BYTES) return { error: 'tooLarge' };
 
@@ -113,11 +137,28 @@ export async function prepareImage(file: File): Promise<PreparedImage | { error:
     return { error: 'unreadable' };
   }
 
-  const { w, h } = sizeOf(source);
-  if (!w || !h) return { error: 'unreadable' };
+  const full = sizeOf(source);
+  if (!full.w || !full.h) return { error: 'unreadable' };
+
+  // The region to keep, clamped to the picture: a crop is a request from the
+  // screen, and a rounding error must not ask the canvas for pixels outside it.
+  const region = crop
+    ? (() => {
+        const x = Math.max(0, Math.min(full.w - 1, Math.round(crop.x)));
+        const y = Math.max(0, Math.min(full.h - 1, Math.round(crop.y)));
+        return {
+          x,
+          y,
+          w: Math.max(1, Math.min(full.w - x, Math.round(crop.width))),
+          h: Math.max(1, Math.min(full.h - y, Math.round(crop.height))),
+        };
+      })()
+    : { x: 0, y: 0, w: full.w, h: full.h };
+  const { w, h } = region;
 
   // Only ever shrink. Blowing a small photograph up to the maximum would cost
-  // bytes and add nothing.
+  // bytes and add nothing — and that holds for a tight crop too: zooming in
+  // keeps the pixels that are there rather than inventing more.
   const scale = Math.min(1, MAX_DIMENSION / Math.max(w, h));
   const width = Math.max(1, Math.round(w * scale));
   const height = Math.max(1, Math.round(h * scale));
@@ -132,7 +173,9 @@ export async function prepareImage(file: File): Promise<PreparedImage | { error:
   // once it is flattened into a JPEG.
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, width, height);
-  context.drawImage(source as CanvasImageSource, 0, 0, width, height);
+  // Still a canvas re-encode, so cropping does not weaken the EXIF stripping:
+  // only the chosen pixels are drawn, and nothing else crosses over.
+  context.drawImage(source as CanvasImageSource, region.x, region.y, w, h, 0, 0, width, height);
   if ('close' in source) source.close();
 
   for (const quality of QUALITY_STEPS) {
