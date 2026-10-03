@@ -68,6 +68,9 @@ export const en = {
   hoursAffectBooking: 'Changes apply to the booking screen straight away. Appointments already made are not moved.',
   checkingTimes: 'Checking what is free…',
   closedThisDay: 'The salon is closed on this day.',
+  noTeamYet: 'This salon is not taking online bookings yet.',
+  noTeamTitle: 'Customers cannot book you yet',
+  noTeamBody: 'Every appointment needs a team member to take it. Until you add one, customers see every time as taken.',
   sampleTimesNotice: 'Showing sample times — live availability is unavailable right now.',
   reschedulingNote: 'Rescheduling — choose a new time',
 

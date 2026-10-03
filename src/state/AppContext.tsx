@@ -391,13 +391,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       excludeBookingId: state.rescheduleId,
     }).then((result) => {
       if (cancelled) return;
-      // A failed live lookup falls back to sample times; keep the scripted full
-      // day consistent with the demo path above.
-      setAvailability(
-        result.source === 'error'
-          ? { ...demoAvailability(state.dateIdx), source: 'error' }
-          : result,
-      );
+      // A failed live lookup falls back to sample times — but never to the
+      // sample week's scripted full day. That script exists for the offline
+      // waitlist demo; applied to a real salon after a slow request, it told a
+      // customer the fifth day was fully booked when nobody had asked the
+      // salon at all.
+      setAvailability(result.source === 'error' ? { ...demoAvailability(), source: 'error' } : result);
     });
 
     return () => {
