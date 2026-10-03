@@ -388,6 +388,46 @@ for (const arabic of [false, true]) {
   await page.close();
 }
 
+// ---------------------------------------------------------------------------
+// The vendor portal can change language from inside it. It followed whatever
+// was chosen on the opening screen and offered no switch afterwards, so an
+// owner who came in English stayed in English.
+// ---------------------------------------------------------------------------
+{
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await start(page, false, /I own a salon/i);
+  const toArabic = () => page.getByRole('button', { name: /^(ع|العربية)$/ }).first();
+  const toEnglish = () => page.getByRole('button', { name: 'EN', exact: true }).first();
+
+  check('vendor: registration offers a language switch', await toArabic().isVisible());
+  await toArabic().click();
+  await page.waitForTimeout(300);
+  let body = await text(page);
+  check('vendor: and it turns the registration form Arabic',
+        body.includes('اسم الصالون (بالعربية)') && (await page.locator('html').getAttribute('dir')) === 'rtl');
+  await toEnglish().click();
+  await page.waitForTimeout(300);
+
+  await page.getByRole('button', { name: 'Back' }).first().click();
+  await page.waitForTimeout(600);
+  check('vendor: the dashboard offers a language switch', await toArabic().isVisible());
+  await toArabic().click();
+  await page.waitForTimeout(300);
+  body = await text(page);
+  check('vendor: and it turns the dashboard Arabic', body.includes('جدول اليوم') || body.includes('اليوم'),
+        body.slice(0, 300).replace(/\n/g, ' '));
+  check('vendor: the tab bar follows', body.includes('المزيد') && !body.includes('More'));
+
+  await page.getByRole('button', { name: 'المزيد' }).last().click();
+  await page.waitForTimeout(500);
+  check('vendor: the More screen offers a language switch', await toEnglish().isVisible());
+  await toEnglish().click();
+  await page.waitForTimeout(300);
+  body = await text(page);
+  check('vendor: and switching back turns it English', body.includes('More') && (await page.locator('html').getAttribute('dir')) === 'ltr');
+  await page.close();
+}
+
 await browser.close();
 const passed = results.filter(Boolean).length;
 console.log(`\n${passed}/${results.length} passed`);

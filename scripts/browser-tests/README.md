@@ -1,6 +1,6 @@
 # Browser checks
 
-607 checks that drive the built app in real Chromium, in **both languages**, against a
+614 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot

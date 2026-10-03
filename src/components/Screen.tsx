@@ -32,6 +32,8 @@ interface ScreenHeaderProps {
   backLabel: string;
   title: string;
   subtitle?: string;
+  /** Pinned to the far end of the header — the language switch, where one is offered. */
+  trailing?: ReactNode;
 }
 
 /** The circular back button plus title used across the booking and vendor flows. */
@@ -41,6 +43,7 @@ export function ScreenHeader({
   backLabel,
   title,
   subtitle,
+  trailing,
 }: ScreenHeaderProps) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '56px 24px 0' }}>
@@ -69,6 +72,7 @@ export function ScreenHeader({
           <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft }}>{subtitle}</div>
         ) : null}
       </div>
+      {trailing ? <div style={{ marginInlineStart: 'auto', flex: 'none' }}>{trailing}</div> : null}
     </div>
   );
 }

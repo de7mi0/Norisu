@@ -1,3 +1,4 @@
+import { LangToggle } from '../../components/LangToggle';
 import type { ReactNode } from 'react';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
@@ -123,16 +124,9 @@ export function Dashboard() {
             <div style={{ font: `500 12px ${font.sans}`, color: '#cfc7b4' }}>{t.goodMorning}</div>
             <div style={{ font: `600 24px ${font.serif}`, marginTop: 2 }}>{salonName}</div>
           </div>
-          <div
-            aria-hidden="true"
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: '50%',
-              background: 'repeating-linear-gradient(135deg,#3a3320 0 6px,#2f2917 6px 12px)',
-              border: `1.5px solid ${color.gold}`,
-            }}
-          />
+          {/* The language switch, where the owner looks first. It replaced a
+              decorative avatar circle that stood for nobody. */}
+          <LangToggle variant="dark" />
         </div>
 
         <div

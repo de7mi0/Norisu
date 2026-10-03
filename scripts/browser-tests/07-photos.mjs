@@ -244,16 +244,16 @@ for (const arabic of [false, true]) {
     await install(page);
     await toGallery(page, arabic);
     const bytes = Buffer.from(await halves(page));
-    const use = () => page.getByRole('button', { name: arabic ? 'استخدم الصورة' : 'Use photo' });
+    const confirmButton = () => page.getByRole('button', { name: arabic ? 'استخدم الصورة' : 'Use photo' });
 
     // The first photograph is the cover, so it is offered wide.
     await page.setInputFiles('input[type="file"]', { name: 'a.jpg', mimeType: 'image/jpeg', buffer: bytes });
     await page.waitForTimeout(800);
-    check(`${L}: choosing a photograph opens the framing sheet first`, await use().isVisible());
+    check(`${L}: choosing a photograph opens the framing sheet first`, await confirmButton().isVisible());
     check(`${L}: nothing is uploaded before it is framed`, db.uploads.length === 0);
     check(`${L}: a cover is offered wide`,
           (await page.getByRole('radio', { name: arabic ? 'عريضة' : 'Wide' }).getAttribute('aria-checked')) === 'true');
-    await use().click();
+    await confirmButton().click();
     await page.waitForTimeout(2500);
     let shot = db.uploads[0] ? await inspect(page, db.uploads[0].bytes) : null;
     check(`${L}: a wide frame uploads a 16:9 picture`,
@@ -270,7 +270,7 @@ for (const arabic of [false, true]) {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width + 400, box.y + box.height / 2, { steps: 8 });
     await page.mouse.up();
-    await use().click();
+    await confirmButton().click();
     await page.waitForTimeout(2500);
     shot = db.uploads[1] ? await inspect(page, db.uploads[1].bytes) : null;
     check(`${L}: a square frame uploads a square picture`, shot && shot.w === shot.h, JSON.stringify(shot));
@@ -282,7 +282,7 @@ for (const arabic of [false, true]) {
     await page.waitForTimeout(800);
     await page.getByRole('slider', { name: arabic ? 'التكبير' : 'Zoom' }).fill('2');
     await page.waitForTimeout(200);
-    await use().click();
+    await confirmButton().click();
     await page.waitForTimeout(2500);
     shot = db.uploads[2] ? await inspect(page, db.uploads[2].bytes) : null;
     check(`${L}: zooming in keeps a smaller part of the picture`,

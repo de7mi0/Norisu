@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CloseSalonSheet } from '../../components/CloseSalonSheet';
+import { LangToggle } from '../../components/LangToggle';
 import { SALON_CATEGORIES, findCategory } from '../../data/categories';
 import { CITIES, MAX_CITIES } from '../../data/cities';
 import { isGoogleMapsUrl } from '../../data/owner';
@@ -174,6 +175,7 @@ export function Onboarding() {
           backIcon={backIcon}
           backLabel={isArabic ? 'رجوع' : 'Back'}
           title={editing ? t.businessProfile : t.registerSalon}
+          trailing={<LangToggle variant="pill" />}
         />
         <div
           lang="ar"
