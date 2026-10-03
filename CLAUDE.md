@@ -90,7 +90,7 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              501 Chromium checks in both languages; see its README
+  browser-tests/              607 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -186,6 +186,10 @@ supabase/
   migrations/0022_close_anon_execute.sql  the other half of the 0010 lesson:
                                       BOTH revokes are needed, and three
                                       functions must stay anon-executable
+  migrations/0023_salon_cities_and_location.sql  the cities a salon serves and
+                                      its Google Maps link, held to Google's hosts
+  migrations/0024_public_reviews.sql  public_reviews(): a salon's reviews for its
+                                      page, with "Nora A." and nothing else about her
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -193,7 +197,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   128 assertions
+  tests/01_policy_tests.sql   130 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -402,7 +406,7 @@ functions in 0003–0012 —
 0021's back office — `admin_salons()`, `admin_verify_salon()`, `admin_publish_salon()`,
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
 own `my_salon_review()`.
-30 RLS policies (plus four on storage.objects). 128 assertions.
+30 RLS policies (plus four on storage.objects). 130 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -618,7 +622,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-128 assertions, drops it. Each of 53–128 was checked against a database with its own protection
+130 assertions, drops it. Each of 53–130 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -693,6 +697,9 @@ failure means the key is already public and must be replaced in Supabase, not ju
 | Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
 | **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
 | **Finding a salon** | **Real.** A search field at the top of Explore, matching the salon's **name** in both languages — and folding Arabic so `ورده` finds `وردة`. It filters the catalogue already in memory rather than querying, so it works on the sample data too. **Names only, deliberately**: district, tags and category were matched in the first version and deliberately removed, and service names are not searched at all. |
+| **Writing a review** | **Real.** A past booking the salon marked completed offers "Write a review"; a visit not yet completed says why it cannot be reviewed yet. Final once posted. The salon page reads them through `public_reviews()` (0024) with a first name and initial. **A salon that never marks visits complete never gets reviewed** — that is the policy working, and the thing to watch. |
+| **Cities and location** | **Real.** Explore chooses a city (27, both languages, remembered on the device); a salon lists every city it serves and may give a Google Maps link or its pinned position (0023). "Call" and "Directions" use the salon's own number and location and are hidden when it gave none. |
+| **Framing a photograph** | **Real.** Drag, zoom and a Wide/Square/Original shape before upload; only the framed pixels are drawn on the canvas that strips EXIF. |
 | **Availability** | **Real.** Times come from `working_hours`, the chosen services' length and the bookings already made, via `available_slots()`. Taken times are shown greyed rather than hidden. Falls back to the sample grid with no backend. |
 
 ---
@@ -1107,8 +1114,8 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (128 assertions);
-  UI changes with `scripts/browser-tests/` (501 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (130 assertions);
+  UI changes with `scripts/browser-tests/` (607 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (17 checks, both languages). Do not report something as
   working because the code looks right.

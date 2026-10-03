@@ -490,7 +490,10 @@ select
   bool_or(p.proname = 'commission_statement')        as "0018 commission",
   bool_or(p.proname = 'close_my_salon')              as "0019 close salon",
   bool_or(p.proname = 'my_closed_salon')             as "0020 closed memory",
-  bool_or(p.proname = 'admin_salons')                as "0021 back office"
+  bool_or(p.proname = 'admin_salons')                as "0021 back office",
+  (select count(*) = 1 from information_schema.columns
+    where table_name = 'salons' and column_name = 'cities') as "0023 cities & map",
+  bool_or(p.proname = 'public_reviews')              as "0024 reviews"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -512,6 +515,12 @@ owner who can set `is_published` walks into the customer catalogue with nobody
 having checked their commercial registration; an account that can set its own
 `role` can read every profile, every booking and every unpublished salon; and an
 account that can INSERT a booking directly can state its own price.
+
+**0023 and 0024 must be run before the branch that adds them is merged.** 0023
+adds the cities a salon serves and its map link; until it is applied, salon
+registration and Business details cannot save, and the owner's portal cannot
+load. 0024 is what shows a salon's real reviews to customers. Run 0023 first,
+then 0024, each pasted on its own — the steps are the same as above.
 
 **0015 is the one to run before anybody else looks at this app.** It closes a hole that let any
 account put a salon into the customer catalogue without its commercial registration ever being
