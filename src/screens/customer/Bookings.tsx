@@ -2,6 +2,7 @@ import { Photo } from '../../components/Photo';
 import { Screen } from '../../components/Screen';
 import { dayLabel, translateStatus } from '../../i18n';
 import { mapsLink } from '../../lib/maps';
+import { ReviewSheet } from './ReviewSheet';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -396,9 +397,45 @@ export function Bookings() {
                 })()}
               </div>
             )}
+            {/* Reviewing a past visit. Only a saved booking the salon marked
+                completed can be reviewed (0002's policy), so a visit still
+                awaiting that says why the button is not there yet rather
+                than leaving the customer to wonder. */}
+            {booking.id && !showingUpcoming && booking.status !== 'CANCELLED' ? (
+              <div
+                style={{
+                  borderTop: `1px solid ${color.lineFaint}`,
+                  padding: '10px 14px',
+                  font: `600 12px ${font.sans}`,
+                  textAlign: 'center',
+                }}
+              >
+                {booking.reviewed ? (
+                  <span style={{ color: color.teal }}>✓ {t.reviewedThanks}</span>
+                ) : booking.status === 'COMPLETED' ? (
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: 'openReview', bookingId: booking.id ?? '' })}
+                    className="press"
+                    style={{ font: `700 12px ${font.sans}`, color: color.goldLink }}
+                  >
+                    ★ {t.writeReview}
+                  </button>
+                ) : (
+                  <span style={{ font: `500 11px/1.5 ${font.sans}`, color: color.mutedFaint }}>
+                    {t.reviewAfterComplete}
+                  </span>
+                )}
+              </div>
+            ) : null}
           </article>
         ))}
       </div>
+
+      {(() => {
+        const reviewing = pastBookings.find((booking) => booking.id === state.reviewBookingId);
+        return reviewing ? <ReviewSheet booking={reviewing} /> : null;
+      })()}
     </Screen>
   );
 }

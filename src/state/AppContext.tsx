@@ -110,6 +110,12 @@ import {
 import { VAT_RATE, priceNow } from '../data/services';
 import { ANY_PROFESSIONAL } from '../data/staff';
 import { CITIES } from '../data/cities';
+import {
+  loadPublicReviews,
+  writeReview,
+  type PublicReviews,
+  type ReviewFailure,
+} from '../data/customerReviews';
 import { isSupabaseConfigured } from '../lib/supabase';
 import {
   CODE_LENGTH,
@@ -1830,6 +1836,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [bookingFailureText, flash, isArabic, refreshBookings],
   );
 
+  // A salon's reviews, read when its Reviews screen is open. Remote state, so
+  // it lives here like availability does; the sample catalogue keeps its
+  // sample reviews, because its salons are not rows anybody could review.
+  const [publicReviews, setPublicReviews] = useState<PublicReviews>({ source: 'loading', reviews: [] });
+  useEffect(() => {
+    if (state.screen !== 'reviews') return;
+    if (!isSupabaseConfigured || catalogSource !== 'live') {
+      setPublicReviews({ source: 'demo', reviews: [] });
+      return;
+    }
+    let cancelled = false;
+    setPublicReviews({ source: 'loading', reviews: [] });
+    void loadPublicReviews(salon.id).then((result) => {
+      if (!cancelled) setPublicReviews(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogSource, salon.id, state.screen]);
+
+  const submitReview = useCallback(
+    async (booking: Booking, rating: number, body: string): Promise<boolean> => {
+      if (!booking.id || !booking.salonId) return false;
+      const failure = await writeReview({
+        bookingId: booking.id,
+        salonId: booking.salonId,
+        customerId: userId,
+        rating,
+        body,
+      });
+      if (failure) {
+        const messages: Record<ReviewFailure, { en: string; ar: string }> = {
+          notConfigured: { en: 'Not saved — no database is connected.', ar: 'لم يُحفظ — لا توجد قاعدة بيانات متصلة.' },
+          notSignedIn: { en: 'Sign in to write a review.', ar: 'سجّل الدخول لكتابة تقييم.' },
+          notCompleted: {
+            en: 'You can review this visit once the salon marks it complete.',
+            ar: 'يمكنك تقييم هذه الزيارة بعد أن يؤكد الصالون اكتمالها.',
+          },
+          already: { en: 'You have already reviewed this visit.', ar: 'لقد قيّمت هذه الزيارة من قبل.' },
+          network: {
+            en: 'Could not post your review. Check your connection and try again.',
+            ar: 'تعذّر نشر تقييمك. تحقق من الاتصال وحاول مرة أخرى.',
+          },
+        };
+        const message = messages[failure];
+        flash(isArabic ? message.ar : message.en);
+        if (failure === 'already') {
+          dispatch({ type: 'closeReview' });
+          await refreshBookings();
+        }
+        return false;
+      }
+      dispatch({ type: 'closeReview' });
+      await refreshBookings();
+      flash(isArabic ? 'شكرًا — نُشر تقييمك' : 'Thank you — your review is posted');
+      return true;
+    },
+    [flash, isArabic, refreshBookings, userId],
+  );
+
   const openConversation = useCallback(
     (target: 'chat' | 'bot') => {
       dispatch({ type: 'openConversation', target, from: state.screen as CustomerScreen });
@@ -1913,6 +1979,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastReference,
       rescheduleBooking,
       cancelBooking,
+      publicReviews,
+      submitReview,
       flash,
       sendChat,
       sendBot,
@@ -1994,6 +2062,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lastReference,
       rescheduleBooking,
       cancelBooking,
+      publicReviews,
+      submitReview,
       staffName,
       state,
       t,

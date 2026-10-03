@@ -107,6 +107,18 @@ export const en = {
   backHome: 'Back to home',
 
   ratingsReviews: 'Ratings & reviews',
+  writeReview: "Write a review",
+  postReview: "Post review",
+  yourRating: "Your rating",
+  reviewBodyLabel: "Tell others about your visit (optional)",
+  reviewBodyPlaceholder: "What went well, what could be better…",
+  reviewFinalNote: "Your review appears on the salon’s page with your first name and initial. Once posted it cannot be edited; the salon can reply but cannot change or remove it.",
+  reviewedThanks: "You reviewed this visit",
+  reviewAfterComplete: "You can review this visit once the salon marks it complete.",
+  reviewsNone: "No reviews yet — be the first after your visit.",
+  reviewsError: "Could not load reviews. Check your connection and try again.",
+  verifiedVisit: "Verified visit",
+  salonReplied: "The salon replied",
   myBookings: 'My bookings',
   upcoming: 'Upcoming',
   past: 'Past',
@@ -423,7 +435,7 @@ export const en = {
   legalPrivCollectB:
     'Only what a booking needs. Every item below is stored because a screen you use depends on it.',
   legalPrivCollectL:
-    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. A review is shown on the salon’s page and to the salon itself, with your name beside it.',
+    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. On the salon’s page it is shown with your first name and the first letter of your second — “Nora A.” — and to the salon itself with the name you gave.',
 
   legalPrivNeverH: 'What Saloni never asks for',
   legalPrivNeverB:

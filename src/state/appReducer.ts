@@ -100,6 +100,8 @@ export interface AppState {
   city: string | null;
   /** True while the city chooser is open over Explore. */
   citySheet: boolean;
+  /** The past booking the customer is writing a review of, if any. */
+  reviewBookingId: string | null;
   saved: Record<string, boolean>;
   bookTab: 'upcoming' | 'past';
   /** True while the time picker is moving an existing booking. */
@@ -241,6 +243,7 @@ export const initialState: AppState = {
   query: '',
   city: null,
   citySheet: false,
+  reviewBookingId: null,
   saved: {},
   bookTab: 'upcoming',
   reschedule: false,
@@ -348,6 +351,8 @@ export type Action =
   | { type: 'setCity'; city: string | null }
   | { type: 'openCitySheet' }
   | { type: 'closeCitySheet' }
+  | { type: 'openReview'; bookingId: string }
+  | { type: 'closeReview' }
   | { type: 'toggleService'; serviceId: string }
   | { type: 'toggleSaved'; salonId: string }
   | { type: 'pickStaff'; staffId: string }
@@ -533,6 +538,12 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case 'closeCitySheet':
       return { ...state, citySheet: false };
+
+    case 'openReview':
+      return { ...state, reviewBookingId: action.bookingId };
+
+    case 'closeReview':
+      return { ...state, reviewBookingId: null };
 
     case 'toggleService':
       return {

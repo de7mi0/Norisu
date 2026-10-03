@@ -174,6 +174,8 @@ export interface Booking {
    * keeps a named specialist and re-picks an unnamed one.
    */
   requestedStaffId?: string | null;
+  /** True once the customer has reviewed it; a booking takes one review. */
+  reviewed?: boolean;
   totalHalalas?: number;
 }
 

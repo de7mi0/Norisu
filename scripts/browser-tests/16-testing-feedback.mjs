@@ -213,7 +213,7 @@ const salonRow = (id, en, ar, extra = {}) => ({ id, slug: en.toLowerCase(), name
   tags_en: 'Hair', tags_ar: 'شعر', category_en: 'Salon', category_ar: 'صالون', area_en: 'Al Olaya',
   area_ar: 'العليا', phone: '+966112004477', city: 'Riyadh', is_published: true, slot_step_minutes: 30, ...extra });
 
-async function live(page, { staff, bookings = [], rpc }) {
+async function live(page, { staff, bookings = [], rpc, posted = [], publicReviews = [] }) {
   await page.route(`**/${REF}.supabase.co/**`, (route) => {
     const req = route.request(); const url = req.url();
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: {
@@ -229,7 +229,12 @@ async function live(page, { staff, bookings = [], rpc }) {
       const free = asked.p_staff_id == null ? team.length > 0 : team.some((person) => person.id === asked.p_staff_id);
       return ok(route, slots(free));
     }
+    if (url.includes('rpc/public_reviews')) { rpc.push({ fn: 'public_reviews', ...JSON.parse(req.postData() || '{}') }); return ok(route, publicReviews); }
     if (url.includes('rpc/')) return ok(route, []);
+    if (url.includes('/rest/v1/reviews') && req.method() === 'POST') {
+      posted.push(JSON.parse(req.postData() || '{}'));
+      return route.fulfill({ status: 201, headers: { 'access-control-allow-origin': '*' }, body: '' });
+    }
     if (url.includes('/rest/v1/profiles')) return ok(route, { id: USER, role: 'customer', full_name: 'Nora', phone: null, locale: 'en' });
     if (url.includes('/rest/v1/salons')) {
       if (url.includes('select=id%2Ccities') || url.includes('select=id,cities')) {
@@ -307,6 +312,79 @@ for (const arabic of [false, true]) {
         body.includes(arabic ? 'هذا الصالون لا يستقبل الحجوزات عبر التطبيق بعد' : 'This salon is not taking online bookings yet'),
         body.slice(0, 500).replace(/\n/g, ' '));
   check(`${L}: rather than "fully booked"`, !body.includes(arabic ? 'هذا اليوم محجوز بالكامل' : 'This day is fully booked'));
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
+// Reviews: a customer writes one about a completed visit, and a salon's page
+// shows its real reviews rather than the bundled sample ones.
+// ---------------------------------------------------------------------------
+
+const pastBooking = (id, status, extra = {}) => ({ id, reference: `SL-${id}`, salon_id: SALON_A, staff_id: 'stA',
+  staff_requested: true, starts_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+  ends_at: new Date(Date.now() - 3 * 86400000 + 2700000).toISOString(), status, total_halalas: 15000,
+  booking_items: [{ name_en: 'Signature Haircut', name_ar: 'قص شعر', duration_minutes: 45, unit_price_halalas: 15000,
+    discount_percent: 0, quantity: 1 }], salons: { name_en: 'Maison Noir', name_ar: 'ميزون نوار' },
+  staff: { name_en: 'Layla', name_ar: 'ليلى' }, reviews: [], ...extra });
+
+for (const arabic of [false, true]) {
+  const L = arabic ? 'AR' : 'EN';
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  const rpc = []; const posted = [];
+  await live(page, {
+    staff: [{ id: 'stA', salon_id: SALON_A, name_en: 'Layla', name_ar: 'ليلى', role_en: 'Stylist', role_ar: 'مصففة',
+              initials: 'L', is_active: true, is_archived: false, sort_order: 0 }],
+    rpc, posted,
+    bookings: [pastBooking('done1', 'completed'), pastBooking('wait1', 'confirmed'),
+               pastBooking('done2', 'completed', { reviews: [{ id: 'r1' }] })],
+    publicReviews: [{ review_id: 'r1', rating: 4, body: 'Lovely cut', reply: 'Thank you!', replied_at: null,
+      created_at: '2026-09-20T10:00:00Z', author: 'Nora A.', services_en: 'Signature Haircut', services_ar: 'قص شعر' }],
+  });
+  await start(page, arabic);
+  await page.getByRole('button', { name: /^(Bookings|الحجوزات)$/ }).first().click();
+  await page.waitForTimeout(800);
+  await page.getByRole('button', { name: arabic ? /السابقة/ : /Past/ }).first().click();
+  await page.waitForTimeout(400);
+  let body = await text(page);
+  check(`${L}: a completed visit offers "Write a review"`,
+        (await page.getByRole('button', { name: arabic ? /اكتب تقييمًا/ : /Write a review/ }).count()) === 1);
+  check(`${L}: a visit the salon has not completed says why it cannot be reviewed yet`,
+        body.includes(arabic ? 'بعد أن يؤكد الصالون اكتمالها' : 'once the salon marks it complete'));
+  check(`${L}: a visit already reviewed says so`, body.includes(arabic ? 'قيّمت هذه الزيارة' : 'You reviewed this visit'));
+
+  await page.getByRole('button', { name: arabic ? /اكتب تقييمًا/ : /Write a review/ }).click();
+  await page.waitForTimeout(300);
+  const postButton = page.getByRole('button', { name: arabic ? 'نشر التقييم' : 'Post review' });
+  check(`${L}: posting needs a rating first`, await postButton.isDisabled());
+  await page.getByRole('radio', { name: arabic ? '4 من 5 نجوم' : '4 of 5 stars' }).click();
+  await page.getByRole('dialog').locator('textarea').fill(arabic ? 'رائع' : 'Great');
+  check(`${L}: the sheet says a review cannot be edited later`,
+        (await page.getByRole('dialog').innerText()).includes(arabic ? 'لا يمكن تعديله بعد النشر' : 'cannot be edited'));
+  await postButton.click();
+  await page.waitForTimeout(800);
+  const sent = posted[0] ?? {};
+  check(`${L}: the review is written for that booking with that rating`,
+        sent.booking_id === 'done1' && sent.rating === 4 && sent.salon_id === SALON_A && sent.customer_id === USER,
+        JSON.stringify(sent));
+  check(`${L}: and sends exactly the five columns a customer may write`,
+        JSON.stringify(Object.keys(sent).sort()) === JSON.stringify(['body', 'booking_id', 'customer_id', 'rating', 'salon_id']),
+        JSON.stringify(Object.keys(sent)));
+
+  // The salon's own page shows its real reviews.
+  for (let i = 0; i < 1; i++) {
+    await page.getByRole('button', { name: /^(Explore|استكشف)$/ }).first().click().catch(() => {});
+  }
+  await page.waitForTimeout(500);
+  await page.getByText(arabic ? 'ميزون نوار' : 'Maison Noir').first().click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: arabic ? /تقييم$/ : /reviews$/ }).first().click();
+  await page.waitForTimeout(900);
+  body = await text(page);
+  check(`${L}: a salon's reviews come from the database`, rpc.some((r) => r.fn === 'public_reviews' && r.p_salon_id === SALON_A));
+  check(`${L}: and show the reviewer's short name and words`, body.includes('Nora A.') && body.includes('Lovely cut'),
+        body.slice(0, 500).replace(/\n/g, ' '));
+  check(`${L}: with the salon's reply`, body.includes('Thank you!'));
+  check(`${L}: and none of the sample reviews`, !body.includes(arabic ? 'هدى ع.' : 'Huda A.'));
   await page.close();
 }
 

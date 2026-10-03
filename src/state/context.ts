@@ -1,4 +1,5 @@
 import { createContext, useContext, type Dispatch } from 'react';
+import type { PublicReviews } from '../data/customerReviews';
 import type { Availability } from '../data/availability';
 import type {
   AppointmentStatus,
@@ -201,6 +202,10 @@ export interface AppContextValue {
   /** Moves the booking being rescheduled to the slot now selected. */
   rescheduleBooking: () => Promise<void>;
   cancelBooking: (bookingId: string) => Promise<void>;
+  /** The current salon's published reviews, for its Reviews screen. */
+  publicReviews: PublicReviews;
+  /** Writes the customer's review of a completed booking. True when saved. */
+  submitReview: (booking: Booking, rating: number, body: string) => Promise<boolean>;
 
   /** Shows a transient toast; a second call replaces the first. */
   flash: (message: string) => void;

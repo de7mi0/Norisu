@@ -1,11 +1,49 @@
 import { Screen, ScreenHeader } from '../../components/Screen';
 import { RATING_BARS, REVIEWS } from '../../data/reviews';
+import { instantLabel } from '../../i18n';
 import { useApp } from '../../state/context';
-import { color, font } from '../../theme';
+import { color, font, tile } from '../../theme';
+import type { Review } from '../../types';
+
+const REVIEW_TILES = [tile.sandFine, tile.taupeFine, tile.blushFine];
 
 /** Ratings breakdown and customer reviews for the current salon. */
 export function Reviews() {
-  const { t, dispatch, isArabic, backIcon, salon } = useApp();
+  const { t, state, dispatch, isArabic, backIcon, salon, publicReviews } = useApp();
+
+  // The sample catalogue keeps its sample reviews. A real salon shows its own
+  // — and never the samples, which is what it used to show: invented
+  // customers praising a salon none of them had visited.
+  const demo = publicReviews.source === 'demo';
+  const live = publicReviews.reviews;
+  const reviews: Review[] = demo
+    ? REVIEWS
+    : live.map((review, index) => {
+        const name = review.author ?? t.verifiedVisit;
+        const date = instantLabel(review.createdAt, state.lang);
+        return {
+          initials: review.author
+            ? review.author.split(' ').map((part) => part[0]).join('').slice(0, 2)
+            : '✓',
+          name,
+          arName: name,
+          date,
+          arDate: date,
+          service: review.servicesEn,
+          arService: review.servicesAr,
+          rating: review.rating,
+          text: review.body,
+          arText: review.body,
+          tile: REVIEW_TILES[index % REVIEW_TILES.length],
+        };
+      });
+  const replies = demo ? [] : live.map((review) => review.reply);
+  const bars = demo
+    ? RATING_BARS
+    : [5, 4, 3, 2, 1].map((star) => ({
+        star,
+        pct: `${live.length ? Math.round((live.filter((r) => Math.round(r.rating) === star).length / live.length) * 100) : 0}%`,
+      }));
 
   return (
     <Screen bottomInset={30}>
@@ -40,7 +78,7 @@ export function Reviews() {
           </div>
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {RATING_BARS.map((bar) => (
+          {bars.map((bar) => (
             <div key={bar.star} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span
                 style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft, width: 8 }}
@@ -66,9 +104,22 @@ export function Reviews() {
       </div>
 
       <div style={{ padding: '20px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {REVIEWS.map((review) => (
+        {publicReviews.source === 'loading' ? (
+          <p style={{ font: `500 12px ${font.sans}`, color: color.mutedFaint, textAlign: 'center' }}>…</p>
+        ) : publicReviews.source === 'error' ? (
+          // Not "no reviews yet": that would be a claim about the salon, and a
+          // failed read knows nothing about it.
+          <p style={{ font: `500 12px/1.5 ${font.sans}`, color: color.danger, textAlign: 'center' }}>
+            {t.reviewsError}
+          </p>
+        ) : !demo && reviews.length === 0 ? (
+          <p style={{ font: `500 12px/1.5 ${font.sans}`, color: color.mutedFaint, textAlign: 'center' }}>
+            {t.reviewsNone}
+          </p>
+        ) : null}
+        {reviews.map((review, index) => (
           <article
-            key={review.name}
+            key={`${review.name}-${index}`}
             style={{ borderBottom: `1px solid ${color.lineFaint}`, paddingBottom: 16 }}
           >
             <div
@@ -120,6 +171,22 @@ export function Reviews() {
             >
               {isArabic ? review.arText : review.text}
             </p>
+            {replies[index] ? (
+              <div
+                style={{
+                  margin: '10px 0 0',
+                  background: color.surfaceWarm,
+                  borderInlineStart: `3px solid ${color.gold}`,
+                  borderRadius: 8,
+                  padding: '8px 11px',
+                }}
+              >
+                <div style={{ font: `700 10.5px ${font.sans}`, color: color.goldDeep }}>{t.salonReplied}</div>
+                <p style={{ font: `400 12px/1.5 ${font.sans}`, color: color.inkSoft, margin: '3px 0 0' }}>
+                  {replies[index]}
+                </p>
+              </div>
+            ) : null}
           </article>
         ))}
       </div>
