@@ -1,3 +1,4 @@
+import { LangToggle } from '../../components/LangToggle';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { VENDOR_NAME } from '../../data/vendor';
@@ -93,9 +94,17 @@ export function More() {
           </h1>
           <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft }}>{t.verified}</div>
         </div>
-
-      <SampleDataNotice />
+        {/* The owner's way to change language. The portal followed whatever
+            was chosen on the opening screen and offered no way to change it
+            afterwards — an owner who came in English stayed in English. */}
+        <div style={{ marginInlineStart: 'auto', flex: 'none' }}>
+          <LangToggle variant="pill" />
+        </div>
       </div>
+
+      {/* Below the header, not inside its row, where it was squeezed into a
+          narrow column beside the salon's name. */}
+      <SampleDataNotice />
 
       <div style={{ padding: '24px 24px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {rows.map((row) => (
