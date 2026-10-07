@@ -4153,6 +4153,10 @@ begin
       'admin_salons', 'admin_verify_salon', 'admin_publish_salon',
       'admin_reject_salon', 'admin_close_salon', 'admin_set_commission',
       'register_push_device', 'forget_push_device', 'claim_offer_by_token',
+      -- Conversations (0025). Each decides the caller's side inside, and
+      -- assertions 131-135 prove an outsider is refused.
+      'start_conversation', 'post_message', 'conversation_messages',
+      'my_conversations', 'staff_inbox',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
       -- Trigger functions used to be listed here. 0022 removed every grant on
@@ -6968,5 +6972,424 @@ begin
 end
 $$;
 reset role;
+
+-- ---------------------------------------------------------------------------
+-- Conversations (0025). Shared fixtures for 131–136: a salon with an owner,
+-- a rival salon's owner, two customers and an administrator.
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id) values
+  ('c1310000-0000-0000-0000-000000000001'),  -- owner
+  ('c1310000-0000-0000-0000-000000000002'),  -- rival owner
+  ('c1310000-0000-0000-0000-000000000003'),  -- customer
+  ('c1310000-0000-0000-0000-000000000004'),  -- another customer
+  ('c1310000-0000-0000-0000-000000000005');  -- administrator
+update profiles set full_name = 'Nora Al-Qahtani', phone = '+966500001310',
+                    locale = 'ar'
+ where id = 'c1310000-0000-0000-0000-000000000003';
+update profiles set role = 'admin' where id = 'c1310000-0000-0000-0000-000000000005';
+insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published) values
+  ('c1310000-0000-0000-0000-0000000000a1', 'c1310000-0000-0000-0000-000000000001',
+   'chat-test', 'Chat Test', 'صالون المحادثة', true, true),
+  ('c1310000-0000-0000-0000-0000000000a2', 'c1310000-0000-0000-0000-000000000002',
+   'chat-rival', 'Chat Rival', 'المنافس', true, true),
+  ('c1310000-0000-0000-0000-0000000000a3', 'c1310000-0000-0000-0000-000000000002',
+   'chat-hidden', 'Chat Hidden', 'مخفي', false, false);
+
+-- ---------------------------------------------------------------------------
+-- 131. A conversation belongs to the customer and that salon, and nobody else
+--      reads it or writes in it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1310000-0000-0000-0000-000000000001';
+  rival  uuid := 'c1310000-0000-0000-0000-000000000002';
+  cust   uuid := 'c1310000-0000-0000-0000-000000000003';
+  other  uuid := 'c1310000-0000-0000-0000-000000000004';
+  admin_ uuid := 'c1310000-0000-0000-0000-000000000005';
+  salon  uuid := 'c1310000-0000-0000-0000-0000000000a1';
+  conv   uuid;
+  again  uuid;
+  n      integer;
+  seen   record;
+begin
+  perform auth.login_as(cust);
+  set local role authenticated;
+  conv := start_conversation(salon, 'Do you have parking?');
+  -- Asking again continues the same thread.
+  again := start_conversation(salon, 'And is it free?');
+  reset role;
+  if conv is null or again <> conv then
+    raise exception 'FAIL 131a: a second question opened a second thread';
+  end if;
+
+  -- The owner sees it, unread, with the customer's name...
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  select * into seen from staff_inbox(false);
+  reset role;
+  if seen.conversation_id <> conv or not seen.unread or seen.customer_name <> 'Nora Al-Qahtani' then
+    raise exception 'FAIL 131b: the salon''s inbox does not show the new conversation';
+  end if;
+
+  -- ...reads it, and answers as the salon.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  select count(*) into n from conversation_messages(conv) where not mine;
+  perform post_message(conv, 'Yes, behind the building.');
+  select count(*) filter (where unread) into n from staff_inbox(false);
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 131c: reading the conversation did not mark it read for the salon';
+  end if;
+  if (select side from messages where conversation_id = conv order by created_at desc, id desc limit 1) <> 'salon' then
+    raise exception 'FAIL 131d: the owner''s reply was not written as the salon';
+  end if;
+
+  -- The customer sees the reply as unread, and as not theirs.
+  perform auth.login_as(cust);
+  set local role authenticated;
+  select count(*) into n from my_conversations() where unread and conversation_id = conv;
+  if n <> 1 then
+    raise exception 'FAIL 131e: the customer is not told the salon answered';
+  end if;
+  select count(*) into n from conversation_messages(conv) where mine;
+  reset role;
+  if n <> 2 then
+    raise exception 'FAIL 131f: the customer''s own messages are not marked as theirs (% of 2)', n;
+  end if;
+
+  -- A rival salon, another customer and an administrator: none of them reads
+  -- it, writes in it, or finds it in their inbox.
+  foreach again in array array[rival, other, admin_] loop
+    perform auth.login_as(again);
+    set local role authenticated;
+    begin
+      perform * from conversation_messages(conv);
+      raise exception 'FAIL 131g: % read somebody else''s conversation', again;
+    exception when insufficient_privilege then null;
+    end;
+    begin
+      perform post_message(conv, 'hello');
+      raise exception 'FAIL 131h: % wrote into somebody else''s conversation', again;
+    exception when insufficient_privilege then null;
+    end;
+    select count(*) into n from staff_inbox(false) where conversation_id = conv;
+    if n <> 0 then
+      raise exception 'FAIL 131i: % has this salon''s conversation in their inbox', again;
+    end if;
+    reset role;
+  end loop;
+
+  raise notice 'PASS 131: a conversation is the customer''s and that salon''s, and nobody else''s';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 132. Neither table is reachable from the browser, and a visitor who is not
+--      signed in reaches none of the functions.
+--
+--      A side taken from the request is a side the caller chose: a customer
+--      who can insert into messages can write a reply "from the salon".
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  cust uuid := 'c1310000-0000-0000-0000-000000000003';
+  conv uuid := (select id from conversations where customer_id = cust limit 1);
+begin
+  perform auth.login_as(cust);
+  set local role authenticated;
+  begin
+    insert into messages (conversation_id, sender_id, side, body)
+    values (conv, cust, 'salon', 'We will refund you in full.');
+    raise exception 'FAIL 132a: a customer wrote a message as the salon';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from messages;
+    raise exception 'FAIL 132b: the messages table is readable from the browser';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update conversations set customer_read_at = now();
+    raise exception 'FAIL 132c: the conversations table is writable from the browser';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  begin
+    perform start_conversation(null, 'hi');
+    raise exception 'FAIL 132d: a signed-out visitor started a conversation';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform * from my_conversations();
+    raise exception 'FAIL 132e: a signed-out visitor listed conversations';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 132: conversations are reached through their functions only';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 133. The salon learns a customer's name and nothing else about them.
+--      Guarantee 9, held for a new route to the same profile.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  shape text;
+begin
+  select string_agg(pg_get_function_result(p.oid), ' ') into shape
+  from pg_proc p
+  where p.proname in ('staff_inbox', 'conversation_messages', 'my_conversations');
+  if shape ~* '(phone|email|customer_id|sender_id)' then
+    raise exception 'FAIL 133: a conversation function returns contact details or an id: %', shape;
+  end if;
+  raise notice 'PASS 133: the inbox carries a name and no contact details';
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 134. Saloni's support threads reach an administrator and nobody else, and
+--      an administrator does not read conversations between a customer and a
+--      salon — those are the salon's, and the privacy policy says so.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1310000-0000-0000-0000-000000000001';
+  cust   uuid := 'c1310000-0000-0000-0000-000000000003';
+  admin_ uuid := 'c1310000-0000-0000-0000-000000000005';
+  conv   uuid;
+  n      integer;
+begin
+  perform auth.login_as(cust);
+  set local role authenticated;
+  conv := start_conversation(null, 'The app charged me twice');
+  reset role;
+
+  perform auth.login_as(admin_);
+  set local role authenticated;
+  select count(*) into n from staff_inbox(true) where conversation_id = conv and unread;
+  if n <> 1 then
+    raise exception 'FAIL 134a: the administrator does not see the support request';
+  end if;
+  perform post_message(conv, 'Sorry — looking into it now.');
+  -- Nothing about salons' own conversations.
+  create temp table salon_threads_134 on commit drop as
+    select c.conversation_id from staff_inbox(true) c;
+  reset role;
+  select count(*) into n from salon_threads_134 t
+   join conversations c on c.id = t.conversation_id where c.salon_id is not null;
+  if n <> 0 then
+    raise exception 'FAIL 134b: a salon''s conversation appears in Saloni''s support inbox';
+  end if;
+  if (select side from messages where conversation_id = conv order by created_at desc, id desc limit 1) <> 'saloni' then
+    raise exception 'FAIL 134c: the administrator''s reply was not written as Saloni';
+  end if;
+
+  -- A salon owner is not an administrator.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    perform * from staff_inbox(true);
+    raise exception 'FAIL 134d: a salon owner opened Saloni''s support inbox';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform post_message(conv, 'hello');
+    raise exception 'FAIL 134e: a salon owner answered as Saloni';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  raise notice 'PASS 134: support reaches administrators only, and they do not read salons'' threads';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 135. What cannot be messaged, and how much one account can send.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1310000-0000-0000-0000-000000000001';
+  rival  uuid := 'c1310000-0000-0000-0000-000000000002';
+  other  uuid := 'c1310000-0000-0000-0000-000000000004';
+  salon  uuid := 'c1310000-0000-0000-0000-0000000000a1';
+  hidden uuid := 'c1310000-0000-0000-0000-0000000000a3';
+  conv   uuid;
+  i      integer;
+  extra  uuid;
+begin
+  -- An unpublished salon this customer has never visited.
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    perform start_conversation(hidden, 'hi');
+    raise exception 'FAIL 135a: an unpublished salon was messaged by a stranger';
+  exception when sqlstate 'SL040' then null;
+  end;
+  -- An empty message, and one that is too long.
+  begin
+    perform start_conversation(salon, '   ');
+    raise exception 'FAIL 135b: an empty message was accepted';
+  exception when sqlstate 'SL042' then null;
+  end;
+  begin
+    perform start_conversation(salon, repeat('x', 1001));
+    raise exception 'FAIL 135c: a 1001-character message was accepted';
+  exception when sqlstate 'SL042' then null;
+  end;
+  reset role;
+
+  -- An owner does not message their own salon.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    perform start_conversation(salon, 'hi');
+    raise exception 'FAIL 135d: an owner opened a conversation with their own salon';
+  exception when sqlstate 'SL044' then null;
+  end;
+  reset role;
+
+  -- Thirty messages in ten minutes, and the thirty-first is refused.
+  perform auth.login_as(other);
+  set local role authenticated;
+  conv := start_conversation(salon, 'one');
+  for i in 2..30 loop
+    perform post_message(conv, 'again ' || i);
+  end loop;
+  begin
+    perform post_message(conv, 'thirty-one');
+    raise exception 'FAIL 135e: the 31st message in ten minutes was accepted';
+  exception when sqlstate 'SL041' then null;
+  end;
+  reset role;
+
+  -- Five new conversations a day: four more salons, then the sixth is refused.
+  delete from messages where sender_id = other;
+  for i in 1..4 loop
+    extra := gen_random_uuid();
+    insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published)
+    values (extra, rival, 'chat-cap-' || i, 'Cap ' || i, 'حد ' || i, true, true);
+    perform auth.login_as(other);
+    set local role authenticated;
+    perform start_conversation(extra, 'hi');
+    reset role;
+  end loop;
+  insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published)
+  values (gen_random_uuid(), rival, 'chat-cap-6', 'Cap 6', 'حد 6', true, true)
+  returning id into extra;
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    perform start_conversation(extra, 'hi');
+    raise exception 'FAIL 135f: a sixth new conversation in a day was accepted';
+  exception when sqlstate 'SL041' then null;
+  end;
+  reset role;
+
+  -- A closed salon keeps its thread for the customer, and nobody can write in it.
+  update salons set is_published = false, owner_id = null where id = salon;
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    perform post_message(conv, 'hello?');
+    raise exception 'FAIL 135g: a message was sent to a closed salon';
+  exception when sqlstate 'SL040' then null;
+  end;
+  if not exists (select 1 from my_conversations() where conversation_id = conv and not can_reply) then
+    raise exception 'FAIL 135h: the customer lost their thread with a closed salon, or is told they can reply';
+  end if;
+  reset role;
+  update salons set owner_id = owner_, is_published = true where id = salon;
+
+  raise notice 'PASS 135: unreachable salons, empty messages and floods are refused';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 136. A message tells the other side once, in their language, only when
+--      switched on — and the conversation goes with the customer's account.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1310000-0000-0000-0000-000000000001';
+  cust   uuid := 'c1310000-0000-0000-0000-000000000003';
+  salon  uuid := 'c1310000-0000-0000-0000-0000000000a1';
+  conv   uuid := (select id from conversations
+                   where customer_id = 'c1310000-0000-0000-0000-000000000003'
+                     and salon_id = 'c1310000-0000-0000-0000-0000000000a1');
+  n      integer;
+  row_   notifications%rowtype;
+begin
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth) values
+    (owner_, 'https://push.example/owner-1310', 'k', 'a'),
+    (cust,   'https://push.example/cust-1310',  'k', 'a');
+  delete from notifications where template = 'new_message';
+
+  -- Off by default: the deployed worker may not know what a message is yet.
+  perform auth.login_as(cust);
+  set local role authenticated;
+  perform post_message(conv, 'Is 5pm ok?');
+  reset role;
+  if exists (select 1 from notifications where template = 'new_message') then
+    raise exception 'FAIL 136a: a message push was queued while message_push is off';
+  end if;
+
+  update notification_settings set message_push = true;
+
+  perform auth.login_as(cust);
+  set local role authenticated;
+  perform post_message(conv, 'Is 5pm ok?');
+  perform post_message(conv, 'Or 6?');
+  reset role;
+  select count(*) into n from notifications where template = 'new_message' and profile_id = owner_;
+  if n <> 1 then
+    raise exception 'FAIL 136b: % pushes queued to the salon for two messages, expected one', n;
+  end if;
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  perform post_message(conv, '6 is fine.');
+  reset role;
+  select * into row_ from notifications where template = 'new_message' and profile_id = cust;
+  if row_.id is null or row_.locale <> 'ar' or row_.payload -> 'from' ->> 'ar' <> 'صالون المحادثة' then
+    raise exception 'FAIL 136c: the customer is not told in Arabic which salon answered';
+  end if;
+  if row_.payload::text ~ '966500001310' then
+    raise exception 'FAIL 136d: a phone number went into a queued message';
+  end if;
+
+  update notification_settings set message_push = false;
+
+  -- Deleting the account takes the customer's conversations with it.
+  delete from salons where owner_id = cust;
+  perform auth.login_as(cust);
+  set local role authenticated;
+  perform delete_my_account();
+  reset role;
+  if exists (select 1 from conversations where customer_id = cust) then
+    raise exception 'FAIL 136e: a deleted account''s conversations were kept';
+  end if;
+
+  raise notice 'PASS 136: one push per thread, in the reader''s language, and it all goes with the account';
+end
+$$;
+reset role;
+
 
 select 'ALL DATABASE TESTS PASSED' as result;

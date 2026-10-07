@@ -21,6 +21,11 @@ export interface OfferPayload {
   hold_minutes?: number;
   claim_url?: string;
   offer_id?: string;
+  /** Present on a message in a conversation (0025) rather than an offer. */
+  conversation_id?: string;
+  from?: Partial<Record<Locale, string>>;
+  preview?: string;
+  url?: string;
 }
 
 export interface PushMessage {
@@ -68,8 +73,28 @@ function formatWhen(iso: string, locale: Locale): { date: string; time: string }
   };
 }
 
+/**
+ * Somebody wrote in a conversation. The title is who, the body is what they
+ * said — the message itself, not a description of it, because that is what
+ * every messaging app shows and what lets somebody decide whether to open it.
+ */
+function composeChat(payload: OfferPayload, lang: Locale): PushMessage {
+  const from = payload.from?.[lang] ?? payload.from?.en ?? '';
+  const fallback = lang === 'ar' ? 'رسالة جديدة' : 'New message';
+  return {
+    title: from || fallback,
+    body: payload.preview?.trim() || fallback,
+    url: payload.url ?? './',
+    // One notification per conversation: a second message replaces the first
+    // rather than stacking a pile of them on the lock screen.
+    tag: `chat:${payload.conversation_id ?? 'conversation'}`,
+    lang,
+  };
+}
+
 export function composeMessage(payload: OfferPayload, locale: Locale): PushMessage {
   const lang: Locale = locale === 'ar' ? 'ar' : 'en';
+  if (payload.kind === 'message') return composeChat(payload, lang);
   const salon = payload.salon?.[lang] ?? payload.salon?.en ?? '';
   const services = payload.services?.[lang] ?? payload.services?.en ?? '';
   const minutes = Math.max(1, Math.round(payload.hold_minutes ?? 15));
