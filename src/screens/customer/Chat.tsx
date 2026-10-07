@@ -1,92 +1,37 @@
-import { Composer, MessageList } from '../../components/Conversation';
 import { Photo } from '../../components/Photo';
+import { Initial, ThreadView } from '../../components/ThreadView';
 import { useApp } from '../../state/context';
-import { color, font } from '../../theme';
 
-/** Direct conversation with the salon (replies are simulated). */
+/**
+ * A customer's conversation with a salon, or with Saloni's team.
+ *
+ * This used to answer itself: every message got "a team member will confirm
+ * the details shortly" after a second, and nobody had read it. Now the salon's
+ * owner reads it in their portal and replies here (0025).
+ */
 export function Chat() {
-  const { t, state, dispatch, isArabic, backIcon, salon, sendChat } = useApp();
+  const { t, state, isArabic, salons } = useApp();
+  const current = state.thread;
+  const isSupport = !current?.salonId;
+  const salon = salons.find((candidate) => candidate.id === current?.salonId);
+  const name = current ? (isArabic ? current.nameAr : current.name) : '';
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        background: color.page,
-      }}
-    >
-      <div
-        style={{
-          padding: '52px 20px 14px',
-          background: color.surface,
-          borderBottom: `1px solid ${color.line}`,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => dispatch({ type: 'back' })}
-          aria-label={isArabic ? 'رجوع' : 'Back'}
-          className="press"
-          style={{
-            width: 36,
-            height: 36,
-            flex: 'none',
-            borderRadius: '50%',
-            background: color.surfaceSand,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 17,
-          }}
-        >
-          {backIcon}
-        </button>
-        <Photo
-          src={salon.photo}
-          tile={salon.tile}
-          style={{ width: 40, height: 40, flex: 'none', borderRadius: '50%' }}
-        />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: `600 15px ${font.serif}` }}>{isArabic ? salon.ar : salon.name}</div>
-          <div style={{ font: `500 10px ${font.sans}`, color: color.success }}>
-            ● {t.repliesFast}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => dispatch({ type: 'go', screen: 'bot' })}
-          style={{
-            font: `600 10px ${font.sans}`,
-            color: color.goldLink,
-            textAlign: 'center',
-            lineHeight: 1.3,
-          }}
-        >
-          <span aria-hidden="true">🤖</span>
-          <br />
-          {t.assistant}
-        </button>
-      </div>
-
-      <MessageList
-        messages={state.chatMsgs}
-        lang={state.lang}
-        incoming={{ bg: color.surfaceSand, fg: color.ink }}
-      />
-
-      <Composer
-        value={state.chatInput}
-        onChange={(value) => dispatch({ type: 'setChatInput', value })}
-        onSend={sendChat}
-        placeholder={t.typeMessage}
-        sendLabel={isArabic ? 'إرسال' : 'Send'}
-        sendStyle={{ background: color.gold, color: color.goldInk }}
-      />
-    </div>
+    <ThreadView
+      title={isSupport ? t.msgSupportName : name}
+      subtitle={isSupport ? t.msgSupportSub : t.msgSalonSub}
+      intro={isSupport ? t.msgIntroSupport : t.msgIntroSalon}
+      avatar={
+        salon ? (
+          <Photo
+            src={salon.photo}
+            tile={salon.tile}
+            style={{ width: 40, height: 40, flex: 'none', borderRadius: '50%' }}
+          />
+        ) : (
+          <Initial text={isSupport ? 'S' : (name.trim()[0] ?? '·')} dark={isSupport} />
+        )
+      }
+    />
   );
 }

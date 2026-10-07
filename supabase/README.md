@@ -493,7 +493,8 @@ select
   bool_or(p.proname = 'admin_salons')                as "0021 back office",
   (select count(*) = 1 from information_schema.columns
     where table_name = 'salons' and column_name = 'cities') as "0023 cities & map",
-  bool_or(p.proname = 'public_reviews')              as "0024 reviews"
+  bool_or(p.proname = 'public_reviews')              as "0024 reviews",
+  bool_or(p.proname = 'start_conversation')          as "0025 messages"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -521,6 +522,34 @@ adds the cities a salon serves and its map link; until it is applied, salon
 registration and Business details cannot save, and the owner's portal cannot
 load. 0024 is what shows a salon's real reviews to customers. Run 0023 first,
 then 0024, each pasted on its own — the steps are the same as above.
+
+### 0025 — messages between customers, salons and Saloni
+
+0025 is what makes "Message the salon" and the assistant's "talk to a person"
+real. Until it is applied, a customer who presses **Send** in a conversation sees
+"The message didn't send", and the Messages screens say they couldn't load.
+Paste it on its own, the same steps as above. Nothing else is needed for messages
+to work — the owner sees them under **More → Messages**, and an administrator
+under **Support** at the top of the back office.
+
+**Push alerts for new messages are a second, separate step, and they ship
+switched off.** The notification worker you deployed earlier only knows how to
+word a waitlist offer, so if message alerts were on, a salon owner would get
+"A seat has opened at …" every time a customer asked about parking. So, in this
+order and not the other:
+
+1. Redeploy the worker with the new `bundled.ts` — exactly the steps in
+   [Deploy the worker](#3-deploy-the-worker) below. Same function name, paste
+   over the old code, **Deploy function**.
+2. Only then, in the SQL Editor, run:
+
+   ```sql
+   update notification_settings set message_push = true;
+   ```
+
+A person is only alerted if they have allowed notifications on a device, the
+same as for waitlist offers. Several messages in a row produce one alert, not
+one each. To switch alerts off again, run the same line with `false`.
 
 **0015 is the one to run before anybody else looks at this app.** It closes a hole that let any
 account put a salon into the customer catalogue without its commercial registration ever being

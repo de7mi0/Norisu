@@ -14,7 +14,7 @@ const ROLE_KEYS = {
 
 /** Customer account screen, including the language switch and vendor hand-off. */
 export function Profile() {
-  const { t, dispatch, isArabic, chevron, session, signOut } = useApp();
+  const { t, dispatch, isArabic, chevron, session, signOut, unreadMessages } = useApp();
 
   // What is actually stored, as opposed to what the header falls back to
   // showing. A blank name is why the salon's calendar sees a reference.
@@ -86,10 +86,15 @@ export function Profile() {
         {PROFILE_ROWS.map((row) => {
           const isLanguage = row.label === 'Language';
           const isHelp = row.label === 'Help & support';
+          const isMessages = row.label === 'Messages';
           // The rest of these rows are still demo values; this one is real now,
           // so it shows the account rather than the persona it used to.
           const isDetails = row.label === 'Personal details';
-          const value = isDetails
+          const value = isMessages
+            ? unreadMessages > 0
+              ? `${unreadMessages} ${t.msgNew}`
+              : ''
+            : isDetails
             ? signedIn
               ? storedName || t.notGiven
               : '—'
@@ -103,6 +108,9 @@ export function Profile() {
               onClick={() => {
                 if (isLanguage) {
                   dispatch({ type: 'setLang', lang: isArabic ? 'en' : 'ar' });
+                } else if (isMessages) {
+                  if (signedIn) dispatch({ type: 'openConversation', target: 'inbox', from: 'profile' });
+                  else dispatch({ type: 'openAuth', reason: 'message' });
                 } else if (isHelp) {
                   dispatch({ type: 'openConversation', target: 'bot', from: 'profile' });
                 } else if (isDetails && signedIn) {

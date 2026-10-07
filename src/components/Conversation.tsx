@@ -1,26 +1,41 @@
-import { useEffect, useId, useRef } from 'react';
-import type { ChatMessage, Lang } from '../types';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { color, font } from '../theme';
 import { SendIcon } from './icons';
 
+/** One message on screen. `text` is always rendered as plain text. */
+export interface Bubble {
+  key: string;
+  text: string;
+  mine: boolean;
+  /** A small line under the bubble — when it was sent. */
+  meta?: string;
+  /** Rendered under the bubble: the assistant's buttons. */
+  after?: ReactNode;
+}
+
 interface MessageListProps {
-  messages: ChatMessage[];
-  lang: Lang;
-  /** Bubble colours for messages that did not come from the customer. */
+  bubbles: Bubble[];
+  /** Bubble colours for messages that did not come from the reader. */
   incoming: { bg: string; fg: string };
+  /** Shown above the messages — an introduction, or why there are none. */
+  header?: ReactNode;
 }
 
 /** Renders chat bubbles; message text is always rendered as plain text. */
-export function MessageList({ messages, lang, incoming }: MessageListProps) {
+export function MessageList({ bubbles, incoming, header }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
+  const last = bubbles[bubbles.length - 1]?.key;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length]);
+  }, [bubbles.length, last]);
 
   return (
     <div
       className="scr"
+      // A live region, so a reply arriving is announced to somebody who
+      // cannot see it land.
+      aria-live="polite"
       style={{
         flex: 1,
         overflowY: 'auto',
@@ -30,26 +45,40 @@ export function MessageList({ messages, lang, incoming }: MessageListProps) {
         gap: 10,
       }}
     >
-      {messages.map((message, index) => {
-        const mine = message.who === 'me';
-        const text = message.text ?? (lang === 'ar' ? message.ar : message.en) ?? '';
-        return (
+      {header}
+      {bubbles.map((bubble) => (
+        <div
+          key={bubble.key}
+          style={{
+            alignSelf: bubble.mine ? 'flex-end' : 'flex-start',
+            maxWidth: '82%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: bubble.mine ? 'flex-end' : 'flex-start',
+            gap: 6,
+          }}
+        >
           <div
-            key={index}
             style={{
-              alignSelf: mine ? 'flex-end' : 'flex-start',
-              maxWidth: '78%',
-              background: mine ? color.ink : incoming.bg,
-              color: mine ? color.goldSoft : incoming.fg,
+              background: bubble.mine ? color.ink : incoming.bg,
+              color: bubble.mine ? color.goldSoft : incoming.fg,
               borderRadius: 16,
               padding: '10px 13px',
-              font: `500 12.5px/1.45 ${font.sans}`,
+              font: `500 12.5px/1.5 ${font.sans}`,
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
             }}
           >
-            {text}
+            {bubble.text}
           </div>
-        );
-      })}
+          {bubble.meta ? (
+            <div style={{ font: `500 9.5px ${font.sans}`, color: color.mutedFaint, padding: '0 4px' }}>
+              {bubble.meta}
+            </div>
+          ) : null}
+          {bubble.after}
+        </div>
+      ))}
       <div ref={endRef} />
     </div>
   );
@@ -64,6 +93,9 @@ interface ComposerProps {
   /** Send-button colours; the assistant uses the inverse of the salon chat. */
   sendStyle: { background: string; color: string };
   style?: React.CSSProperties;
+  /** While a message is on its way, so a double tap does not send it twice. */
+  disabled?: boolean;
+  maxLength?: number;
 }
 
 /** Message input plus send button, submitting on Enter. */
@@ -75,13 +107,15 @@ export function Composer({
   sendLabel,
   sendStyle,
   style,
+  disabled = false,
+  maxLength,
 }: ComposerProps) {
   const id = useId();
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSend();
+        if (!disabled) onSend();
       }}
       style={{
         padding: '12px 16px 22px',
@@ -101,6 +135,7 @@ export function Composer({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        maxLength={maxLength}
         autoComplete="off"
         style={{
           flex: 1,
@@ -116,6 +151,7 @@ export function Composer({
       <button
         type="submit"
         aria-label={sendLabel}
+        disabled={disabled}
         className="press"
         style={{
           width: 42,
@@ -125,6 +161,7 @@ export function Composer({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          opacity: disabled ? 0.5 : 1,
           ...sendStyle,
         }}
       >

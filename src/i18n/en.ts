@@ -271,11 +271,38 @@ export const en = {
 
   message: 'Message',
   callNow: 'Call',
-  repliesFast: 'Typically replies in ~10 min',
   assistant: 'Assistant',
   assistantName: 'Saloni Assistant',
-  assistantSub: 'AI support · always here to help',
+  // Not "AI": it answers from a written guide, and says so.
+  assistantSub: 'Quick answers · a person when you need one',
   typeMessage: 'Type a message…',
+  // Conversations with a salon or with Saloni (0025).
+  msgInboxTitle: 'Messages',
+  msgInboxSub: 'Your conversations with salons and with Saloni',
+  msgInboxEmpty: 'No conversations yet. Message a salon from its page, or ask the assistant to put you through to us.',
+  msgInboxSignedOut: 'Sign in to see your messages.',
+  msgInboxFailed: 'Your messages couldn’t be loaded. Check your connection and try again.',
+  msgLoading: 'Loading…',
+  msgLoadFailed: 'This conversation couldn’t be loaded just now. It will try again in a moment.',
+  msgSalonSub: 'Answered by the salon',
+  msgSupportName: 'Saloni support',
+  msgSupportSub: 'Answered by the Saloni team',
+  msgIntroSalon: 'Write to the salon here. The owner reads it in their salon app and replies in this conversation — you’ll find it again under Profile → Messages.',
+  msgIntroSupport: 'Write to the Saloni team here — about the app, or a complaint about a salon. A person reads it and replies in this conversation, which you’ll find under Profile → Messages.',
+  msgSignInFirst: 'You’ll be asked to sign in when you send.',
+  msgClosedSalon: 'This salon has closed, so nobody can reply here any more. What was said stays for you to read.',
+  msgYou: 'You',
+  msgUnread: 'unread',
+  msgNew: 'new',
+  msgVendorInboxSub: 'Questions from your customers',
+  msgVendorInboxEmpty: 'No messages yet. When a customer writes to your salon, it appears here.',
+  msgVendorNoSalon: 'Messages from customers appear here once your salon is registered.',
+  msgVendorThreadSub: 'You reply as your salon. They see your salon’s name, not yours.',
+  msgSupportInboxTitle: 'Support',
+  msgSupportInboxShort: 'Support',
+  msgSupportInboxSub: 'Customers who asked for a person',
+  msgSupportInboxEmpty: 'Nobody has written to Saloni yet.',
+  msgSupportThreadSub: 'You reply as Saloni',
 
   fullyBooked: 'This day is fully booked',
   waitlistDesc:
@@ -408,6 +435,7 @@ export const en = {
   bookFindSalon: 'Find a salon',
 
   authWhyBooking: 'Your booking is ready — sign in to save it to your account.',
+  authWhyMessage: 'Sign in so the reply can reach you — your message is kept while you do.',
 
   authWhyVendor:
     'Sign in with the account that owns the salon to manage its hours, services and team.',
@@ -443,7 +471,7 @@ export const en = {
   legalPrivCollectB:
     'Only what a booking needs. Every item below is stored because a screen you use depends on it.',
   legalPrivCollectL:
-    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. On the salon’s page it is shown with your first name and the first letter of your second — “Nora A.” — and to the salon itself with the name you gave.',
+    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. On the salon’s page it is shown with your first name and the first letter of your second — “Nora A.” — and to the salon itself with the name you gave.\nMessages you send to a salon or to the Saloni team, and their replies. A salon’s conversations are read by its owner; Saloni’s by its administrators, who do not read your conversations with salons. What you type to the Saloni Assistant is answered on your phone and is not kept anywhere.',
 
   legalPrivNeverH: 'What Saloni never asks for',
   legalPrivNeverB:
@@ -465,7 +493,7 @@ export const en = {
 
   legalPrivPushH: 'Notifications',
   legalPrivPushB:
-    'If you let Saloni notify you, your browser or phone gives it an address to send to, and that address is stored against your account. It is used for one thing: telling you a seat has come free on a waitlist you joined. Turning notifications off in your device settings stops them, and deleting your account removes the address.',
+    'If you let Saloni notify you, your browser or phone gives it an address to send to, and that address is stored against your account. It is used for two things: telling you a seat has come free on a waitlist you joined, and telling you a salon or the Saloni team has replied to a message — with the first words of that reply, as any messaging app shows. Turning notifications off in your device settings stops them, and deleting your account removes the address.',
 
   legalPrivWhereH: 'Where it is held',
   legalPrivWhereB:
@@ -479,7 +507,7 @@ export const en = {
   legalPrivDeleteB:
     'There is a “Delete my account” link under Sign out on your profile. It is immediate and cannot be undone. Precisely what happens:',
   legalPrivDeleteL:
-    'Removed for good: your profile, the e-mail address or number you signed in with, your name, your language preference, your place in any waitlist, any message queued for you, every device registered for notifications, and every review you have written.\nCancelled first: any appointment still to come, so the chair goes back on sale.\nKept, without you: appointments you have already had. They stay on the salon’s own calendar with the booking reference where your name was. A salon has to be able to say what it did on a given day, and its figures are built from those appointments — but the person is not the salon’s to keep.\nRefused: while your account owns a salon. A salon holds other people’s appointments, its team and its photographs, so it has to be handed over or closed first.',
+    'Removed for good: your profile, the e-mail address or number you signed in with, your name, your language preference, your place in any waitlist, any message queued for you, every device registered for notifications, every review you have written, and every conversation you started with a salon or with Saloni.\nCancelled first: any appointment still to come, so the chair goes back on sale.\nKept, without you: appointments you have already had. They stay on the salon’s own calendar with the booking reference where your name was. A salon has to be able to say what it did on a given day, and its figures are built from those appointments — but the person is not the salon’s to keep.\nRefused: while your account owns a salon. A salon holds other people’s appointments, its team and its photographs, so it has to be handed over or closed first.',
 
   legalPrivRightsH: 'Your rights',
   legalPrivRightsB:

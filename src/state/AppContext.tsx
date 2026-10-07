@@ -9,7 +9,24 @@ import {
 } from 'react';
 import { appReducer, initialStateFor } from './appReducer';
 import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } from './context';
-import { BOT_TOPICS, REPLY_DELAY, SALON_AUTO_REPLY, botReplyFor, type BotTopicKey } from './replies';
+import { REPLY_DELAY } from './replies';
+import {
+  answerFor,
+  answerForTopic,
+  TOPICS,
+  type AssistantAction,
+  type AssistantMessage,
+  type TopicKey,
+} from './assistant';
+import {
+  loadInbox,
+  loadThread,
+  postMessage,
+  startConversation,
+  type Inbox,
+  type MessageFailure,
+  type Thread,
+} from '../data/conversations';
 import { useSession } from './useSession';
 import { demoCatalog, loadCatalog, type Catalog } from '../data/repository';
 import {
@@ -1452,37 +1469,333 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void endSession().then(() => flash(isArabic ? 'تم تسجيل الخروج' : 'Signed out'));
   }, [endSession, flash, isArabic]);
 
-  const sendChat = useCallback(() => {
-    if (!state.chatInput.trim()) return;
-    dispatch({ type: 'sendChat' });
-    later(() => dispatch({ type: 'pushChat', message: SALON_AUTO_REPLY }), REPLY_DELAY.salon);
-  }, [later, state.chatInput]);
+  // ---------------------------------------------------------------------------
+  // Talking to a person (0025). Remote state, like the waitlist: the list of
+  // conversations for whichever side this person is on in the current mode,
+  // and the messages of the one on screen. Who may read and write what is the
+  // database's to decide; this only decides what to ask for.
+  // ---------------------------------------------------------------------------
+
+  // Which inbox this mode reads. A salon owner's inbox is their salon's; an
+  // administrator's is Saloni's support threads; anybody else has their own.
+  const inboxRole: 'customer' | 'salon' | 'support' | null = !userId
+    ? null
+    : state.mode === 'customer'
+      ? 'customer'
+      : state.mode === 'vendor'
+        ? ownedSalonId
+          ? 'salon'
+          : null
+        : state.mode === 'admin' && profile?.role === 'admin'
+          ? 'support'
+          : null;
+
+  const [inbox, setInbox] = useState<Inbox>({ items: [], source: 'demo' });
+  const [inboxNonce, setInboxNonce] = useState(0);
+  const [thread, setThread] = useState<Thread>({ messages: [], source: 'demo' });
+  const [threadNonce, setThreadNonce] = useState(0);
+
+  // The screens that show the inbox, or a count of what is unread in it.
+  // Elsewhere nothing is asked, so browsing the catalogue costs no queries.
+  const showsInbox = (
+    [
+      'inbox', 'profile', 'bot', 'home', 'bookings',
+      'v_inbox', 'v_more', 'v_dash',
+      'a_inbox', 'a_queue',
+    ] as string[]
+  ).includes(state.screen);
+  const onInboxScreen = state.screen === 'inbox' || state.screen === 'v_inbox' || state.screen === 'a_inbox';
+  const onThreadScreen =
+    state.screen === 'chat' || state.screen === 'v_thread' || state.screen === 'a_thread';
+  const customerFallback = useMemo(() => ({ en: 'Customer', ar: 'عميلة' }), []);
+
+  useEffect(() => {
+    if (!inboxRole) {
+      setInbox({ items: [], source: 'demo' });
+      return;
+    }
+    if (!showsInbox) return;
+    let cancelled = false;
+    const read = () =>
+      void loadInbox(inboxRole, customerFallback).then((result) => {
+        if (!cancelled) setInbox(result);
+      });
+    read();
+    // Re-read while the list itself is open, so a reply arriving shows up
+    // without anybody pulling to refresh. There is no realtime channel.
+    const timer = onInboxScreen ? setInterval(read, 15000) : undefined;
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [customerFallback, inboxNonce, inboxRole, onInboxScreen, showsInbox]);
+
+  const threadId = state.thread?.conversationId ?? null;
+
+  // Which conversation `thread` holds, so re-reading the same one keeps it on
+  // screen while opening a different one starts from "loading" — never from
+  // another conversation's messages, and never from an empty "live" that
+  // would hide a failure behind it.
+  const loadedThread = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!onThreadScreen || !threadId || !userId) {
+      loadedThread.current = null;
+      setThread({ messages: [], source: 'demo' });
+      return;
+    }
+    let cancelled = false;
+    if (loadedThread.current !== threadId) {
+      loadedThread.current = threadId;
+      setThread({ messages: [], source: 'loading' });
+    }
+    const read = () =>
+      void loadThread(threadId).then((result) => {
+        if (cancelled) return;
+        // A failed re-read keeps what is already on screen rather than
+        // blanking a conversation somebody is in the middle of.
+        setThread((current) =>
+          result.source === 'error' && current.source === 'live' ? current : result,
+        );
+      });
+    read();
+    const timer = setInterval(read, 6000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [onThreadScreen, threadId, threadNonce, userId]);
+
+  const messageFailureText = useCallback(
+    (failure: MessageFailure): string => {
+      const messages: Record<MessageFailure, { en: string; ar: string }> = {
+        signedOut: { en: 'Sign in to send a message.', ar: 'سجّل الدخول لإرسال رسالة.' },
+        closed: {
+          en: 'This salon is no longer taking messages.',
+          ar: 'هذا الصالون لم يعد يستقبل الرسائل.',
+        },
+        ownSalon: {
+          en: 'This is your own salon — its messages are in your portal.',
+          ar: 'هذا صالونك — رسائله في بوابتك.',
+        },
+        tooMany: {
+          en: 'That’s a lot of messages in a short time. Please wait a few minutes.',
+          ar: 'رسائل كثيرة في وقت قصير. انتظر بضع دقائق من فضلك.',
+        },
+        length: {
+          en: 'A message is up to 1000 characters.',
+          ar: 'الرسالة حتى ١٠٠٠ حرف.',
+        },
+        noBackend: {
+          en: 'Messages need the live app — this is sample data.',
+          ar: 'الرسائل تحتاج التطبيق الفعلي — هذه بيانات تجريبية.',
+        },
+        failed: { en: 'The message didn’t send. Try again.', ar: 'لم تُرسل الرسالة. حاول مرة أخرى.' },
+      };
+      return messages[failure][isArabic ? 'ar' : 'en'];
+    },
+    [isArabic],
+  );
+
+  /**
+   * Opens the conversation with a salon — or with Saloni when `salonId` is
+   * null — continuing the existing thread if there is one. Nothing is created
+   * until the first message is sent.
+   */
+  const openSalonChat = useCallback(
+    async (salonId: string | null, options: { from: CustomerScreen; draft?: string }) => {
+      const known = catalog.salons.find((candidate) => candidate.id === salonId);
+      const fromBookings = [...upcomingBookings, ...pastBookings].find(
+        (booking) => booking.salonId === salonId,
+      );
+      const base = {
+        conversationId: null as string | null,
+        salonId,
+        name: salonId ? (known?.name ?? fromBookings?.salon ?? '') : 'Saloni support',
+        nameAr: salonId ? (known?.ar ?? fromBookings?.salonAr ?? '') : 'دعم صالوني',
+        canReply: true,
+      };
+      // Find the thread this customer already has with them, if any, so the
+      // history is there rather than a blank page that turns into it later.
+      let existing = inbox.items.find((item) => item.salonId === salonId);
+      if (!existing && userId && state.mode === 'customer') {
+        const fresh = await loadInbox('customer', customerFallback);
+        if (fresh.source === 'live') {
+          setInbox(fresh);
+          existing = fresh.items.find((item) => item.salonId === salonId);
+        }
+      }
+      dispatch({
+        type: 'openThread',
+        screen: 'chat',
+        from: options.from,
+        draft: options.draft,
+        thread: existing
+          ? {
+              ...base,
+              conversationId: existing.id,
+              name: existing.name || base.name,
+              nameAr: existing.nameAr || base.nameAr,
+              canReply: existing.canReply,
+            }
+          : base,
+      });
+    },
+    [catalog.salons, customerFallback, inbox.items, pastBookings, state.mode, upcomingBookings, userId],
+  );
+
+  /** Opens a conversation from an inbox list, in whichever mode. */
+  const openInboxThread = useCallback(
+    (conversationId: string) => {
+      const item = inbox.items.find((candidate) => candidate.id === conversationId);
+      if (!item) return;
+      dispatch({
+        type: 'openThread',
+        screen: state.mode === 'vendor' ? 'v_thread' : state.mode === 'admin' ? 'a_thread' : 'chat',
+        from: state.mode === 'customer' ? 'inbox' : undefined,
+        thread: {
+          conversationId: item.id,
+          salonId: item.salonId,
+          name: item.name,
+          nameAr: item.nameAr,
+          canReply: item.canReply,
+        },
+      });
+    },
+    [inbox.items, state.mode],
+  );
+
+  const sendThreadMessage = useCallback(async () => {
+    const text = state.threadInput.trim();
+    const current = state.thread;
+    if (!text || !current || state.threadSending) return;
+    if (!userId) {
+      // The words stay in the box, so signing in loses nothing.
+      dispatch({ type: 'openAuth', reason: 'message' });
+      return;
+    }
+    dispatch({ type: 'setThreadSending', sending: true });
+    let failure: MessageFailure | null = null;
+    if (current.conversationId) {
+      failure = await postMessage(current.conversationId, text);
+    } else {
+      const started = await startConversation(current.salonId, text);
+      if ('failure' in started) failure = started.failure;
+      else dispatch({ type: 'threadStarted', conversationId: started.conversationId });
+    }
+    if (failure) {
+      dispatch({ type: 'setThreadSending', sending: false });
+      if (failure === 'signedOut') dispatch({ type: 'openAuth', reason: 'message' });
+      else flash(messageFailureText(failure));
+      return;
+    }
+    dispatch({ type: 'threadSent' });
+    setThreadNonce((n) => n + 1);
+    setInboxNonce((n) => n + 1);
+  }, [flash, messageFailureText, state.thread, state.threadInput, state.threadSending, userId]);
+
+  // The assistant. Everything it says comes from ./assistant.ts; what lives
+  // here is only what it needs from the rest of the app — which salons this
+  // customer could mean when they ask for a person.
+  const handoffMessage = useCallback((): AssistantMessage => {
+    const candidates: { id: string; en: string; ar: string }[] = [];
+    const add = (id: string | undefined, en: string, ar: string) => {
+      if (id && en && !candidates.some((c) => c.id === id)) candidates.push({ id, en, ar });
+    };
+    // The salon they were looking at when they opened the assistant first,
+    // then the salons they have appointments with — the ones a question is
+    // most likely to be about.
+    if (['salon', 'staff', 'time', 'pay', 'reviews', 'confirm'].includes(state.retScreen) && salon) {
+      add(salon.id, salon.name, salon.ar);
+    }
+    for (const booking of [...upcomingBookings, ...pastBookings]) {
+      add(booking.salonId, booking.salon, booking.salonAr);
+    }
+    // And the salons they are already talking to, if any can still answer.
+    for (const item of inbox.items) {
+      if (item.salonId && item.canReply) add(item.salonId, item.name, item.nameAr);
+    }
+    const salons = candidates.slice(0, 3);
+    const actions: AssistantAction[] = [
+      ...salons.map((c) => ({
+        kind: 'reach' as const,
+        salonId: c.id,
+        label: { en: c.en, ar: c.ar },
+      })),
+      { kind: 'reach', salonId: null, label: { en: 'Saloni’s team', ar: 'فريق صالوني' } },
+    ];
+    if (inbox.items.length > 0) {
+      actions.push({ kind: 'inbox', label: { en: 'My messages', ar: 'رسائلي' } });
+    }
+    return {
+      who: 'bot',
+      say: salons.length
+        ? {
+            en: 'Who would you like to reach? A salon answers anything about your visit there; Saloni’s team answers anything about the app, or a complaint about a salon. They reply here, and you’ll find the conversation under Profile → Messages.',
+            ar: 'مع من تحب تتواصل؟ الصالون يجيب عن كل ما يخص زيارتك له؛ وفريق صالوني يجيب عن التطبيق أو أي شكوى على صالون. الرد يصلك هنا، وتجد المحادثة في حسابي ← الرسائل.',
+          }
+        : {
+            en: 'Saloni’s team can help with anything about the app, or a complaint about a salon, and replies here. To ask a particular salon something, open its page and tap “Message”.',
+            ar: 'فريق صالوني يساعدك في أي شيء يخص التطبيق أو شكوى على صالون، والرد يصلك هنا. لسؤال صالون معيّن، افتح صفحته واضغط «مراسلة».',
+          },
+      actions,
+    };
+  }, [inbox.items, pastBookings, salon, state.retScreen, upcomingBookings]);
+
+  const replyFor = useCallback(
+    (topic: TopicKey | null, message: AssistantMessage) =>
+      topic === 'person' ? handoffMessage() : message,
+    [handoffMessage],
+  );
 
   const sendBot = useCallback(() => {
     const text = state.botInput.trim();
     if (!text) return;
     dispatch({ type: 'sendBot' });
-    const reply = botReplyFor(text);
+    const { topic, message } = answerFor(text);
+    const reply = replyFor(topic, message);
     later(() => dispatch({ type: 'pushBot', message: reply }), REPLY_DELAY.bot);
-  }, [later, state.botInput]);
+  }, [later, replyFor, state.botInput]);
 
   const pickBotTopic = useCallback(
-    (key: BotTopicKey) => {
-      // "Message the salon" hands the conversation over instead of answering.
-      if (key === 'salon') {
-        dispatch({ type: 'go', screen: 'chat' });
-        return;
-      }
-      const topic = BOT_TOPICS.find((candidate) => candidate.key === key);
-      if (!topic?.user || !topic.bot) return;
-      dispatch({ type: 'pushBot', message: { who: 'me', ...topic.user } });
-      later(
-        () => dispatch({ type: 'pushBot', message: { who: 'bot', ...topic.bot } }),
-        REPLY_DELAY.botTopic,
-      );
+    (key: TopicKey) => {
+      const topic = TOPICS.find((candidate) => candidate.key === key);
+      if (!topic) return;
+      dispatch({ type: 'pushBot', message: { who: 'me', text: topic.label[isArabic ? 'ar' : 'en'] } });
+      const reply = replyFor(key, answerForTopic(key));
+      later(() => dispatch({ type: 'pushBot', message: reply }), REPLY_DELAY.bot);
     },
-    [later],
+    [isArabic, later, replyFor],
   );
+
+  const runBotAction = useCallback(
+    (action: AssistantAction) => {
+      switch (action.kind) {
+        case 'go':
+          if (action.screen === 'legal') dispatch({ type: 'openLegal', tab: 'privacy' });
+          else dispatch({ type: 'go', screen: action.screen });
+          return;
+        case 'topic':
+          pickBotTopic(action.key);
+          return;
+        case 'handoff':
+          dispatch({ type: 'pushBot', message: { who: 'me', text: action.label[isArabic ? 'ar' : 'en'] } });
+          later(() => dispatch({ type: 'pushBot', message: handoffMessage() }), REPLY_DELAY.bot);
+          return;
+        case 'reach':
+          // What they asked the assistant goes with them, ready to send — it
+          // is theirs to edit or delete, and nothing is sent until they do.
+          void openSalonChat(action.salonId, { from: 'bot', draft: state.botQuestion });
+          return;
+        case 'inbox':
+          dispatch({ type: 'openConversation', target: 'inbox', from: 'bot' });
+          return;
+      }
+    },
+    [handoffMessage, isArabic, later, openSalonChat, pickBotTopic, state.botQuestion],
+  );
+
+  const unreadMessages = inbox.items.filter((item) => item.unread).length;
 
   const waitlistFailureText = useCallback(
     (failure: WaitlistFailure): string => {
@@ -1898,7 +2211,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const openConversation = useCallback(
-    (target: 'chat' | 'bot') => {
+    (target: 'bot' | 'inbox') => {
       dispatch({ type: 'openConversation', target, from: state.screen as CustomerScreen });
     },
     [state.screen],
@@ -1983,9 +2296,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       publicReviews,
       submitReview,
       flash,
-      sendChat,
       sendBot,
       pickBotTopic,
+      runBotAction,
+      inbox,
+      thread,
+      unreadMessages,
+      openSalonChat,
+      openInboxThread,
+      sendThreadMessage,
       joinWaitlist,
       confirmBooking,
       openConversation,
@@ -2002,6 +2321,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       money,
       openConversation,
       pickBotTopic,
+      runBotAction,
+      inbox,
+      thread,
+      unreadMessages,
+      openSalonChat,
+      openInboxThread,
+      sendThreadMessage,
       requestPasscode,
       salon,
       salonServices,
@@ -2009,7 +2335,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       salonPhotos,
       selectedServices,
       sendBot,
-      sendChat,
       session,
       signOut,
       deleteAccount,

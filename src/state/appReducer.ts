@@ -1,5 +1,4 @@
 import type {
-  ChatMessage,
   CustomerScreen,
   Lang,
   LegalTab,
@@ -9,7 +8,9 @@ import type {
   VendorService,
   VendorStaff,
 } from '../types';
-import { BOT_GREETING, MAX_FIELD_LENGTH, MAX_MESSAGE_LENGTH, SALON_GREETING } from './replies';
+import { MAX_FIELD_LENGTH } from './replies';
+import { GREETING, type AssistantMessage } from './assistant';
+import { MESSAGE_MAX_LENGTH } from '../data/conversations';
 import {
   defaultChannel,
   normalizeCode,
@@ -116,13 +117,31 @@ export interface AppState {
 
   /** Screen to return to when leaving chat or the assistant. */
   retScreen: CustomerScreen;
+  /** Screen to return to when leaving the customer's list of conversations. */
+  inboxRet: CustomerScreen;
   /** Screen to return to when leaving vendor onboarding. */
   obBack: 'chooser' | 'v_more';
 
-  chatMsgs: ChatMessage[];
-  chatInput: string;
-  botMsgs: ChatMessage[];
+  /**
+   * The conversation on screen, in whichever mode. `conversationId` is null
+   * for one not yet started — a customer who tapped "Message the salon" and
+   * has not sent anything — and the first message creates it. `salonId` null
+   * means Saloni support. The messages themselves are remote state and live
+   * in AppContext; only what identifies the thread lives here.
+   */
+  thread: {
+    conversationId: string | null;
+    salonId: string | null;
+    name: string;
+    nameAr: string;
+    canReply: boolean;
+  } | null;
+  threadInput: string;
+  threadSending: boolean;
+  botMsgs: AssistantMessage[];
   botInput: string;
+  /** The last thing typed to the assistant, offered as the first message to a person. */
+  botQuestion: string;
 
   /**
    * The waitlist sheet: null when shut, and otherwise carrying the time the
@@ -222,7 +241,7 @@ export interface AppState {
    * Why the sheet opened. 'booking' means the customer was interrupted at
    * checkout and needs telling why, rather than being shown a bare form.
    */
-  authReason: 'booking' | 'vendor' | null;
+  authReason: 'booking' | 'vendor' | 'message' | null;
   authForm: AuthForm;
 
   toast: string;
@@ -253,10 +272,13 @@ export const initialState: AppState = {
   retScreen: 'home',
   obBack: 'chooser',
 
-  chatMsgs: [SALON_GREETING],
-  chatInput: '',
-  botMsgs: [BOT_GREETING],
+  inboxRet: 'profile',
+  thread: null,
+  threadInput: '',
+  threadSending: false,
+  botMsgs: [GREETING],
   botInput: '',
+  botQuestion: '',
 
   waitlistSheet: null,
   blockSheet: null,
@@ -332,6 +354,10 @@ const BACK_MAP: Partial<Record<Screen, Screen>> = {
   reviews: 'salon',
   legal: 'profile',
   a_salon: 'a_queue',
+  a_inbox: 'a_queue',
+  a_thread: 'a_inbox',
+  v_inbox: 'v_more',
+  v_thread: 'v_inbox',
 };
 
 export type Action =
@@ -366,12 +392,23 @@ export type Action =
   | { type: 'cancelRescheduling' }
   | { type: 'askCancel'; bookingId: string }
   | { type: 'dismissCancel' }
-  | { type: 'openConversation'; target: 'chat' | 'bot'; from: CustomerScreen }
-  | { type: 'setChatInput'; value: string }
+  | { type: 'openConversation'; target: 'chat' | 'bot' | 'inbox'; from: CustomerScreen }
+  | {
+      type: 'openThread';
+      thread: NonNullable<AppState['thread']>;
+      /** Where the thread screen is in this mode. */
+      screen: 'chat' | 'v_thread' | 'a_thread';
+      /** Customer mode only: where back goes. */
+      from?: CustomerScreen;
+      /** Something to start the message with, such as the question asked of the assistant. */
+      draft?: string;
+    }
+  | { type: 'threadStarted'; conversationId: string }
+  | { type: 'setThreadInput'; value: string }
+  | { type: 'setThreadSending'; sending: boolean }
+  | { type: 'threadSent' }
   | { type: 'setBotInput'; value: string }
-  | { type: 'pushChat'; message: ChatMessage }
-  | { type: 'pushBot'; message: ChatMessage }
-  | { type: 'sendChat' }
+  | { type: 'pushBot'; message: AssistantMessage }
   | { type: 'sendBot' }
   | { type: 'openWaitlistSheet'; time: string | null }
   | { type: 'closeWaitlistSheet' }
@@ -411,7 +448,7 @@ export type Action =
   | { type: 'setDeleteTyped'; value: string }
   | { type: 'setDeleteSaving'; saving: boolean }
   | { type: 'closeDeleteSheet' }
-  | { type: 'openAuth'; reason?: 'booking' | 'vendor' }
+  | { type: 'openAuth'; reason?: 'booking' | 'vendor' | 'message' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
   | { type: 'setAuthIdentifier'; value: string }
@@ -503,6 +540,9 @@ export function appReducer(state: AppState, action: Action): AppState {
       }
       if (screen === 'chat' || screen === 'bot') {
         return { ...state, screen: retScreen || 'home' };
+      }
+      if (screen === 'inbox') {
+        return { ...state, screen: state.inboxRet || 'profile' };
       }
       return { ...state, screen: BACK_MAP[screen] ?? 'home' };
     }
@@ -606,30 +646,61 @@ export function appReducer(state: AppState, action: Action): AppState {
       return { ...state, cancelingId: null };
 
     case 'openConversation':
-      return { ...state, retScreen: action.from, screen: action.target };
+      // The list of conversations remembers its own way back, because a
+      // thread opened from it overwrites retScreen with 'inbox'.
+      return action.target === 'inbox'
+        ? { ...state, inboxRet: action.from, screen: 'inbox' }
+        : { ...state, retScreen: action.from, screen: action.target };
 
-    case 'setChatInput':
-      return { ...state, chatInput: clamp(action.value, MAX_MESSAGE_LENGTH) };
+    case 'openThread': {
+      const sameThread =
+        state.thread?.conversationId != null &&
+        state.thread.conversationId === action.thread.conversationId;
+      return {
+        ...state,
+        thread: action.thread,
+        screen: action.screen,
+        retScreen: action.from ?? state.retScreen,
+        // A half-written reply belongs to the thread it was written in.
+        threadInput: action.draft
+          ? clamp(action.draft, MESSAGE_MAX_LENGTH)
+          : sameThread
+            ? state.threadInput
+            : '',
+        threadSending: false,
+      };
+    }
+
+    case 'threadStarted':
+      return state.thread
+        ? { ...state, thread: { ...state.thread, conversationId: action.conversationId } }
+        : state;
+
+    case 'setThreadInput':
+      return { ...state, threadInput: clamp(action.value, MESSAGE_MAX_LENGTH) };
+
+    case 'setThreadSending':
+      // A failure only clears the flag: the words stay, so nothing typed is lost.
+      return { ...state, threadSending: action.sending };
+
+    case 'threadSent':
+      return { ...state, threadSending: false, threadInput: '' };
 
     case 'setBotInput':
-      return { ...state, botInput: clamp(action.value, MAX_MESSAGE_LENGTH) };
-
-    case 'pushChat':
-      return { ...state, chatMsgs: [...state.chatMsgs, action.message] };
+      return { ...state, botInput: clamp(action.value, MESSAGE_MAX_LENGTH) };
 
     case 'pushBot':
       return { ...state, botMsgs: [...state.botMsgs, action.message] };
 
-    case 'sendChat': {
-      const text = state.chatInput.trim();
-      if (!text) return state;
-      return { ...state, chatMsgs: [...state.chatMsgs, { who: 'me', text }], chatInput: '' };
-    }
-
     case 'sendBot': {
       const text = state.botInput.trim();
       if (!text) return state;
-      return { ...state, botMsgs: [...state.botMsgs, { who: 'me', text }], botInput: '' };
+      return {
+        ...state,
+        botMsgs: [...state.botMsgs, { who: 'me', text }],
+        botInput: '',
+        botQuestion: text,
+      };
     }
 
     case 'openWaitlistSheet':

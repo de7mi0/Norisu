@@ -24,7 +24,7 @@ export function SalonDetail() {
     money,
     backIcon,
     flash,
-    openConversation,
+    openSalonChat,
     catalogSource,
   } = useApp();
 
@@ -297,7 +297,7 @@ export function SalonDetail() {
         <div style={{ display: 'flex', gap: 10, padding: '16px 24px 0' }}>
           <button
             type="button"
-            onClick={() => openConversation('chat')}
+            onClick={() => void openSalonChat(salon.id, { from: 'salon' })}
             className="press"
             style={{
               flex: 1,

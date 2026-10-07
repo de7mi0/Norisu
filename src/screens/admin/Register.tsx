@@ -32,7 +32,7 @@ function toneFor(status: AdminStatus): { bg: string; fg: string; line: string } 
 }
 
 export function AdminRegister() {
-  const { t, isArabic, dispatch, admin } = useApp();
+  const { t, isArabic, dispatch, admin, unreadMessages } = useApp();
 
   const label: Record<AdminStatus, string> = {
     awaiting: t.adminStatusAwaiting,
@@ -58,6 +58,23 @@ export function AdminRegister() {
           </div>
           {/* The way out. An administrator is a customer too, and the back
               office is not somewhere to get stuck. */}
+          <div style={{ display: 'flex', gap: 6, flex: 'none' }}>
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'go', screen: 'a_inbox' })}
+            className="press"
+            style={{
+              flex: 'none',
+              background: unreadMessages > 0 ? color.ink : color.surfaceSand,
+              color: unreadMessages > 0 ? color.goldSoft : color.inkSoft,
+              borderRadius: 10,
+              padding: '7px 12px',
+              font: `700 11px ${font.sans}`,
+            }}
+          >
+            {t.msgSupportInboxShort}
+            {unreadMessages > 0 ? ` · ${unreadMessages}` : ''}
+          </button>
           <button
             type="button"
             onClick={() => dispatch({ type: 'pickMode', mode: 'customer' })}
@@ -73,6 +90,7 @@ export function AdminRegister() {
           >
             {t.adminLeave}
           </button>
+          </div>
         </div>
 
         {admin.source === 'live' ? (
