@@ -75,6 +75,7 @@ export function Onboarding() {
     owner,
     registerSalon,
     saveBusinessProfile,
+    session,
   } = useApp();
 
   const existing = owner.salon;
@@ -198,6 +199,43 @@ export function Onboarding() {
         >
           {editing ? t.businessProfileDesc : t.registerDesc}
         </p>
+
+        {/* A signed-out owner lands on this form, and an owner whose salon
+            already exists had no way in from here — the only sign-in was on
+            the customer side. */}
+        {session.status !== 'signedIn' ? (
+          <div
+            style={{
+              margin: '14px 24px 0',
+              padding: '12px 14px',
+              borderRadius: 14,
+              background: color.cream,
+              border: `1px solid ${color.creamLine}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <span style={{ flex: 1, font: `600 12px/1.5 ${font.sans}`, color: '#8a6d14' }}>
+              {t.vendorHaveSalon}
+            </span>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'openAuth', reason: 'vendor' })}
+              className="press"
+              style={{
+                flex: 'none',
+                padding: '8px 14px',
+                borderRadius: 12,
+                background: color.gold,
+                color: color.goldInk,
+                font: `700 12px ${font.sans}`,
+              }}
+            >
+              {t.authSignIn}
+            </button>
+          </div>
+        ) : null}
 
         {/* Where they stand: turned down, still waiting, live, or not yet
             registered. Being turned down is the newest of these and the only

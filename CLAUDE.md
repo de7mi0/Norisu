@@ -90,7 +90,7 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              680 Chromium checks in both languages; see its README
+  browser-tests/              688 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -1154,7 +1154,7 @@ the code before them.
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (136 assertions);
-  UI changes with `scripts/browser-tests/` (680 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (688 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (21 checks, both languages). Do not report something as
   working because the code looks right.
