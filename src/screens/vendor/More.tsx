@@ -2,13 +2,30 @@ import { LangToggle } from '../../components/LangToggle';
 import { SampleDataNotice } from '../../components/SampleDataNotice';
 import { Screen } from '../../components/Screen';
 import { VENDOR_NAME } from '../../data/vendor';
+import { accountLabel } from '../../state/account';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 import type { VendorScreen } from '../../types';
 
 /** Vendor settings hub. */
 export function More() {
-  const { t, dispatch, isArabic, chevron, owner, salonWaitlist, unreadMessages, inbox } = useApp();
+  const {
+    t,
+    dispatch,
+    isArabic,
+    chevron,
+    owner,
+    salonWaitlist,
+    unreadMessages,
+    inbox,
+    session,
+    signOut,
+  } = useApp();
+  const signedIn = session.status === 'signedIn';
+  // Saloni's back office, for an administrator who came in through the salon
+  // side. Hidden for everybody else as a courtesy; the boundary is is_admin()
+  // inside every function behind it.
+  const isAdmin = session.profile?.role === 'admin';
 
   const go = (screen: VendorScreen) => () => dispatch({ type: 'go', screen });
 
@@ -18,6 +35,15 @@ export function More() {
   const waiting = salonWaitlist.source === 'live' ? salonWaitlist.entries.length : '·';
 
   const rows = [
+    ...(isAdmin
+      ? [
+          {
+            label: t.chAdmin,
+            value: t.adminOpen,
+            onSelect: () => dispatch({ type: 'pickMode', mode: 'admin' }),
+          },
+        ]
+      : []),
     {
       // Customers' questions, answered here and read in the customer's app.
       // Real for an owner; a visitor with no salon is told there is nobody to
@@ -139,6 +165,59 @@ export function More() {
             </span>
           </button>
         ))}
+      </div>
+
+      {/* Which account this portal belongs to, and the way to change it. The
+          portal only ever shows the salon the signed-in account owns, so an
+          owner testing two salons — or a customer account and a salon
+          account — needs to see who they are and to sign out from here,
+          without going through the customer side to do it. */}
+      <div
+        style={{
+          margin: '24px 24px 0',
+          padding: '14px 16px',
+          borderRadius: 14,
+          background: color.surfaceWarm,
+          border: `1px solid ${color.lineWarm}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft }}>
+            {signedIn ? t.vendorSignedInAs : t.vendorSignedOut}
+          </div>
+          {signedIn ? (
+            <div
+              className="ltr-run"
+              style={{
+                font: `600 13px ${font.sans}`,
+                color: color.ink,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {accountLabel(session, isArabic)}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => (signedIn ? signOut() : dispatch({ type: 'openAuth', reason: 'vendor' }))}
+          className="press"
+          style={{
+            flex: 'none',
+            padding: '9px 14px',
+            borderRadius: 12,
+            ...(signedIn
+              ? { border: `1.5px solid ${color.lineSand}`, color: color.danger, font: `600 12px ${font.sans}` }
+              : { background: color.gold, color: color.goldInk, font: `700 12px ${font.sans}` }),
+          }}
+        >
+          {signedIn ? t.authSignOut : t.authSignIn}
+        </button>
       </div>
 
       <button

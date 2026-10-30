@@ -1,6 +1,6 @@
 # Browser checks
 
-680 checks that drive the built app in real Chromium, in **both languages**, against a
+698 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -25,6 +25,7 @@ scrambled inside Arabic text.
 | `14-admin.mjs` | Saloni's own back office: that it is offered to nobody but an administrator, that a refusal cannot be sent without a reason, and that the owner reads that reason back |
 | `16-testing-feedback.mjs` | The owner's own testing list: typing staying in the field typed, visible field names, "See all", choosing a city, category and city lists on registration, Google Maps links, the two causes of "every time taken", and writing a review |
 | `17-assistant.mjs` | The Saloni Assistant and the people behind it: answers in both languages (Arabic typed with or without hamza), saying "not sure" rather than guessing, never claiming to have passed anything on, and handing over to a **real** conversation — the customer's question travels with them, unsent, and the browser never names the side it speaks for. Then the salon owner's and the administrator's inboxes |
+| `18-vendor-account.mjs` | Signing in and out from the salon owner's side: which account the portal belongs to, signing out from More, and a way in from the registration form for an owner whose salon already exists |
 | `15-search.mjs` | Finding a salon by name on Explore, the Arabic folding that decides whether the field feels like it works, and that a district or a tag is **not** matched |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about

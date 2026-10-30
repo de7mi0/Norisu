@@ -136,6 +136,29 @@ export function Profile() {
         })}
       </div>
 
+      {/* Saloni's back office, offered only to an administrator. A courtesy,
+          not the boundary: every function behind it checks is_admin(). */}
+      {session.profile?.role === 'admin' ? (
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'pickMode', mode: 'admin' })}
+          className="press"
+          style={{
+            display: 'block',
+            width: 'calc(100% - 48px)',
+            margin: '24px 24px 0',
+            textAlign: 'center',
+            padding: 14,
+            borderRadius: 14,
+            background: color.ink,
+            color: color.goldSoft,
+            font: `700 13px ${font.sans}`,
+          }}
+        >
+          {t.chAdmin} {chevron}
+        </button>
+      ) : null}
+
       <button
         type="button"
         onClick={() => (signedIn ? signOut() : dispatch({ type: 'openAuth' }))}

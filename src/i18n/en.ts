@@ -407,6 +407,9 @@ export const en = {
   deleteDone: 'Your account has been deleted.',
   deleteFailed: 'Could not delete the account. Check your connection and try again.',
   authSignOut: 'Sign out',
+  vendorSignedInAs: 'Signed in as',
+  vendorSignedOut: 'Sign in to manage your own salon.',
+  vendorHaveSalon: 'Already registered your salon? Sign in with the same account to manage it.',
   authGuest: 'Browsing as a guest',
   authGuestSub: 'Sign in to keep your bookings',
   authSignedInAs: 'Signed in',
@@ -627,6 +630,7 @@ export const en = {
   // what each action does to them rather than what it does to a row.
   // ---------------------------------------------------------------------
   chAdmin: 'Saloni admin',
+  adminOpen: 'Open',
   chAdminSub: 'Review, approve and manage salons',
 
   adminTitle: 'Salons',
