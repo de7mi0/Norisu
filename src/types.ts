@@ -14,6 +14,7 @@ export type CustomerScreen =
   | 'profile'
   | 'chat'
   | 'bot'
+  | 'inbox'
   | 'legal';
 
 /** Which half of the privacy-and-terms page is showing. */
@@ -30,13 +31,15 @@ export type VendorScreen =
   | 'v_more'
   | 'v_hours'
   | 'v_waitlist'
-  | 'v_earnings';
+  | 'v_earnings'
+  | 'v_inbox'
+  | 'v_thread';
 
 /**
  * Saloni's own back office. Two screens: the register of every salon, and one
  * salon with the four decisions on it.
  */
-export type AdminScreen = 'a_queue' | 'a_salon';
+export type AdminScreen = 'a_queue' | 'a_salon' | 'a_inbox' | 'a_thread';
 
 export type Screen = CustomerScreen | VendorScreen | AdminScreen;
 
@@ -262,13 +265,3 @@ export interface WaitlistEntry {
   initials: string;
 }
 
-/**
- * A chat bubble. Messages the user typed carry `text`; scripted messages carry
- * an `en`/`ar` pair so they follow the active language.
- */
-export interface ChatMessage {
-  who: 'me' | 'salon' | 'bot';
-  text?: string;
-  en?: string;
-  ar?: string;
-}

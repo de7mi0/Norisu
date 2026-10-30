@@ -157,7 +157,11 @@ export function Auth() {
               margin: '0 0 16px',
             }}
           >
-            {state.authReason === 'vendor' ? t.authWhyVendor : t.authWhyBooking}
+            {state.authReason === 'vendor'
+              ? t.authWhyVendor
+              : state.authReason === 'message'
+                ? t.authWhyMessage
+                : t.authWhyBooking}
           </p>
         ) : null}
 

@@ -60,6 +60,27 @@ check('a payload with no services still reads as a sentence',
 check('a missing hold falls back rather than saying NaN',
       /Held for you for \d+ minutes/.test(bare.body), bare.body);
 
+// A message in a conversation (0025), not an offer. The old worker composed
+// every row as an offer, which is why 0025 ships with message pushes off.
+const chat = {
+  kind: 'message',
+  conversation_id: '7b1e0c44-1d2a-4f39-a6d0-5e8c2f91b3aa',
+  from: { en: 'Maison Noir', ar: 'ميزون نوار' },
+  preview: 'Yes, 6 is fine.',
+  url: 'https://de7mi0.github.io/Norisu/',
+};
+const chatEn = composeMessage(chat, 'en');
+const chatAr = composeMessage(chat, 'ar');
+check('a message is titled with who wrote it, in the reader\'s language',
+      chatEn.title === 'Maison Noir' && chatAr.title === 'ميزون نوار', chatAr.title);
+check('a message shows what was said, and nothing about a seat',
+      chatEn.body === 'Yes, 6 is fine.' && !/seat|موعد/.test(chatEn.title + chatAr.title), chatEn.body);
+check('one notification per conversation, so a second message replaces the first',
+      chatEn.tag === `chat:${chat.conversation_id}` && chatEn.url === chat.url);
+const bareChat = composeMessage({ kind: 'message' }, 'ar');
+check('a message with nothing in it still reads as a sentence',
+      bareChat.title === 'رسالة جديدة' && bareChat.body === 'رسالة جديدة', bareChat.title);
+
 const failed = results.filter((r) => !r).length;
 console.log(`\n${results.length - failed}/${results.length} checks passed`);
 process.exit(failed ? 1 : 0);

@@ -59,6 +59,8 @@ export const PROFILE_ROWS: ProfileRow[] = [
   // invented count next to a real name reads as though both were real.
   { label: 'Notifications', arLabel: 'الإشعارات', value: 'On', arValue: 'مفعّلة' },
   { label: 'Language', arLabel: 'اللغة', value: 'English', arValue: 'العربية' },
+  // Real: conversations with salons and with Saloni (0025).
+  { label: 'Messages', arLabel: 'الرسائل', value: '', arValue: '' },
   { label: 'Help & support', arLabel: 'المساعدة والدعم', value: '', arValue: '' },
 ];
 

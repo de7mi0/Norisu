@@ -8,7 +8,7 @@ import type { VendorScreen } from '../../types';
 
 /** Vendor settings hub. */
 export function More() {
-  const { t, dispatch, isArabic, chevron, owner, salonWaitlist } = useApp();
+  const { t, dispatch, isArabic, chevron, owner, salonWaitlist, unreadMessages, inbox } = useApp();
 
   const go = (screen: VendorScreen) => () => dispatch({ type: 'go', screen });
 
@@ -18,6 +18,19 @@ export function More() {
   const waiting = salonWaitlist.source === 'live' ? salonWaitlist.entries.length : '·';
 
   const rows = [
+    {
+      // Customers' questions, answered here and read in the customer's app.
+      // Real for an owner; a visitor with no salon is told there is nobody to
+      // answer for, rather than shown invented conversations.
+      label: t.msgInboxTitle,
+      value:
+        inbox.source !== 'live'
+          ? ''
+          : unreadMessages > 0
+            ? `${unreadMessages} ${t.msgNew}`
+            : `${inbox.items.length}`,
+      onSelect: go('v_inbox'),
+    },
     {
       // Real per-salon settings, so the value shown is the real one.
       label: t.hoursTitle,

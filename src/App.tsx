@@ -23,6 +23,7 @@ import { AssistantBot } from './screens/customer/AssistantBot';
 import { Bookings } from './screens/customer/Bookings';
 import { Chat } from './screens/customer/Chat';
 import { Chooser } from './screens/customer/Chooser';
+import { Inbox } from './screens/customer/Inbox';
 import { Confirmation } from './screens/customer/Confirmation';
 import { Home } from './screens/customer/Home';
 import { Legal } from './screens/customer/Legal';
@@ -39,6 +40,7 @@ import { Earnings } from './screens/vendor/Earnings';
 import { Gallery } from './screens/vendor/Gallery';
 import { Hours } from './screens/vendor/Hours';
 import { More } from './screens/vendor/More';
+import { VendorInbox, VendorThread } from './screens/vendor/Messages';
 import { Onboarding } from './screens/vendor/Onboarding';
 import { Services } from './screens/vendor/Services';
 import { Staff } from './screens/vendor/Staff';
@@ -47,6 +49,7 @@ import { Waitlist } from './screens/vendor/Waitlist';
 
 import { AdminRegister } from './screens/admin/Register';
 import { AdminSalon } from './screens/admin/AdminSalon';
+import { SupportInbox, SupportThread } from './screens/admin/Support';
 
 const CUSTOMER_SCREENS: Record<CustomerScreen, () => React.ReactElement> = {
   home: Home,
@@ -60,6 +63,7 @@ const CUSTOMER_SCREENS: Record<CustomerScreen, () => React.ReactElement> = {
   profile: Profile,
   chat: Chat,
   bot: AssistantBot,
+  inbox: Inbox,
   legal: Legal,
 };
 
@@ -75,11 +79,15 @@ const VENDOR_SCREENS: Record<VendorScreen, () => React.ReactElement> = {
   v_more: More,
   v_waitlist: Waitlist,
   v_earnings: Earnings,
+  v_inbox: VendorInbox,
+  v_thread: VendorThread,
 };
 
 const ADMIN_SCREENS: Record<AdminScreen, () => React.ReactElement> = {
   a_queue: AdminRegister,
   a_salon: AdminSalon,
+  a_inbox: SupportInbox,
+  a_thread: SupportThread,
 };
 
 function CurrentScreen() {
@@ -177,8 +185,17 @@ function Navigation() {
 
 /** Floating overlays: waitlist banner, assistant button, and the toast. */
 function Overlays() {
-  const { t, state, dispatch, arrow, isArabic, openConversation, myWaitlist, claimSeat } =
-    useApp();
+  const {
+    t,
+    state,
+    dispatch,
+    arrow,
+    isArabic,
+    openConversation,
+    myWaitlist,
+    claimSeat,
+    unreadMessages,
+  } = useApp();
 
   const onCustomerTabScreen =
     state.mode === 'customer' && CUSTOMER_TAB_SCREENS.includes(state.screen as CustomerScreen);
@@ -267,7 +284,9 @@ function Overlays() {
         <button
           type="button"
           onClick={() => openConversation('bot')}
-          aria-label={t.assistantName}
+          aria-label={
+            unreadMessages > 0 ? `${t.assistantName} · ${unreadMessages} ${t.msgUnread}` : t.assistantName
+          }
           className="press"
           style={{
             position: 'absolute',
@@ -287,6 +306,28 @@ function Overlays() {
           }}
         >
           <span aria-hidden="true">🤖</span>
+          {/* A reply waiting from a salon or from Saloni. The assistant is
+              where "Messages" is, so this is where it is announced. */}
+          {unreadMessages > 0 ? (
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: 2,
+                insetInlineEnd: 2,
+                minWidth: 18,
+                height: 18,
+                padding: '0 5px',
+                borderRadius: 9,
+                background: color.gold,
+                color: color.goldInk,
+                font: `700 10px/18px ${font.sans}`,
+                textAlign: 'center',
+              }}
+            >
+              {unreadMessages}
+            </span>
+          ) : null}
         </button>
       ) : null}
 

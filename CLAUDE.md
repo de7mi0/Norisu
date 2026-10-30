@@ -90,7 +90,7 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              614 Chromium checks in both languages; see its README
+  browser-tests/              680 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -114,6 +114,7 @@ src/
     photos.ts               ★ the bucket, salon_media, and the path that is the permission
     commission.ts           ★ what the salon owes Saloni, from commission_statement()
     admin.ts                ★ Saloni's own register, and the four decisions on a salon
+    conversations.ts        ★ messages between a customer and a salon, or Saloni (0025)
     salons/services/staff/reviews/payments/vendor.ts   bundled demo data (fallback)
   i18n/
     en.ts / ar.ts             dictionaries (identical keys, enforced by the `Dictionary` type)
@@ -124,19 +125,25 @@ src/
     context.ts                context object + `useApp()` hook + `dateAtOffset`
     useSession.ts             who is signed in; listens to Supabase, does not drive it
     account.ts                display name / label / initials for the signed-in user
-    replies.ts                scripted chat + assistant content, delays, input caps
+    assistant.ts            ★ the Saloni Assistant: its answers in both languages, the
+                              keyword matching, and when it hands over to a person
+    replies.ts                two delays and a field cap — the canned replies are gone
   components/                 PhoneFrame, Screen, TabBar, SheetModal, NameSheet,
                               SampleDataNotice, Conversation, Toast, LangToggle, icons,
                               Photo.tsx — a photograph where a placeholder tile was,
                               DeleteAccountSheet.tsx — the store-required deletion,
-                              CloseSalonSheet.tsx — the way out of owning one
+                              CloseSalonSheet.tsx — the way out of owning one,
+                              ThreadView.tsx + InboxList.tsx — one conversation and a
+                              list of them, shared by all three modes
   screens/Auth.tsx            sign-in sheet; floats over any screen in either mode
-  screens/customer/           13 screens, including Legal.tsx — the privacy policy and
+  screens/customer/           14 screens (Inbox.tsx lists conversations; Chat.tsx is one),
+                              including Legal.tsx — the privacy policy and
                               terms, also reachable at ?legal without signing in
   screens/admin/              Register.tsx (every salon, the ones awaiting a decision
-                              first) and AdminSalon.tsx (one salon, four decisions).
+                              first), AdminSalon.tsx (one salon, four decisions) and
+                              Support.tsx (customers who asked for a person).
                               Reached only by an account whose profile says admin
-  screens/vendor/             10 screens, plus AppointmentSheet.tsx (the owner's actions),
+  screens/vendor/             10 screens and Messages.tsx (the salon's inbox), plus AppointmentSheet.tsx (the owner's actions),
                               BlockSheet.tsx (taking time off sale),
                               WalkInSheet.tsx (the salon's own booking),
                               appointment.tsx (the row the dashboard and calendar share)
@@ -190,6 +197,9 @@ supabase/
                                       its Google Maps link, held to Google's hosts
   migrations/0024_public_reviews.sql  public_reviews(): a salon's reviews for its
                                       page, with "Nora A." and nothing else about her
+  migrations/0025_conversations.sql   messages: customer ↔ salon, customer ↔ Saloni.
+                                      No table access at all; five functions that
+                                      decide the caller's side themselves
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
@@ -394,9 +404,9 @@ so the e-mail was the only place Arabic genuinely could not reach.
 
 ## 7. Database
 
-16 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
+18 tables — `profiles, salons, salon_media, services, staff, staff_services, working_hours,
 time_off, bookings, booking_items, waitlist_entries, waitlist_offers, notifications,
-notification_settings, push_subscriptions, reviews` — plus a `salon_ratings` view and the
+notification_settings, push_subscriptions, reviews, conversations, messages` — plus a `salon_ratings` view and the
 functions in 0003–0012 —
 `available_slots()`, `salon_day()`, `salon_stats()`, `salon_reviews()`, `reply_to_review()`,
 `create_booking()`, `reschedule_booking()`, 0009's waitlist set, 0010's outbox set,
@@ -405,8 +415,9 @@ functions in 0003–0012 —
 `commission_statement()`, 0019's `close_my_salon()`, 0020's `my_closed_salon()` and
 0021's back office — `admin_salons()`, `admin_verify_salon()`, `admin_publish_salon()`,
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
-own `my_salon_review()`.
-30 RLS policies (plus four on storage.objects). 130 assertions.
+own `my_salon_review()`, and 0025's conversations — `start_conversation()`,
+`post_message()`, `conversation_messages()`, `my_conversations()` and `staff_inbox()`.
+30 RLS policies (plus four on storage.objects). 136 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -597,6 +608,18 @@ disguises, one of them critical:
     published would have carried its old refusal to every visitor. Changing the commercial
     registration number clears the refusal by trigger, so the fix an owner is told to make is
     the fix that re-queues them. Assertions 124 and 125.
+33. **A message says who sent it because the database says so, not the browser.**
+    `conversations` and `messages` have no row policy and no grant to any browser role —
+    not even SELECT. Everything goes through five `security definer` functions (0025) that
+    work out the caller's side from who they are: the conversation's customer writes as
+    `customer`, the salon's owner as `salon`, an administrator as `saloni` **and only in a
+    support thread**. A side taken from the request would let a customer write "we'll refund
+    you in full" as the salon. Administrators do not read conversations between a customer
+    and a salon; the salon sees the customer's display name and nothing else, guarantee 9
+    held for a new route to the same profile. A salon cannot start a conversation, only
+    answer one, so a booking list never becomes a mailing list. Thirty messages per ten
+    minutes and five new conversations a day per account. Assertions 131–136, each checked
+    against twelve deliberately broken versions of 0025.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -694,7 +717,8 @@ failure means the key is already public and must be replaced in Supabase, not ju
 | **Privacy policy and terms** | **Written, and a draft.** In the app in both languages, from the Profile screen and at `?legal` — a URL a store reviewer opens with no account. Drafted from the schema, not a template. **No lawyer has read it**, and three blanks are named on the page itself. See §10. |
 | **Saloni's commission** | **Real, as a record.** A rate per salon and a snapshot per booking (0018); the vendor More hub opens a screen showing what is owed this month and last, from `commission_statement()`. **Nothing is collected** — this is what an invoice will say, not a payment. It replaced a "Payouts · SAR 18,240" row that was invented. |
 | Payment | Simulated. **No card details are ever requested or collected.** |
-| Salon chat + Saloni Assistant | Scripted locally (`state/replies.ts`). Nothing is sent anywhere. |
+| **Messages** | **Real** (0025). A customer writes to a salon from its page, or to Saloni's team through the assistant; the owner answers from **More → Messages**, an administrator from **Support** in the back office. One thread per customer per salon, read back every few seconds while open — **there is no realtime channel**, so a reply takes up to six seconds to appear. Unread replies show on the assistant button, on Profile → Messages and in the portal. **Push alerts for messages are built and switched off** (`notification_settings.message_push`) until the worker is redeployed — see `supabase/README.md`. |
+| **Saloni Assistant** | **A guide, not AI.** Answers from a written FAQ in both languages (`state/assistant.ts`), matching typed questions by keyword after the same Arabic folding search uses. It says "not sure" rather than guessing and offers a person; it never claims to have passed anything on, which the old script did. What is typed to it never leaves the phone. Built so a model can replace `answerFor()` later and nothing else. |
 | **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
 | **Finding a salon** | **Real.** A search field at the top of Explore, matching the salon's **name** in both languages — and folding Arabic so `ورده` finds `وردة`. It filters the catalogue already in memory rather than querying, so it works on the sample data too. **Names only, deliberately**: district, tags and category were matched in the first version and deliberately removed, and service names are not searched at all. |
 | **Writing a review** | **Real.** A past booking the salon marked completed offers "Write a review"; a visit not yet completed says why it cannot be reviewed yet. Final once posted. The salon page reads them through `public_reviews()` (0024) with a first name and initial. **A salon that never marks visits complete never gets reviewed** — that is the policy working, and the thing to watch. |
@@ -1054,6 +1078,13 @@ the code before them.
   beyond the latest state of each salon. Both are worth adding before more than two people share
   the job. And an administrator is still made by hand in the Supabase dashboard
   (`update profiles set role = 'admin'`), deliberately: see guarantee 31.
+- **Messages: what is not built.** No realtime — threads are re-read every six seconds while
+  open and inboxes every fifteen. No attachments or photographs in a message. No way to mark
+  a support thread resolved: it is one thread per customer forever, like a messaging app. A
+  push alert opens the app, not the conversation itself. Nothing moderates what is written,
+  beyond the length and rate caps. And an administrator cannot see a customer–salon thread
+  even when it is the subject of a complaint — deliberate, and stated in the privacy policy;
+  the customer can quote it in their support thread.
 - **One salon per owner.** `createSalon` refuses a second, because every portal screen assumes one
   and a second would silently never be shown. The schema permits more.
 - **The vendor portal is now entirely per-owner.** Registration, hours, interval, services, team,
@@ -1106,7 +1137,15 @@ the code before them.
    queue and a review queue somebody notices. **Do this before a second person starts using
    the back office**, because two people each assuming the other told the salon is the failure
    mode here.
-7. **Make yourself and your partner administrators.** One `update` per person in the Supabase
+7. **Turn on message alerts** once 0025 is applied: redeploy the worker, then flip
+   `message_push` — two steps, in that order, in `supabase/README.md`. Until then a reply is
+   only noticed when somebody opens the app.
+8. **An AI assistant, when wanted.** The guided assistant answers from `state/assistant.ts`;
+   swapping `answerFor()` for a call to a model (an Edge Function holding an Anthropic key,
+   never the browser) changes nothing else — the handoff to a person stays as it is. It costs
+   money per conversation and needs a decision about what the model may see; `norisu-ai` is
+   the repository reserved for it.
+9. **Make yourself and your partner administrators.** One `update` per person in the Supabase
    SQL Editor — `supabase/README.md` has it click by click. Nothing in the app can do this,
    deliberately: see guarantee 31.
 
@@ -1114,10 +1153,10 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (130 assertions);
-  UI changes with `scripts/browser-tests/` (614 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (136 assertions);
+  UI changes with `scripts/browser-tests/` (680 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
-  (17 checks, both languages). Do not report something as
+  (21 checks, both languages). Do not report something as
   working because the code looks right.
 - **A security assertion that cannot fail is worse than none.** Every assertion from 53 onward was
   run against a database with its own protection removed, and each fails there. Do the same for

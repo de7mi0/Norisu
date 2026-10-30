@@ -22,8 +22,9 @@ import type {
 } from '../data/owner';
 import type { Action, AppState } from './appReducer';
 import type { Dictionary } from '../i18n';
-import type { Booking, Salon, Service, StaffMember } from '../types';
-import type { BotTopicKey } from './replies';
+import type { Booking, CustomerScreen, Salon, Service, StaffMember } from '../types';
+import type { AssistantAction, TopicKey } from './assistant';
+import type { Inbox, Thread } from '../data/conversations';
 import type { SessionValue } from './useSession';
 
 /**
@@ -211,11 +212,25 @@ export interface AppContextValue {
 
   /** Shows a transient toast; a second call replaces the first. */
   flash: (message: string) => void;
-  sendChat: () => void;
   sendBot: () => void;
-  pickBotTopic: (key: BotTopicKey) => void;
+  pickBotTopic: (key: TopicKey) => void;
+  /** What a button under one of the assistant's messages does. */
+  runBotAction: (action: AssistantAction) => void;
+
+  /** This mode's conversations: the customer's own, a salon's, or Saloni's support. */
+  inbox: Inbox;
+  /** The messages of the conversation on screen. */
+  thread: Thread;
+  unreadMessages: number;
+  /** A conversation with a salon, or with Saloni when `salonId` is null. */
+  openSalonChat: (
+    salonId: string | null,
+    options: { from: CustomerScreen; draft?: string },
+  ) => Promise<void>;
+  openInboxThread: (conversationId: string) => void;
+  sendThreadMessage: () => Promise<void>;
   confirmBooking: () => void | Promise<void>;
-  openConversation: (target: 'chat' | 'bot') => void;
+  openConversation: (target: 'bot' | 'inbox') => void;
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);
