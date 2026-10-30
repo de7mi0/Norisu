@@ -90,7 +90,7 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              688 Chromium checks in both languages; see its README
+  browser-tests/              698 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
 src/
   App.tsx                     screen router, tab bars, floating overlays
@@ -702,7 +702,7 @@ failure means the key is already public and must be replaced in Supabase, not ju
 | **The claim link** | **Real.** `?claim=<token>` in the push claims that exact seat, checked for ownership so a forwarded link is worthless. |
 | **Salon registration** | **Real.** A salon owner signs up in the app; the row is theirs, created unverified and unpublished. Default opening hours come with it. |
 | **Business profile** | **Real.** The same screen becomes an editor afterwards, and shows whether the salon is awaiting review, verified, live — or **turned down, with the reason Saloni gave**, and a line saying that correcting the registration number re-queues it. Approval itself is not the owner's to make. |
-| **Saloni's back office** | **Real.** A third way in on the opening screen, shown only to an account whose profile says `admin`: the register of every salon with the ones awaiting a decision first, and a screen per salon carrying the commercial registration number, the owner's address, the review trail and five actions — approve, publish, turn down, close, and set the commission rate. Every one of them is an `is_admin()`-guarded function, because an admin is `authenticated` like everybody else (guarantee 31). **No notification is sent to the owner by any of it.** |
+| **Saloni's back office** | **Real.** A third way in on the opening screen, and a **Saloni admin** button on the customer Profile and the vendor More screen — all shown only to an account whose profile says `admin`: the register of every salon with the ones awaiting a decision first, and a screen per salon carrying the commercial registration number, the owner's address, the review trail and five actions — approve, publish, turn down, close, and set the commission rate. Every one of them is an `is_admin()`-guarded function, because an admin is `authenticated` like everybody else (guarantee 31). **No notification is sent to the owner by any of it.** |
 | **Vendor opening hours + booking interval** | **Real.** An owner edits `working_hours` and `salons.slot_step_minutes`; the booking screen obeys them immediately. |
 | **Blocking time out** | **Real.** From the calendar, an owner takes a period off sale — one stylist or the whole salon. `time_off` was already honoured by `available_slots()` and `create_booking()`, so a blocked hour vanishes from the customer's picker and cannot be booked even through the API. |
 | **Vendor services and team** | **Real for an owner.** Add, edit, hide and remove, written to `services` and `staff`. Removing archives — bookings reference what they were made at. |
@@ -1154,7 +1154,7 @@ the code before them.
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (136 assertions);
-  UI changes with `scripts/browser-tests/` (688 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (698 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (21 checks, both languages). Do not report something as
   working because the code looks right.

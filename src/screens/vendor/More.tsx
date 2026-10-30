@@ -22,6 +22,10 @@ export function More() {
     signOut,
   } = useApp();
   const signedIn = session.status === 'signedIn';
+  // Saloni's back office, for an administrator who came in through the salon
+  // side. Hidden for everybody else as a courtesy; the boundary is is_admin()
+  // inside every function behind it.
+  const isAdmin = session.profile?.role === 'admin';
 
   const go = (screen: VendorScreen) => () => dispatch({ type: 'go', screen });
 
@@ -31,6 +35,15 @@ export function More() {
   const waiting = salonWaitlist.source === 'live' ? salonWaitlist.entries.length : '·';
 
   const rows = [
+    ...(isAdmin
+      ? [
+          {
+            label: t.chAdmin,
+            value: t.adminOpen,
+            onSelect: () => dispatch({ type: 'pickMode', mode: 'admin' }),
+          },
+        ]
+      : []),
     {
       // Customers' questions, answered here and read in the customer's app.
       // Real for an owner; a visitor with no salon is told there is nobody to

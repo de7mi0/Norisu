@@ -630,6 +630,7 @@ export const en = {
   // what each action does to them rather than what it does to a row.
   // ---------------------------------------------------------------------
   chAdmin: 'Saloni admin',
+  adminOpen: 'Open',
   chAdminSub: 'Review, approve and manage salons',
 
   adminTitle: 'Salons',
