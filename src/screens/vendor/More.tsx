@@ -20,6 +20,7 @@ export function More() {
     inbox,
     session,
     signOut,
+    salons,
   } = useApp();
   const signedIn = session.status === 'signedIn';
   // Saloni's back office, for an administrator who came in through the salon
@@ -69,7 +70,8 @@ export function More() {
     },
     {
       label: isArabic ? 'معرض الصور' : 'Photo gallery',
-      value: isArabic ? '5 صور' : '5 photos',
+      // "5 photos" used to be shown to every owner, whatever they had uploaded.
+      value: owner.salon ? '' : isArabic ? '5 صور' : '5 photos',
       onSelect: go('v_gallery'),
     },
     {
@@ -83,7 +85,13 @@ export function More() {
     },
     {
       label: isArabic ? 'المراجعات' : 'Reviews',
-      value: '4.9 ★',
+      // The salon's real score once it is published; "4.9 ★" was invented.
+      value: owner.salon
+        ? (() => {
+            const rating = salons.find((s) => s.id === owner.salon?.id)?.rating;
+            return rating == null ? '' : `${rating.toFixed(1)} ★`;
+          })()
+        : '4.9 ★',
       onSelect: go('v_reviews'),
     },
     {
@@ -131,7 +139,19 @@ export function More() {
           <h1 style={{ font: `600 22px ${font.serif}`, margin: 0 }}>
             {owner.salon ? (isArabic ? owner.salon.nameAr : owner.salon.name) : VENDOR_NAME}
           </h1>
-          <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft }}>{t.verified}</div>
+          {/* Where the salon really stands. This said "Al Olaya, Riyadh ·
+              Verified" to every owner, including one still awaiting review. */}
+          <div style={{ font: `500 11px ${font.sans}`, color: color.mutedSoft }}>
+            {!owner.salon
+              ? t.verified
+              : owner.salon.review?.rejectedAt
+                ? t.ownerStatusRejected
+                : owner.salon.isPublished
+                  ? t.ownerStatusLive
+                  : owner.salon.isVerified
+                    ? t.ownerStatusVerified
+                    : t.ownerStatusAwaiting}
+          </div>
         </div>
         {/* The owner's way to change language. The portal followed whatever
             was chosen on the opening screen and offered no way to change it

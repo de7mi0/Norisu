@@ -2,9 +2,19 @@ import { DeleteAccountSheet } from '../../components/DeleteAccountSheet';
 import { NameSheet } from '../../components/NameSheet';
 import { Screen } from '../../components/Screen';
 import { PROFILE_ROWS } from '../../data/reviews';
+import { pushState } from '../../lib/push';
 import { useApp } from '../../state/context';
 import { accountInitials, accountLabel, accountName } from '../../state/account';
 import { color, font } from '../../theme';
+
+const NOTIFY_KEYS = {
+  on: 'notifyOn',
+  ask: 'notifyOff',
+  denied: 'notifyBlocked',
+  install: 'notifyInstall',
+  unsupported: 'notifyUnavailable',
+  off: 'notifyUnavailable',
+} as const;
 
 const ROLE_KEYS = {
   customer: 'authRoleCustomer',
@@ -87,10 +97,14 @@ export function Profile() {
           const isLanguage = row.label === 'Language';
           const isHelp = row.label === 'Help & support';
           const isMessages = row.label === 'Messages';
+          // Was a fixed "On" whatever the phone had allowed.
+          const isNotifications = row.label === 'Notifications';
           // The rest of these rows are still demo values; this one is real now,
           // so it shows the account rather than the persona it used to.
           const isDetails = row.label === 'Personal details';
-          const value = isMessages
+          const value = isNotifications
+            ? t[NOTIFY_KEYS[pushState()]]
+            : isMessages
             ? unreadMessages > 0
               ? `${unreadMessages} ${t.msgNew}`
               : ''

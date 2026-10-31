@@ -4,7 +4,8 @@ import { BottomBar, Screen } from '../../components/Screen';
 import { ChatIcon, PhoneIcon, PinIcon } from '../../components/icons';
 import { SALON_PHONE } from '../../data/salons';
 import { priceNow } from '../../data/services';
-import { localizeUnits, salonCategory } from '../../i18n';
+import { localizeUnits, salonCategory, weekdayLabel } from '../../i18n';
+import { openingStatus } from '../../lib/hours';
 import { mapsLink } from '../../lib/maps';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
@@ -27,6 +28,7 @@ export function SalonDetail() {
     openSalonChat,
     catalogSource,
   } = useApp();
+  const opening = salon.hours ? openingStatus(salon.hours) : null;
 
   // The sample salons keep their sample number so the offline demo still has
   // a Call button; a real salon shows its own, or none if it gave none.
@@ -261,19 +263,51 @@ export function SalonDetail() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <div
-              style={{
-                flex: 1,
-                background: color.surfaceWarm,
-                border: `1px solid ${color.lineWarm}`,
-                borderRadius: 12,
-                padding: 10,
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ font: `700 12px ${font.sans}` }}>{t.openNow}</div>
-              <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>{t.until}</div>
-            </div>
+            {/* From the salon's own hours, in Riyadh time. This used to read
+                "Open now · until 11:00 PM" for every salon at every hour; with
+                no hours known it now says nothing rather than guess. */}
+            {opening ? (
+              <div
+                style={{
+                  flex: 1,
+                  background: opening.open ? color.tealSoft : color.surfaceWarm,
+                  border: `1px solid ${opening.open ? color.tealLine : color.lineWarm}`,
+                  borderRadius: 12,
+                  padding: 10,
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    font: `700 12px ${font.sans}`,
+                    color: opening.open ? color.teal : color.ink,
+                  }}
+                >
+                  {opening.open ? t.openNow : t.closedNow}
+                </div>
+                <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>
+                  {opening.open ? (
+                    <>
+                      {t.openUntil} <span className="ltr-run">{opening.closes}</span>
+                    </>
+                  ) : opening.opens === null ? (
+                    t.noHoursSet
+                  ) : (
+                    <>
+                      {opening.inDays === 0
+                        ? t.opensToday
+                        : opening.inDays === 1
+                          ? t.opensTomorrow
+                          : `${t.opensOn} ${weekdayLabel(
+                              new Date(Date.now() + opening.inDays * 86400000),
+                              state.lang,
+                            )}`}{' '}
+                      <span className="ltr-run">{opening.opens}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
             <div
               style={{
                 flex: 1,
@@ -288,7 +322,7 @@ export function SalonDetail() {
                 {salonCategory(salon, state.lang)}
               </div>
               <div style={{ font: `500 10px ${font.sans}`, color: color.mutedSoft }}>
-                {t.privateRooms}
+                {t.salonCategory}
               </div>
             </div>
           </div>
