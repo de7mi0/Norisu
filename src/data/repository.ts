@@ -1,3 +1,4 @@
+import type { OpeningHours } from '../lib/hours';
 import { LOAD_TIMEOUT_MS, supabase } from '../lib/supabase';
 import type {
   SalonMediaRow,
@@ -165,7 +166,8 @@ export async function loadCatalog(): Promise<Catalog> {
 async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
   if (!supabase) throw new Error('Supabase is not configured');
 
-  const [salonsResult, servicesResult, staffResult, ratingsResult, mediaResult, locationResult] = await Promise.all([
+  const [salonsResult, servicesResult, staffResult, ratingsResult, mediaResult, locationResult, hoursResult] =
+    await Promise.all([
     supabase
       .from('salons')
       // Named rather than `*` since 0015: SELECT on `cr_number` is revoked from
@@ -220,6 +222,16 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
       .eq('is_published', true)
       .abortSignal(signal)
       .returns<SalonLocationRow[]>(),
+    // The salon's own hours, for "Open now · until 23:00" on its page. Like
+    // the photographs, decoration the catalogue must not depend on: a failure
+    // here means the page says nothing about opening times rather than
+    // inventing them, which is what it used to do for every salon.
+    supabase
+      .from('working_hours')
+      .select('salon_id, day_of_week, opens_at, closes_at')
+      .is('staff_id', null)
+      .abortSignal(signal)
+      .returns<{ salon_id: string; day_of_week: number; opens_at: string; closes_at: string }[]>(),
   ]);
 
   const failure =
@@ -260,8 +272,19 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
     (locationResult.error ? [] : (locationResult.data ?? [])).map((row) => [row.id, row]),
   );
 
-  const salons = (salonsResult.data ?? []).map((row, index) =>
-    mapSalon(
+  const hoursBySalon: Record<string, OpeningHours[]> | null = hoursResult.error ? null : {};
+  if (hoursBySalon) {
+    for (const row of hoursResult.data ?? []) {
+      (hoursBySalon[row.salon_id] ??= []).push({
+        day: row.day_of_week,
+        opens: row.opens_at,
+        closes: row.closes_at,
+      });
+    }
+  }
+
+  const salons = (salonsResult.data ?? []).map((row, index) => ({
+    ...mapSalon(
       row,
       index,
       servicesBySalon[row.id] ?? [],
@@ -269,7 +292,10 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
       photosBySalon[row.id] ?? [],
       locationBySalon.get(row.id),
     ),
-  );
+    // Known and empty (a salon that set no hours) reads as closed; unknown
+    // because the read failed stays unknown.
+    hours: hoursBySalon ? (hoursBySalon[row.id] ?? []) : undefined,
+  }));
 
   return { salons, servicesBySalon, staffBySalon, photosBySalon };
 }

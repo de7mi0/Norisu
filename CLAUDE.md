@@ -90,8 +90,9 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              698 Chromium checks in both languages; see its README
+  browser-tests/              714 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
+  test-hours.mjs              "Open now" from a salon's own hours, in Riyadh time
 src/
   App.tsx                     screen router, tab bars, floating overlays
   theme.ts                    colour / type / placeholder-tile tokens
@@ -102,6 +103,7 @@ src/
     auth.ts                 ★ passcode sign-in, identifier normalisation, profile reads
     images.ts               ★ resize, orientation, and removing a photograph's GPS
     search.ts               ★ finding a salon by name only; folds Arabic so it matches
+    hours.ts                ★ open now / opens at, from working_hours, in Riyadh time
     database.types.ts         row types for the tables the app reads
   data/
     repository.ts           ★ loads the catalogue from Supabase, maps rows → app types
@@ -724,6 +726,7 @@ failure means the key is already public and must be replaced in Supabase, not ju
 | **Writing a review** | **Real.** A past booking the salon marked completed offers "Write a review"; a visit not yet completed says why it cannot be reviewed yet. Final once posted. The salon page reads them through `public_reviews()` (0024) with a first name and initial. **A salon that never marks visits complete never gets reviewed** — that is the policy working, and the thing to watch. |
 | **Cities and location** | **Real.** Explore chooses a city (27, both languages, remembered on the device); a salon lists every city it serves and may give a Google Maps link or its pinned position (0023). "Call" and "Directions" use the salon's own number and location and are hidden when it gave none. |
 | **Framing a photograph** | **Real.** Drag, zoom and a Wide/Square/Original shape before upload; only the framed pixels are drawn on the canvas that strips EXIF. |
+| **Open now** | **Real.** The salon page says "Open now · until 23:00" or "Closed now · opens tomorrow at 10:00" from the salon's own `working_hours`, in Riyadh time (`lib/hours.ts`). It said "Open now · until 11:00 PM" and "Private rooms" for every salon until an audit found it; hours that fail to load are not guessed at. Explore's list is headed "Salons", not "Near you" — the app does not know where anybody is. |
 | **Availability** | **Real.** Times come from `working_hours`, the chosen services' length and the bookings already made, via `available_slots()`. Taken times are shown greyed rather than hidden. Falls back to the sample grid with no backend. |
 
 ---
@@ -1154,7 +1157,7 @@ the code before them.
 ## 12. Working conventions
 
 - **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (136 assertions);
-  UI changes with `scripts/browser-tests/` (698 checks, both languages), and the words a
+  UI changes with `scripts/browser-tests/` (714 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (21 checks, both languages). Do not report something as
   working because the code looks right.

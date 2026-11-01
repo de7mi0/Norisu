@@ -45,6 +45,12 @@ export type Screen = CustomerScreen | VendorScreen | AdminScreen;
 
 export interface Salon {
   id: string;
+  /**
+   * The salon's own opening hours, from `working_hours`. Absent for the
+   * bundled sample salons and when the read failed, in which case the salon
+   * page says nothing about whether it is open rather than guessing.
+   */
+  hours?: import('./lib/hours').OpeningHours[];
   name: string;
   ar: string;
   tags: string;
