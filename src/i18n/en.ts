@@ -110,7 +110,12 @@ export const en = {
 
   booked: "You're booked!",
   bookingRef: 'Booking ref',
-  paid: 'Paid',
+  // Was "Paid" — nothing is paid through Saloni.
+  paid: 'To pay at the salon',
+  remindMe: '🔔 Remind me before my appointment',
+  remindHint: 'We send a notification the day before and 2 hours before.',
+  remindOn: 'Reminders are on ✓',
+  remindRefused: 'Notifications are off for Saloni on this device, so we can’t remind you here.',
   viewBookings: 'View my bookings',
   backHome: 'Back to home',
 
@@ -532,11 +537,11 @@ export const en = {
 
   legalPrivPushH: 'Notifications',
   legalPrivPushB:
-    'If you let Saloni notify you, your browser or phone gives it an address to send to, and that address is stored against your account. It is used for two things: telling you a seat has come free on a waitlist you joined, and telling you a salon or the Saloni team has replied to a message — with the first words of that reply, as any messaging app shows. Turning notifications off in your device settings stops them, and deleting your account removes the address.',
+    'If you let Saloni notify you, your browser or phone gives it an address to send to, and that address is stored against your account. It is used to tell you: that your booking is confirmed, moved, or cancelled by the salon; a reminder the day before and two hours before; that a seat has come free on a waitlist you joined; that a salon or the Saloni team has replied to a message, with the first words of the reply; and, if you run a salon, what Saloni decided about it. The same notices can also be sent to the e-mail address you sign in with. Nothing is ever sent to advertise. Turning notifications off in your device settings stops them, and deleting your account removes the address.',
 
   legalPrivWhereH: 'Where it is held',
   legalPrivWhereB:
-    'The database, the sign-in service and the photographs are hosted by [[Supabase]] in its Frankfurt, Germany data centre, so your data is stored outside Saudi Arabia, in the European Union. The app itself is served as a web page by [[GitHub Pages]]. Its typefaces are part of the app, so opening it contacts nobody else — no font service, no advertising network, no analytics company.',
+    'The database, the sign-in service and the photographs are hosted by [[Supabase]] in its Frankfurt, Germany data centre, so your data is stored outside Saudi Arabia, in the European Union. The app itself is served as a web page by [[GitHub Pages]]. Its typefaces are part of the app, so opening it contacts nobody else — no font service, no advertising network, no analytics company. When Saloni e-mails you, the message goes through [[Resend]], an e-mail delivery service, which handles your address and that message to deliver it and nothing else.',
 
   legalPrivKeepH: 'How long it is kept',
   legalPrivKeepB:

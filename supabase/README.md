@@ -494,7 +494,12 @@ select
   (select count(*) = 1 from information_schema.columns
     where table_name = 'salons' and column_name = 'cities') as "0023 cities & map",
   bool_or(p.proname = 'public_reviews')              as "0024 reviews",
-  bool_or(p.proname = 'start_conversation')          as "0025 messages"
+  bool_or(p.proname = 'start_conversation')          as "0025 messages",
+  (select count(*) = 1 from information_schema.columns
+    where table_name = 'salon_media' and column_name = 'alt_text_ar') as "0026 photo descriptions",
+  (select count(*) = 1 from information_schema.tables
+    where table_name = 'saved_salons')                as "0027 saved salons",
+  bool_or(p.proname = 'enqueue_notice')              as "0028 notices"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -522,6 +527,58 @@ adds the cities a salon serves and its map link; until it is applied, salon
 registration and Business details cannot save, and the owner's portal cannot
 load. 0024 is what shows a salon's real reviews to customers. Run 0023 first,
 then 0024, each pasted on its own — the steps are the same as above.
+
+### 0026, 0027 and 0028 — photo descriptions, saved salons, confirmations and reminders
+
+Paste each of these on its own, in this order, the same way as any other
+migration above. They must be in before the app version that uses them goes
+live, or saving a salon and describing a photo will report an error:
+
+1. `supabase/migrations/0026_photo_alt_ar.sql`
+2. `supabase/migrations/0027_saved_salons.sql`
+3. `supabase/migrations/0028_booking_and_salon_notices.sql`
+
+**Booking confirmations, reminders and salon-decision alerts ship switched
+off**, for the same reason message alerts did: the notification worker you
+deployed earlier only knows how to word a waitlist offer. In this order:
+
+1. Redeploy the worker with the new `bundled.ts` — exactly the steps in
+   [Deploy the worker](#3-deploy-the-worker) below.
+2. Then, in the SQL Editor:
+
+   ```sql
+   update notification_settings set notices_enabled = true;
+   ```
+
+From then on a customer who has allowed notifications gets a push when a
+booking is confirmed, moved, or cancelled by the salon, and a reminder 24 hours
+and 2 hours before. A salon owner gets a push when Saloni approves, publishes,
+turns down or closes their salon. The booking-confirmed screen starts offering
+"Remind me before my appointment" only once this is on.
+
+#### Turning on e-mail as well
+
+E-mail needs one thing you do not have yet: **your own website domain** (for
+example `saloni.sa`). Every e-mail service refuses to send as a `gmail.com`
+address, because you do not own gmail.com. Once you have a domain:
+
+1. Create a free account at **https://resend.com**.
+2. In Resend, **Domains** → **Add Domain**, type your domain, and add the
+   records it shows you at the company you bought the domain from. Wait until
+   Resend says **Verified**.
+3. In Resend, **API Keys** → **Create API Key** (sending access is enough), and
+   copy it. It starts with `re_`. Do not paste it anywhere but the next step.
+4. In Supabase, **Edge Functions** → **send-notifications** → **Secrets**
+   (or **Project Settings → Edge Functions → Secrets**), add:
+   - `RESEND_API_KEY` = the key you copied
+   - `EMAIL_FROM` = `Saloni <bookings@your-domain>` using your verified domain
+5. In the SQL Editor:
+
+   ```sql
+   update notification_settings set channels = '{push,email}';
+   ```
+
+To stop e-mail again: `update notification_settings set channels = '{push}';`
 
 ### 0025 — messages between customers, salons and Saloni
 

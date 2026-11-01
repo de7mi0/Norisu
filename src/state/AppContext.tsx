@@ -11,6 +11,7 @@ import { appReducer, initialStateFor } from './appReducer';
 import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } from './context';
 import { REPLY_DELAY } from './replies';
 import { loadSaved, setSaved } from '../data/saved';
+import { remindersEnabled } from '../data/notices';
 import {
   answerFor,
   answerForTopic,
@@ -1968,6 +1969,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [flash, isArabic, refreshMyWaitlist, t, waitlistFailureText],
   );
 
+  // Reminders (0028): offered on the confirmation screen only when the
+  // server is actually sending them, so the button never promises nothing.
+  const [remindersOn, setRemindersOn] = useState(false);
+  useEffect(() => {
+    if (!userId) {
+      setRemindersOn(false);
+      return;
+    }
+    let cancelled = false;
+    void remindersEnabled().then((on) => {
+      if (!cancelled) setRemindersOn(on);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const enableReminders = useCallback(async () => {
+    const push = pushState();
+    if (!isPushConfigured || (push !== 'ask' && push !== 'on')) {
+      flash(t.remindRefused);
+      return;
+    }
+    const failure = await subscribeToPush();
+    flash(failure ? t.remindRefused : t.remindOn);
+  }, [flash, t]);
+
   const leaveWaitlist = useCallback(
     async (entryId: string) => {
       const failure = await leaveWaitlistRow(entryId);
@@ -2387,6 +2415,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unreadMessages,
       savedIds,
       toggleSave,
+      remindersOn,
+      enableReminders,
       openSalonChat,
       openInboxThread,
       sendThreadMessage,
@@ -2412,6 +2442,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unreadMessages,
       savedIds,
       toggleSave,
+      remindersOn,
+      enableReminders,
       openSalonChat,
       openInboxThread,
       sendThreadMessage,

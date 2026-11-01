@@ -27,7 +27,7 @@ function sess(id, email) {
   };
 }
 
-const db = { mine: [], rpc: [], claimFails: false };
+const db = { mine: [], rpc: [], claimFails: false, remindersOn: false };
 
 function slots() {
   const out = []; const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1);
@@ -80,6 +80,11 @@ async function install(page, session) {
           body: JSON.stringify({ code: 'SL012', message: 'that offer is no longer open' }) });
       }
       return ok(route, [{ booking_id: 'b1', reference: 'SL-7788' }]);
+    }
+    if (url.includes('rpc/reminders_on')) return ok(route, db.remindersOn);
+    if (url.includes('rpc/create_booking')) {
+      db.rpc.push({ fn: 'create_booking', body });
+      return ok(route, [{ booking_id: 'bk1', reference: 'SL-REMIND1' }]);
     }
     if (url.includes('rpc/my_waitlist')) return ok(route, db.mine);
     if (url.includes('rpc/available_slots')) return ok(route, slots());
@@ -417,6 +422,45 @@ for (const arabic of [false, true]) {
   check('a seat that has gone says so rather than failing silently', told);
   check('and it still tried, rather than swallowing the link',
         db.rpc.some((r) => r.fn === 'claim_offer_by_token'));
+  await page.close();
+}
+
+// -------------------------------------------------------------------------
+// Reminders (0028): offered on the confirmation screen only while they are
+// actually sent, and accepting registers this device — which is what makes
+// the database queue the reminders for the booking just made.
+// -------------------------------------------------------------------------
+for (const on of [true, false]) {
+  db.rpc = []; db.remindersOn = on;
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await install(page, sess(CUSTOMER, 'huda@example.com'));
+  await stubPush(page, { permission: 'default' });
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: /I'm a customer/i }).first().click();
+  await page.waitForTimeout(900);
+  await page.getByText('Maison Noir').first().click();
+  await page.waitForTimeout(600);
+  await page.locator('.scr button').filter({ hasText: /Signature Haircut/ }).first().click();
+  await page.getByRole('button', { name: /Continue/i }).last().click();
+  await page.waitForTimeout(600);
+  await page.locator('.scr button').filter({ hasText: /Any professional/ }).first().click();
+  await page.getByRole('button', { name: /Pick a time/i }).click();
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: '10:00' }).click();
+  await page.getByRole('button', { name: /Continue to review/i }).click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: /Confirm booking/ }).last().click();
+  await page.waitForTimeout(1200);
+  const remind = page.getByRole('button', { name: /Remind me before my appointment/ });
+  if (!on) {
+    check('no reminder is offered while reminders are switched off', (await remind.count()) === 0);
+  } else {
+    check('the confirmation offers a reminder while reminders are on', (await remind.count()) === 1);
+    await remind.click();
+    await page.waitForTimeout(800);
+    check('accepting it registers this device', db.rpc.some((r) => r.fn === 'register_push_device'),
+          JSON.stringify(db.rpc.map((r) => r.fn)));
+  }
   await page.close();
 }
 

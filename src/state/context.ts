@@ -226,6 +226,10 @@ export interface AppContextValue {
   unreadMessages: number;
   /** The account's saved salons (0027), newest first. Empty when signed out. */
   savedIds: string[];
+  /** Whether booking reminders are being sent (0028). */
+  remindersOn: boolean;
+  /** Asks for notification permission and registers this device. */
+  enableReminders: () => Promise<void>;
   /** Saves or unsaves; asks a signed-out visitor to sign in first. */
   toggleSave: (salonId: string) => Promise<void>;
   /** A conversation with a salon, or with Saloni when `salonId` is null. */

@@ -131,6 +131,16 @@ for (const arabic of [false, true]) {
         body.slice(0, 900));
   check(`${L}: the total including VAT is on screen before confirming`,
         (arabic ? /الإجمالي|المجموع/ : /Total/).test(body) && /VAT|ضريبة/.test(body), body.slice(0, 900));
+
+  await page.getByRole('button', { name: /Confirm booking|تأكيد الحجز/ }).last().click();
+  await page.waitForTimeout(1200);
+  const done = (await page.locator('body').innerText()).replace(/\n/g, ' ');
+  check(`${L}: the confirmation does not call the amount paid`,
+        (arabic ? /يُدفع في الصالون/ : /To pay at the salon/).test(done) && !/\bPaid\b|المدفوع/.test(done),
+        done.slice(0, 600));
+  // reminders_on() is not stubbed true here, so nothing is promised.
+  check(`${L}: no reminder is offered while reminders are not being sent`,
+        !/Remind me|ذكّرني/.test(done), done.slice(0, 600));
   await page.close();
 }
 

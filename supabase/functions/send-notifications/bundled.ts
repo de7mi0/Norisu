@@ -42,6 +42,11 @@ export interface OfferPayload {
   from?: Partial<Record<Locale, string>>;
   preview?: string;
   url?: string;
+  /** Bookings and salon decisions (0028). */
+  booking_id?: string;
+  reference?: string;
+  hours?: number;
+  reason?: string | null;
 }
 
 export interface PushMessage {
@@ -108,9 +113,125 @@ function composeChat(payload: OfferPayload, lang: Locale): PushMessage {
   };
 }
 
+/**
+ * A booking or a salon decision (0028). Every word is here and nowhere else,
+ * like the offer and the chat: the service worker displays, it never composes.
+ * Returns null for a kind this file does not know, so the worker can fail the
+ * row rather than send it worded as a seat offer.
+ */
+function composeNotice(payload: OfferPayload, lang: Locale): PushMessage | null {
+  const ar = lang === 'ar';
+  const salon = payload.salon?.[lang] ?? payload.salon?.en ?? '';
+  const services = payload.services?.[lang] ?? payload.services?.en ?? '';
+  const url = payload.url ?? './';
+  const tag = `${payload.kind}:${payload.booking_id ?? salon}`;
+  const when = payload.starts_at ? formatWhen(payload.starts_at, lang) : null;
+  const at = when ? (ar ? `${when.date} الساعة ${when.time}` : `${when.date} at ${when.time}`) : '';
+  const what = services ? `${services} — ${at}` : at;
+  const ref = payload.reference ? (ar ? ` المرجع ${payload.reference}.` : ` Ref ${payload.reference}.`) : '';
+  const reason = (payload.reason ?? '').trim();
+  const out = (title: string, body: string): PushMessage => ({ title, body, url, tag, lang });
+
+  switch (payload.kind) {
+    case 'booking_confirmed':
+      return ar
+        ? out(`تم تأكيد حجزك في ${salon}`, `${what}.${ref} تدفع للصالون عند زيارتك.`)
+        : out(`Booking confirmed at ${salon}`, `${what}.${ref} You pay the salon at your visit.`);
+    case 'booking_moved':
+      return ar
+        ? out(`تم نقل موعدك في ${salon}`, `الموعد الجديد: ${what}.${ref}`)
+        : out(`Your appointment at ${salon} has moved`, `New time: ${what}.${ref}`);
+    case 'booking_cancelled':
+      return ar
+        ? out(`ألغى ${salon} موعدك`, `${what}. افتح صالوني لحجز وقت آخر.`)
+        : out(`${salon} cancelled your appointment`, `${what}. Open Saloni to book another time.`);
+    case 'booking_reminder': {
+      const hours = Math.round(payload.hours ?? 24);
+      const lead = hours >= 24
+        ? ar ? 'تذكير: موعدك غداً' : 'Reminder: your appointment is tomorrow'
+        : ar ? `تذكير: موعدك بعد ${hours} ساعة` : `Reminder: your appointment is in ${hours} hours`;
+      return out(`${lead} · ${salon}`, `${what}.${ref}`);
+    }
+    case 'salon_approved':
+      return ar
+        ? out(`تم اعتماد ${salon}`, 'تحققنا من سجلك التجاري. سيظهر صالونك للعملاء بعد نشره في الدليل.')
+        : out(`${salon} is approved`, 'We checked your commercial registration. Your salon appears to customers once it is published.');
+    case 'salon_live':
+      return ar
+        ? out(`${salon} منشور الآن`, 'يستطيع العملاء الآن إيجاد صالونك والحجز فيه على صالوني.')
+        : out(`${salon} is live`, 'Customers can now find and book your salon on Saloni.');
+    case 'salon_rejected':
+      return ar
+        ? out(`تعذّر اعتماد ${salon}`, `السبب: ${reason}. صحّح رقم السجل في ملف العمل لنراجعه مرة أخرى.`)
+        : out(`We could not approve ${salon}`, `Reason: ${reason}. Correct your registration number in Business profile and we will review it again.`);
+    case 'salon_closed':
+      return ar
+        ? out(`أُغلق ${salon}`, `أغلق صالوني صالونك. السبب: ${reason}.`)
+        : out(`${salon} has been closed`, `Saloni closed your salon. Reason: ${reason}.`);
+    default:
+      return null;
+  }
+}
+
+/** Kinds composeNotice knows; anything else is not sent as one. */
+export const NOTICE_KINDS = [
+  'booking_confirmed', 'booking_moved', 'booking_cancelled', 'booking_reminder',
+  'salon_approved', 'salon_live', 'salon_rejected', 'salon_closed',
+];
+
+export interface EmailMessage {
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/** Text that came from a person — a salon's name, a refusal's reason — made safe for HTML. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * The same notice as an e-mail, in the recipient's language. Plain, with the
+ * words of the push and a link back to the app; no images, no tracking pixel.
+ */
+export function composeEmail(payload: OfferPayload, locale: Locale): EmailMessage {
+  const push = composeMessage(payload, locale);
+  const ar = push.lang === 'ar';
+  const open = ar ? 'افتح صالوني' : 'Open Saloni';
+  const footer = ar
+    ? 'وصلتك هذه الرسالة لأنها تخص حسابك في صالوني. Oilgy Establishment.'
+    : 'You received this because it is about your Saloni account. Oilgy Establishment.';
+  const dir = ar ? 'rtl' : 'ltr';
+  return {
+    subject: push.title,
+    text: `${push.body}\n\n${open}: ${push.url}\n\n${footer}`,
+    html:
+      `<div dir="${dir}" lang="${push.lang}" style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1c1913">` +
+      `<p style="font-size:18px;font-weight:bold;margin:0 0 12px">${escapeHtml(push.title)}</p>` +
+      `<p style="margin:0 0 18px">${escapeHtml(push.body)}</p>` +
+      `<p style="margin:0 0 24px"><a href="${escapeHtml(push.url)}" style="color:#856817">${open}</a></p>` +
+      `<p style="font-size:12px;color:#6f6b62;margin:0">${footer}</p></div>`,
+  };
+}
+
 export function composeMessage(payload: OfferPayload, locale: Locale): PushMessage {
   const lang: Locale = locale === 'ar' ? 'ar' : 'en';
   if (payload.kind === 'message') return composeChat(payload, lang);
+  if (payload.kind && NOTICE_KINDS.includes(payload.kind)) {
+    const notice = composeNotice(payload, lang);
+    if (notice) return notice;
+  }
+  // Anything else that names a kind is not an offer, and wording it as one —
+  // "A seat has opened" — is the mistake 0025 and 0028 shipped switched off to
+  // avoid. Fail the row instead; the outbox records why.
+  if (payload.kind && payload.kind !== 'waitlist_offer') {
+    throw new Error(`no wording for notification kind ${payload.kind}`);
+  }
   const salon = payload.salon?.[lang] ?? payload.salon?.en ?? '';
   const services = payload.services?.[lang] ?? payload.services?.en ?? '';
   const minutes = Math.max(1, Math.round(payload.hold_minutes ?? 15));
@@ -205,6 +326,8 @@ interface Claimed {
   to_phone: string | null;
   to_name: string | null;
   devices: Device[];
+  /** 0028: the address the person signs in with, for e-mail rows. */
+  to_email?: string | null;
 }
 
 // SUPABASE_SERVICE_ROLE_KEY is injected by Supabase, but is now labelled a
@@ -248,6 +371,34 @@ function ttlSeconds(payload: { expires_at?: string }): number {
 /** True when the push service says this endpoint is gone for good. */
 function isDead(status: number): boolean {
   return status === 404 || status === 410;
+}
+
+/**
+ * E-mail through Resend's HTTP API (https://resend.com). Two secrets, both in
+ * the function's settings and nowhere else:
+ *
+ *   RESEND_API_KEY   the key from the Resend dashboard
+ *   EMAIL_FROM       e.g. "Saloni <bookings@your-domain.sa>" — on a domain
+ *                    verified in Resend. A gmail.com address cannot be used:
+ *                    providers refuse to send as a domain you do not control.
+ *
+ * Without them every e-mail row fails with a message saying so, which is what
+ * the outbox shows rather than a silence.
+ */
+async function sendEmail(n: Claimed): Promise<void> {
+  const key = Deno.env.get('RESEND_API_KEY');
+  const from = Deno.env.get('EMAIL_FROM');
+  if (!key || !from) throw new Error('e-mail not configured: set RESEND_API_KEY and EMAIL_FROM');
+  if (!n.to_email) throw new Error('no e-mail address');
+  const email = composeEmail(n.payload, n.locale);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to: [n.to_email], subject: email.subject, text: email.text, html: email.html }),
+  });
+  if (!response.ok) {
+    throw new Error(`resend ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
 }
 
 async function pushToDevices(n: Claimed): Promise<void> {
@@ -342,6 +493,12 @@ Deno.serve(async (request) => {
 
   for (const n of claimed) {
     try {
+      if (n.channel === 'email') {
+        await sendEmail(n);
+        await admin.rpc('mark_notification_sent', { p_id: n.id });
+        sent += 1;
+        continue;
+      }
       if (n.channel !== 'push') {
         // WhatsApp is built in the database and switched off in
         // notification_settings.channels. If it is ever switched back on, this

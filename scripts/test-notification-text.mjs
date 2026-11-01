@@ -6,7 +6,7 @@
 // provider account and a real device, so it is worth testing properly: the
 // calendar and the digits are exactly the things that went wrong in the app
 // itself once, and the same two subtags fix them here.
-import { composeMessage } from '../supabase/functions/send-notifications/message.ts';
+import { composeEmail, composeMessage } from '../supabase/functions/send-notifications/message.ts';
 
 const results = [];
 const check = (n, v, d = '') => { results.push(v); console.log(`${v ? 'PASS' : 'FAIL'}  ${n}${v || !d ? '' : ` — ${d}`}`); };
@@ -80,6 +80,44 @@ check('one notification per conversation, so a second message replaces the first
 const bareChat = composeMessage({ kind: 'message' }, 'ar');
 check('a message with nothing in it still reads as a sentence',
       bareChat.title === 'رسالة جديدة' && bareChat.body === 'رسالة جديدة', bareChat.title);
+
+// Bookings and salon decisions (0028).
+const booking = {
+  kind: 'booking_confirmed', booking_id: 'b1', reference: 'SL-ABC123',
+  salon: { en: 'Maison Noir', ar: 'ميزون نوار' },
+  services: { en: 'Signature Haircut', ar: 'قص شعر' },
+  starts_at: '2026-08-25T13:30:00.000Z', url: 'https://de7mi0.github.io/Norisu/',
+};
+const confEn = composeMessage(booking, 'en');
+const confAr = composeMessage(booking, 'ar');
+check('a confirmation names the salon, the service, the time and the reference',
+      confEn.title.includes('Maison Noir') && confEn.body.includes('Signature Haircut')
+      && confEn.body.includes('16:30') && confEn.body.includes('SL-ABC123'), confEn.body);
+check('and says payment is at the salon', /pay the salon at your visit/.test(confEn.body), confEn.body);
+check('in Arabic, Gregorian with Latin digits', confAr.body.includes('قص شعر') && confAr.body.includes('16:30')
+      && !/[٠-٩]/.test(confAr.body) && /أغسطس|آب/.test(confAr.body), confAr.body);
+const remind24 = composeMessage({ ...booking, kind: 'booking_reminder', hours: 24 }, 'en');
+const remind2 = composeMessage({ ...booking, kind: 'booking_reminder', hours: 2 }, 'ar');
+check('the day-before reminder says tomorrow', /tomorrow/.test(remind24.title), remind24.title);
+check('the two-hour reminder says how long, in Arabic', /بعد 2 ساعة/.test(remind2.title), remind2.title);
+check('a salon cancellation says who cancelled and what to do',
+      /Maison Noir cancelled your appointment/.test(composeMessage({ ...booking, kind: 'booking_cancelled' }, 'en').title)
+      && /book another time/.test(composeMessage({ ...booking, kind: 'booking_cancelled' }, 'en').body));
+check('a move gives the new time', /New time: .*16:30/.test(composeMessage({ ...booking, kind: 'booking_moved' }, 'en').body));
+const rejected = { kind: 'salon_rejected', salon: { en: 'Rose & Oud', ar: 'وردة وعود' },
+                   reason: '<b>CR</b> does not match', url: 'https://de7mi0.github.io/Norisu/' };
+check('a refusal gives the reason and the fix',
+      /CR.* does not match/.test(composeMessage(rejected, 'en').body)
+      && /Business profile/.test(composeMessage(rejected, 'en').body));
+check('approval and going live are told apart',
+      /is approved/.test(composeMessage({ ...rejected, kind: 'salon_approved' }, 'en').title)
+      && /is live/.test(composeMessage({ ...rejected, kind: 'salon_live' }, 'en').title));
+const mail = composeEmail(rejected, 'en');
+check('an e-mail escapes text a person wrote', mail.html.includes('&lt;b&gt;CR&lt;/b&gt;') && !mail.html.includes('<b>CR'), mail.html);
+check('an Arabic e-mail is right-to-left', composeEmail(rejected, 'ar').html.includes('dir="rtl"'));
+let threw = false;
+try { composeMessage({ kind: 'something_new', salon: { en: 'X' } }, 'en'); } catch { threw = true; }
+check('a kind with no wording is refused, not sent as a seat offer', threw);
 
 const failed = results.filter((r) => !r).length;
 console.log(`\n${results.length - failed}/${results.length} checks passed`);
