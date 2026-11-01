@@ -26,6 +26,8 @@ export function SalonDetail() {
     backIcon,
     flash,
     openSalonChat,
+    savedIds,
+    toggleSave,
     catalogSource,
   } = useApp();
   const opening = salon.hours ? openingStatus(salon.hours) : null;
@@ -49,7 +51,7 @@ export function SalonDetail() {
     textDecoration: 'none',
   } as const;
 
-  const saved = Boolean(state.saved[salon.id]);
+  const saved = savedIds.includes(salon.id);
   const hasSelection = selectedServices.length > 0;
 
   // Which photograph the strip is showing. Only ever set by scrolling the strip
@@ -104,7 +106,10 @@ export function SalonDetail() {
                   // salon's name, once, on the photograph it leads with. The
                   // rest are decoration — repeating the name five times tells a
                   // screen reader nothing it did not hear the first time.
-                  alt={photo.alt || (index === 0 ? (isArabic ? salon.ar : salon.name) : '')}
+                  alt={
+                    (isArabic ? photo.altAr || photo.alt : photo.alt || photo.altAr) ||
+                    (index === 0 ? (isArabic ? salon.ar : salon.name) : '')
+                  }
                   style={{ flex: '0 0 100%', height: '100%', scrollSnapAlign: 'start' }}
                 />
               ))}
@@ -154,7 +159,7 @@ export function SalonDetail() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 type="button"
-                onClick={() => dispatch({ type: 'toggleSaved', salonId: salon.id })}
+                onClick={() => void toggleSave(salon.id)}
                 aria-pressed={saved}
                 aria-label={isArabic ? 'حفظ الصالون' : 'Save salon'}
                 className="press"
@@ -168,7 +173,22 @@ export function SalonDetail() {
               </button>
               <button
                 type="button"
-                onClick={() => flash(t.linkCopied)}
+                onClick={() => {
+                  // This said "Link copied" and copied nothing. It now shares
+                  // a real link, ?salon=<id>, which opens this salon's page.
+                  const url = `${window.location.origin}${window.location.pathname}?salon=${encodeURIComponent(salon.id)}`;
+                  const title = isArabic ? salon.ar : salon.name;
+                  if (typeof navigator.share === 'function') {
+                    void navigator.share({ title, url }).catch(() => undefined);
+                  } else if (navigator.clipboard) {
+                    void navigator.clipboard
+                      .writeText(url)
+                      .then(() => flash(t.linkCopied))
+                      .catch(() => flash(url));
+                  } else {
+                    flash(url);
+                  }
+                }}
                 aria-label={isArabic ? 'مشاركة' : 'Share'}
                 className="press"
                 style={{ ...circleButton, fontSize: 15, color: color.ink }}

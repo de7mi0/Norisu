@@ -1,5 +1,6 @@
 import { NameSheet } from '../../components/NameSheet';
 import { PAY_METHODS } from '../../data/payments';
+import { pushState } from '../../lib/push';
 import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 
@@ -18,7 +19,12 @@ export function Confirmation() {
     slotSummary,
     lastReference,
     session,
+    remindersOn,
+    enableReminders,
   } = useApp();
+  // Offered only while reminders are really being sent and this device has
+  // not been asked yet; once allowed or refused there is nothing to offer.
+  const offerReminder = remindersOn && session.status === 'signedIn' && pushState() === 'ask';
 
   const method = PAY_METHODS.find((candidate) => candidate.id === state.payId);
   const payName = method ? (isArabic ? method.nameAr : method.name) : '';
@@ -136,6 +142,29 @@ export function Confirmation() {
         </div>
       </div>
 
+      {offerReminder ? (
+        <button
+          type="button"
+          onClick={() => void enableReminders()}
+          className="press"
+          style={{
+            marginTop: 18,
+            width: '100%',
+            textAlign: 'center',
+            background: color.cream,
+            border: `1px solid ${color.creamLine}`,
+            borderRadius: 15,
+            padding: '13px 14px',
+          }}
+        >
+          <span style={{ display: 'block', font: `700 13px ${font.sans}`, color: color.goldInkAlt }}>
+            {t.remindMe}
+          </span>
+          <span style={{ display: 'block', marginTop: 3, font: `500 11px/1.45 ${font.sans}`, color: color.muted }}>
+            {t.remindHint}
+          </span>
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={() => dispatch({ type: 'go', screen: 'bookings' })}

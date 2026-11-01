@@ -103,7 +103,6 @@ export interface AppState {
   citySheet: boolean;
   /** The past booking the customer is writing a review of, if any. */
   reviewBookingId: string | null;
-  saved: Record<string, boolean>;
   bookTab: 'upcoming' | 'past';
   /** True while the time picker is moving an existing booking. */
   reschedule: boolean;
@@ -241,7 +240,7 @@ export interface AppState {
    * Why the sheet opened. 'booking' means the customer was interrupted at
    * checkout and needs telling why, rather than being shown a bare form.
    */
-  authReason: 'booking' | 'vendor' | 'message' | null;
+  authReason: 'booking' | 'vendor' | 'message' | 'save' | null;
   authForm: AuthForm;
 
   toast: string;
@@ -257,13 +256,12 @@ export const initialState: AppState = {
   staffId: null,
   dateIdx: 1,
   slotTime: null,
-  payId: 'applepay',
+  payId: 'cash',
   activeCat: 'All',
   query: '',
   city: null,
   citySheet: false,
   reviewBookingId: null,
-  saved: {},
   bookTab: 'upcoming',
   reschedule: false,
   rescheduleId: null,
@@ -327,7 +325,9 @@ export const initialState: AppState = {
 function legalTabFromSearch(search: string): LegalTab | null {
   const value = new URLSearchParams(search).get('legal');
   if (value === null) return null;
-  return value.toLowerCase() === 'terms' ? 'terms' : 'privacy';
+  const tab = value.toLowerCase();
+  // `?legal=delete` is the account-deletion page Google Play asks for.
+  return tab === 'terms' || tab === 'cookies' || tab === 'delete' ? tab : 'privacy';
 }
 
 /** Initial state, with `?legal` honoured before anything has rendered. */
@@ -353,6 +353,7 @@ const BACK_MAP: Partial<Record<Screen, Screen>> = {
   pay: 'time',
   reviews: 'salon',
   legal: 'profile',
+  saved: 'profile',
   a_salon: 'a_queue',
   a_inbox: 'a_queue',
   a_thread: 'a_inbox',
@@ -380,7 +381,6 @@ export type Action =
   | { type: 'openReview'; bookingId: string }
   | { type: 'closeReview' }
   | { type: 'toggleService'; serviceId: string }
-  | { type: 'toggleSaved'; salonId: string }
   | { type: 'pickStaff'; staffId: string }
   | { type: 'pickDate'; dateIdx: number }
   | { type: 'pickSlot'; time: string }
@@ -448,7 +448,7 @@ export type Action =
   | { type: 'setDeleteTyped'; value: string }
   | { type: 'setDeleteSaving'; saving: boolean }
   | { type: 'closeDeleteSheet' }
-  | { type: 'openAuth'; reason?: 'booking' | 'vendor' | 'message' }
+  | { type: 'openAuth'; reason?: 'booking' | 'vendor' | 'message' | 'save' }
   | { type: 'closeAuth' }
   | { type: 'setAuthChannel'; channel: AuthChannel }
   | { type: 'setAuthIdentifier'; value: string }
@@ -590,9 +590,6 @@ export function appReducer(state: AppState, action: Action): AppState {
         ...state,
         selected: { ...state.selected, [action.serviceId]: !state.selected[action.serviceId] },
       };
-
-    case 'toggleSaved':
-      return { ...state, saved: { ...state.saved, [action.salonId]: !state.saved[action.salonId] } };
 
     case 'pickStaff':
       return { ...state, staffId: action.staffId };
@@ -820,7 +817,10 @@ export function appReducer(state: AppState, action: Action): AppState {
     case 'closeAppointment':
       return { ...state, apptSheet: null };
     case 'openLegal':
-      return { ...state, screen: 'legal', legalTab: action.tab };
+      // The policy is a customer-side screen; opened from the salon side or
+      // the back office (the sign-in sheet floats over all three), it switches
+      // over rather than landing on a screen that mode does not have.
+      return { ...state, mode: 'customer', screen: 'legal', legalTab: action.tab };
     case 'setLegalTab':
       return { ...state, legalTab: action.tab };
     case 'openNameSheet':

@@ -126,7 +126,10 @@ export function Payment() {
         </div>
 
         <div style={{ padding: '20px 24px 0' }}>
-          <h2 style={{ font: `600 14px ${font.sans}`, margin: '0 0 12px' }}>{t.paymentMethod}</h2>
+          <h2 style={{ font: `600 14px ${font.sans}`, margin: '0 0 6px' }}>{t.paymentMethod}</h2>
+          <p style={{ font: `500 11.5px/1.55 ${font.sans}`, color: color.muted, margin: '0 0 12px' }}>
+            {t.payAtSalon}
+          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {PAY_METHODS.map((method) => {
               const active = state.payId === method.id;

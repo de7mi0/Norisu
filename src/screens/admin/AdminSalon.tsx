@@ -142,7 +142,7 @@ export function AdminSalon() {
               background: color.cream,
               border: `1px solid ${color.creamLine}`,
               font: `600 11.5px/1.5 ${font.sans}`,
-              color: '#8a6d14',
+              color: '#856913',
             }}
           >
             {t.adminCrCheck}

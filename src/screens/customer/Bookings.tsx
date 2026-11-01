@@ -163,7 +163,7 @@ export function Bookings() {
             padding: '12px 14px',
           }}
         >
-          <span style={{ display: 'block', font: `600 12.5px ${font.sans}`, color: '#8a6d14' }}>
+          <span style={{ display: 'block', font: `600 12.5px ${font.sans}`, color: '#856913' }}>
             {t.bookSignInTitle}
           </span>
           <span

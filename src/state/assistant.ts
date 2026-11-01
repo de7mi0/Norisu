@@ -78,8 +78,8 @@ export const TOPICS: Topic[] = [
     key: 'book',
     label: { en: 'How do I book?', ar: 'كيف أحجز؟' },
     answer: {
-      en: 'Four steps: 1) open a salon from Explore, 2) tick the services you want, 3) choose a specialist — or “Any professional” — and a time, 4) tap “Confirm & pay”. You’ll be asked to sign in with a code the first time. Your appointment then appears under Bookings.',
-      ar: 'أربع خطوات: ١) افتح صالوناً من «استكشف»، ٢) اختر الخدمات، ٣) اختر المختص — أو «أي مختص» — والوقت، ٤) اضغط «تأكيد والدفع». أول مرة سيُطلب منك تسجيل الدخول برمز. بعدها يظهر موعدك في «الحجوزات».',
+      en: 'Four steps: 1) open a salon from Explore, 2) tick the services you want, 3) choose a specialist — or “Any professional” — and a time, 4) tap “Confirm booking” — you pay the salon at your visit. You’ll be asked to sign in with a code the first time. Your appointment then appears under Bookings.',
+      ar: 'أربع خطوات: ١) افتح صالوناً من «استكشف»، ٢) اختر الخدمات، ٣) اختر المختص — أو «أي مختص» — والوقت، ٤) اضغط «تأكيد الحجز» — والدفع للصالون عند زيارتك. أول مرة سيُطلب منك تسجيل الدخول برمز. بعدها يظهر موعدك في «الحجوزات».',
     },
     actions: [
       { kind: 'go', screen: 'home', label: { en: 'Find a salon', ar: 'ابحث عن صالون' } },

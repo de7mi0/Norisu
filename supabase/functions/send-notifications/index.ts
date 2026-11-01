@@ -45,7 +45,7 @@
 //                               push services require so they can complain
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3';
-import { composeMessage, type Locale, type OfferPayload } from './message.ts';
+import { composeEmail, composeMessage, type Locale, type OfferPayload } from './message.ts';
 
 const BATCH = 20;
 
@@ -66,6 +66,8 @@ interface Claimed {
   to_phone: string | null;
   to_name: string | null;
   devices: Device[];
+  /** 0028: the address the person signs in with, for e-mail rows. */
+  to_email?: string | null;
 }
 
 // SUPABASE_SERVICE_ROLE_KEY is injected by Supabase, but is now labelled a
@@ -109,6 +111,34 @@ function ttlSeconds(payload: { expires_at?: string }): number {
 /** True when the push service says this endpoint is gone for good. */
 function isDead(status: number): boolean {
   return status === 404 || status === 410;
+}
+
+/**
+ * E-mail through Resend's HTTP API (https://resend.com). Two secrets, both in
+ * the function's settings and nowhere else:
+ *
+ *   RESEND_API_KEY   the key from the Resend dashboard
+ *   EMAIL_FROM       e.g. "Saloni <bookings@your-domain.sa>" — on a domain
+ *                    verified in Resend. A gmail.com address cannot be used:
+ *                    providers refuse to send as a domain you do not control.
+ *
+ * Without them every e-mail row fails with a message saying so, which is what
+ * the outbox shows rather than a silence.
+ */
+async function sendEmail(n: Claimed): Promise<void> {
+  const key = Deno.env.get('RESEND_API_KEY');
+  const from = Deno.env.get('EMAIL_FROM');
+  if (!key || !from) throw new Error('e-mail not configured: set RESEND_API_KEY and EMAIL_FROM');
+  if (!n.to_email) throw new Error('no e-mail address');
+  const email = composeEmail(n.payload, n.locale);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to: [n.to_email], subject: email.subject, text: email.text, html: email.html }),
+  });
+  if (!response.ok) {
+    throw new Error(`resend ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
 }
 
 async function pushToDevices(n: Claimed): Promise<void> {
@@ -203,6 +233,12 @@ Deno.serve(async (request) => {
 
   for (const n of claimed) {
     try {
+      if (n.channel === 'email') {
+        await sendEmail(n);
+        await admin.rpc('mark_notification_sent', { p_id: n.id });
+        sent += 1;
+        continue;
+      }
       if (n.channel !== 'push') {
         // WhatsApp is built in the database and switched off in
         // notification_settings.channels. If it is ever switched back on, this

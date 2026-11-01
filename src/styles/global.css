@@ -48,11 +48,19 @@ input {
   font-family: 'IBM Plex Sans Arabic', Manrope, system-ui, sans-serif;
 }
 
-/* Visible keyboard focus, suppressed for pointer interaction. */
+/* Visible keyboard focus, suppressed for pointer interaction. !important
+   because several text fields set `outline: none` inline, and an inline style
+   beats a stylesheet — which left a keyboard user typing into a field with no
+   sign of where they were. The colour is 3:1 or better on every surface. */
 :focus-visible {
-  outline: 2px solid #b0891f;
+  outline: 2px solid #856817 !important;
   outline-offset: 2px;
   border-radius: 6px;
+}
+input:focus,
+textarea:focus {
+  outline: 2px solid #856817 !important;
+  outline-offset: 1px;
 }
 
 /* Scroll panes hide their scrollbars, as in the design. */

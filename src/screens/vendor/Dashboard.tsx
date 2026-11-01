@@ -188,7 +188,7 @@ export function Dashboard() {
             padding: '13px 15px',
           }}
         >
-          <div style={{ font: `700 12px ${font.sans}`, color: '#8a6d14' }}>{t.noTeamTitle}</div>
+          <div style={{ font: `700 12px ${font.sans}`, color: '#856913' }}>{t.noTeamTitle}</div>
           <p style={{ font: `500 11.5px/1.55 ${font.sans}`, color: color.mutedSoft, margin: '5px 0 0' }}>
             {t.noTeamBody}
           </p>

@@ -33,7 +33,9 @@ export interface SalonPhoto {
   /** Ready to put in an <img src>. */
   url: string;
   isCover: boolean;
+  /** What it shows, for screen readers — English, then Arabic (0026). */
   alt: string;
+  altAr: string;
   sortOrder: number;
 }
 
@@ -52,6 +54,7 @@ export function mapPhoto(row: MediaRow): SalonPhoto {
     url: publicUrl(row.storage_path),
     isCover: row.is_cover,
     alt: row.alt_text ?? '',
+    altAr: row.alt_text_ar ?? '',
     sortOrder: row.sort_order,
   };
 }
@@ -67,7 +70,9 @@ export async function loadPhotos(salonId: string): Promise<SalonPhoto[]> {
 
   const { data, error } = await supabase
     .from('salon_media')
-    .select('id, storage_path, alt_text, is_cover, sort_order')
+    // `*` rather than named columns, so this keeps working on a database that
+    // has not had 0026 applied yet: naming alt_text_ar there would fail the read.
+    .select('*')
     .eq('salon_id', salonId)
     .order('is_cover', { ascending: false })
     .order('sort_order')
@@ -128,7 +133,7 @@ export async function uploadPhoto(
   const { data, error } = await supabase
     .from('salon_media')
     .insert({ salon_id: salonId, storage_path: path, is_cover: isCover })
-    .select('id, storage_path, alt_text, is_cover, sort_order')
+    .select('*')
     .single<MediaRow>();
 
   if (error || !data) {
@@ -170,5 +175,28 @@ export async function makeCover(salonId: string, photoId: string): Promise<Photo
     .update({ is_cover: true })
     .eq('id', photoId);
 
+  return error ? writeFailure(error) : null;
+}
+
+/** Maximum length of each description; the database caps it too (0026). */
+export const ALT_MAX_LENGTH = 200;
+
+/**
+ * Writes what a photograph shows, in both languages. salon_media_write (0002)
+ * limits this to the salon's own owner.
+ */
+export async function describePhoto(
+  photoId: string,
+  altEn: string,
+  altAr: string,
+): Promise<PhotoFailure | null> {
+  if (!supabase) return 'notConfigured';
+  const { error } = await supabase
+    .from('salon_media')
+    .update({
+      alt_text: altEn.trim().slice(0, ALT_MAX_LENGTH),
+      alt_text_ar: altAr.trim().slice(0, ALT_MAX_LENGTH),
+    })
+    .eq('id', photoId);
   return error ? writeFailure(error) : null;
 }

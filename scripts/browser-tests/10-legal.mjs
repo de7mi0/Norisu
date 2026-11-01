@@ -111,15 +111,24 @@ for (const arabic of [false, true]) {
   await page.waitForTimeout(600);
   body = await page.locator('body').innerText();
 
-  // Nobody here is a lawyer, and the page has to say so before it says
-  // anything else.
-  check(`${L}: it is marked as a draft for a human to approve`,
-        arabic ? /مسودة — غير معتمدة بعد/.test(body) : /Draft — not approved yet/.test(body),
-        body.slice(0, 300).replace(/\n/g, ' '));
-  check(`${L}: and names the blanks somebody still has to fill in`,
-        arabic ? /اسم الشركة/.test(body) && /الدولة التي تُستضاف/.test(body)
-               : /name and address of the company/.test(body) && /country the database is hosted in/.test(body),
+  // Who runs Saloni and how to reach them, before anything else. This used to
+  // be a "Draft — not approved yet" banner naming three blanks; the blanks are
+  // filled now, and an unfilled one would be the thing to catch.
+  check(`${L}: it names the company behind Saloni and its registration`,
+        body.includes('Oilgy Establishment') && body.includes('7055444090'),
         body.slice(0, 400).replace(/\n/g, ' '));
+  check(`${L}: and a real contact address, with no blanks left`,
+        body.includes('muh.business@gmail.com')
+        && !/must be before Saloni is submitted|Still to be supplied|ما زال مطلوباً|يجب تحديده قبل/.test(body),
+        body.slice(0, 600).replace(/\n/g, ' '));
+  check(`${L}: it says where the data is held`,
+        arabic ? /فرانكفورت/.test(body) : /Frankfurt, Germany/.test(body),
+        body.slice(0, 600).replace(/\n/g, ' '));
+  check(`${L}: and that no font service or third party is contacted`,
+        !/Google Fonts/.test(body), body.slice(0, 600).replace(/\n/g, ' '));
+  check(`${L}: it sets the age at 18`,
+        arabic ? /18 عاماً أو أكثر/.test(body) : /18 or over/.test(body),
+        body.slice(0, 600).replace(/\n/g, ' '));
 
   // No card details anywhere in the app, which is the single most consequential
   // claim on the page: payment is simulated and paid_at is never set.
@@ -166,6 +175,26 @@ for (const arabic of [false, true]) {
   check(`${L}: the terms say nothing is paid through the app`,
         arabic ? /لا يُدفع شيء عبر صالوني/.test(body) : /Nothing is paid through Saloni/.test(body),
         body.slice(0, 400).replace(/\n/g, ' '));
+  check(`${L}: the terms say Saloni charges the customer no fee`,
+        arabic ? /لا رسوم حجز ولا رسوم خدمة ولا رسوم إلغاء/.test(body)
+               : /no booking fee, no service fee and no cancellation fee/.test(body),
+        body.slice(0, 400).replace(/\n/g, ' '));
+  check(`${L}: and that salons may upload only photographs they have a right to`,
+        arabic ? /تملك ترخيصاً باستخدامها/.test(body) : /have a licence to use/.test(body));
+
+  // No cookie banner, because there are no cookies — the tab says so.
+  await page.getByRole('tab', { name: arabic ? 'ملفات تعريف الارتباط' : 'Cookies' }).click();
+  await page.waitForTimeout(400);
+  body = await page.locator('body').innerText();
+  check(`${L}: a cookies tab says there are no cookies and no tracking`,
+        arabic ? /لا يضع صالوني أي ملفات تعريف ارتباط/.test(body) : /Saloni sets no cookies/.test(body),
+        body.slice(0, 400).replace(/\n/g, ' '));
+  check(`${L}: and lists what is kept on the device`,
+        arabic ? /تسجيل دخولك/.test(body) && /المدينة التي اخترتها/.test(body)
+               : /Your sign-in/.test(body) && /The city you chose/.test(body));
+  await page.getByRole('tab', { name: arabic ? 'الشروط' : 'Terms' }).click();
+  await page.waitForTimeout(300);
+  body = await page.locator('body').innerText();
   check(`${L}: and that Saudi law governs them`,
         arabic ? /المملكة العربية السعودية/.test(body) : /Kingdom of Saudi Arabia/.test(body),
         body.slice(0, 400).replace(/\n/g, ' '));
@@ -211,6 +240,61 @@ for (const arabic of [false, true]) {
   check('and the markers themselves are not rendered',
         !body.includes('[[') && !body.includes(']]'),
         body.slice(0, 200).replace(/\n/g, ' '));
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
+// The account-deletion page Google Play asks for: a URL that works with no app
+// and no account, and that says how to delete without the app too.
+// ---------------------------------------------------------------------------
+{
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await install(page);
+  await page.goto(`${BASE}?legal=delete`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const body = await page.locator('body').innerText();
+  check('?legal=delete opens the deletion page cold',
+        /Deleting your Saloni account/.test(body), body.slice(0, 300).replace(/\n/g, ' '));
+  check('it says how to delete inside the app and without it',
+        /Delete my account/.test(body) && body.includes('muh.business@gmail.com') && /30 days/.test(body),
+        body.slice(0, 600).replace(/\n/g, ' '));
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
+// Consent is asked for where an account or a salon comes into existence.
+// ---------------------------------------------------------------------------
+for (const arabic of [false, true]) {
+  const L = arabic ? 'AR' : 'EN';
+  const page = await browser.newPage({ viewport: { width: 500, height: 900 } });
+  await install(page);
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  if (arabic) { await page.getByRole('button', { name: 'العربية' }).click(); await page.waitForTimeout(300); }
+  await page.getByRole('button', { name: /I'm a customer|أنا عميل/i }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: /Profile|حسابي/i }).last().click();
+  await page.waitForTimeout(500);
+  await page.getByRole('button', { name: arabic ? /^تسجيل الدخول$/ : /^Sign in$/ }).first().click();
+  await page.waitForTimeout(500);
+  let body = await page.locator('body').innerText();
+  check(`${L}: signing in states the age and the agreement before an account exists`,
+        arabic ? /عمرك 18 عاماً أو أكثر وتوافق على/.test(body) : /confirm you are 18 or over and agree to the/.test(body),
+        body.slice(0, 500).replace(/\n/g, ' '));
+  await page.getByRole('button', { name: arabic ? /^سياسة الخصوصية$/ : /^Privacy Policy$/ }).click();
+  await page.waitForTimeout(500);
+  body = await page.locator('body').innerText();
+  check(`${L}: and its link opens the policy`,
+        arabic ? /ما الذي يحتفظ به صالوني/.test(body) : /What Saloni keeps/.test(body),
+        body.slice(0, 300).replace(/\n/g, ' '));
+
+  // Registering a salon: an unticked agreement, and no registering without it.
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  if (arabic) { await page.getByRole('button', { name: 'العربية' }).click(); await page.waitForTimeout(300); }
+  await page.getByRole('button', { name: /I own a salon|أملك صالون/i }).first().click();
+  await page.waitForTimeout(800);
+  const box = page.getByRole('checkbox');
+  check(`${L}: salon registration asks for an agreement, unticked`,
+        (await box.count()) === 1 && !(await box.isChecked()));
   await page.close();
 }
 

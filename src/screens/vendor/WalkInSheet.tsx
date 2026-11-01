@@ -106,7 +106,7 @@ export function WalkInSheet() {
           padding: '11px 13px',
           marginBottom: 14,
           font: `500 11.5px/1.55 ${font.sans}`,
-          color: '#8a6d14',
+          color: '#856913',
         }}
       >
         {t.walkInHelp}

@@ -89,6 +89,8 @@ export function Onboarding() {
 
   const [draft, setDraft] = useState<SalonDraft>(existing?.profile ?? EMPTY);
   const [saving, setSaving] = useState(false);
+  // Registering a business is an agreement, so it is asked for, unticked.
+  const [agreed, setAgreed] = useState(false);
 
   // Adopt the stored profile once it arrives, and again if the owner changes.
   // Keyed on the salon id so a half-typed edit is not overwritten by a reload.
@@ -151,7 +153,8 @@ export function Onboarding() {
       draft.nameAr.trim() &&
       draft.crNumber.trim() &&
       draft.cities.length > 0 &&
-      !mapsUrlBad,
+      !mapsUrlBad &&
+      (editing || agreed),
   );
 
   const submit = async () => {
@@ -216,7 +219,7 @@ export function Onboarding() {
               gap: 12,
             }}
           >
-            <span style={{ flex: 1, font: `600 12px/1.5 ${font.sans}`, color: '#8a6d14' }}>
+            <span style={{ flex: 1, font: `600 12px/1.5 ${font.sans}`, color: '#856913' }}>
               {t.vendorHaveSalon}
             </span>
             <button
@@ -285,7 +288,7 @@ export function Onboarding() {
               borderRadius: 14,
               padding: '13px 15px',
               font: `600 11.5px/1.6 ${font.sans}`,
-              color: existing?.isPublished ? color.teal : '#8a6d14',
+              color: existing?.isPublished ? color.teal : '#856913',
             }}
           >
             {!editing
@@ -490,6 +493,35 @@ export function Onboarding() {
                   </p>
                 ) : null}
               </div>
+        {!editing ? (
+          <label
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+              marginTop: 22,
+              font: `500 12.5px/1.55 ${font.sans}`,
+              color: color.inkSoft,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(event) => setAgreed(event.target.checked)}
+              style={{ width: 18, height: 18, marginTop: 2, flex: 'none', accentColor: color.goldDeep }}
+            />
+            <span>
+              {t.registerAgree}{' '}
+              <button
+                type="button"
+                onClick={() => dispatch({ type: 'openLegal', tab: 'terms' })}
+                style={{ font: 'inherit', color: color.goldInkAlt, textDecoration: 'underline' }}
+              >
+                {t.authConsentTerms}
+              </button>
+            </span>
+          </label>
+        ) : null}
         {/*
           Only once the salon exists — there is nothing to close before that,
           and the registration form should not offer it. It sits at the very
@@ -532,7 +564,7 @@ export function Onboarding() {
             width: '100%',
             textAlign: 'center',
             background: ready && !saving ? color.gold : '#f0ece2',
-            color: ready && !saving ? color.goldInk : '#b8b2a5',
+            color: ready && !saving ? color.goldInk : color.muted,
             borderRadius: 15,
             padding: 16,
             font: `700 14px ${font.sans}`,
@@ -545,7 +577,9 @@ export function Onboarding() {
               ? t.saving
               : t.registering
             : !ready
-              ? t.registerNeedsFields
+              ? !editing && !agreed && draft.nameEn.trim() && draft.nameAr.trim() && draft.crNumber.trim() && draft.cities.length > 0
+                ? t.registerNeedsAgree
+                : t.registerNeedsFields
               : editing
                 ? t.saveChanges
                 : t.createSalon}

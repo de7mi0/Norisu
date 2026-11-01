@@ -4157,6 +4157,8 @@ begin
       -- assertions 131-135 prove an outsider is refused.
       'start_conversation', 'post_message', 'conversation_messages',
       'my_conversations', 'staff_inbox',
+      -- 0028: a single flag, so the app offers reminders only when they are sent.
+      'reminders_on',
       -- Called by row policies, which are evaluated as the querying role.
       'is_admin', 'is_salon_owner', 'salon_is_public',
       -- Trigger functions used to be listed here. 0022 removed every grant on
@@ -7391,5 +7393,352 @@ end
 $$;
 reset role;
 
+
+-- ---------------------------------------------------------------------------
+-- 137. A photograph's description is its salon owner's to write, in both
+--      languages, and nobody else's — and a visitor can read it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1310000-0000-0000-0000-000000000002';  -- owns "Chat Rival"
+  other  uuid := 'c1310000-0000-0000-0000-000000000004';
+  salon  uuid := 'c1310000-0000-0000-0000-0000000000a2';
+  photo  uuid;
+  n      integer;
+  seen   record;
+begin
+  insert into salon_media (salon_id, storage_path) values (salon, salon::text || '/gallery/x.jpg')
+  returning id into photo;
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  update salon_media set alt_text = 'Two chairs by a window', alt_text_ar = 'كرسيان بجانب نافذة'
+   where id = photo;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 1 then
+    raise exception 'FAIL 137a: the owner could not describe their own photograph';
+  end if;
+
+  perform auth.login_as(other);
+  set local role authenticated;
+  update salon_media set alt_text = 'spam', alt_text_ar = 'spam' where id = photo;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 137b: somebody else rewrote a salon''s photograph description';
+  end if;
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    update salon_media set alt_text_ar = repeat('x', 201) where id = photo;
+    raise exception 'FAIL 137c: a 201-character description was accepted';
+  exception when check_violation then null;
+  end;
+  reset role;
+
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  select alt_text, alt_text_ar into seen from salon_media where id = photo;
+  reset role;
+  if seen.alt_text_ar is distinct from 'كرسيان بجانب نافذة' then
+    raise exception 'FAIL 137d: a visitor cannot read the Arabic description';
+  end if;
+
+  raise notice 'PASS 137: a photograph is described by its own salon, in both languages';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 138. Saved salons are the account's own: nobody else reads them, nobody
+--      saves on another's behalf, an unpublished salon cannot be saved, and
+--      they go with the account.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  me     uuid := 'c1380000-0000-0000-0000-000000000001';
+  other  uuid := 'c1380000-0000-0000-0000-000000000002';
+  public_ uuid := 'c1310000-0000-0000-0000-0000000000a2';  -- published
+  hidden uuid := 'c1310000-0000-0000-0000-0000000000a3';   -- unpublished
+  n      integer;
+begin
+  insert into auth.users (id) values (me), (other);
+
+  perform auth.login_as(me);
+  set local role authenticated;
+  insert into saved_salons (profile_id, salon_id) values (me, public_);
+  begin
+    insert into saved_salons (profile_id, salon_id) values (other, public_);
+    raise exception 'FAIL 138a: an account saved a salon on somebody else''s list';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into saved_salons (profile_id, salon_id) values (me, hidden);
+    raise exception 'FAIL 138b: an unpublished salon was saved';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into saved_salons (profile_id, salon_id, created_at)
+    values (me, 'c1310000-0000-0000-0000-0000000000a1', now() - interval '1 year');
+    raise exception 'FAIL 138c: the saved time was written by the browser';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform auth.login_as(other);
+  set local role authenticated;
+  select count(*) into n from saved_salons;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 138d: one account read another''s saved salons';
+  end if;
+
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  begin
+    perform 1 from saved_salons;
+    raise exception 'FAIL 138e: a signed-out visitor read saved salons';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform auth.login_as(me);
+  set local role authenticated;
+  perform delete_my_account();
+  reset role;
+  if exists (select 1 from saved_salons where profile_id = me) then
+    raise exception 'FAIL 138f: a deleted account''s saved salons were kept';
+  end if;
+
+  raise notice 'PASS 138: saved salons are private to their account and go with it';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 139–141. Booking confirmations, reminders and salon decisions (0028).
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id, email) values
+  ('c1390000-0000-0000-0000-000000000001', 'owner139@example.com'),
+  ('c1390000-0000-0000-0000-000000000002', 'cust139@example.com'),
+  ('c1390000-0000-0000-0000-000000000003', 'admin139@example.com');
+update profiles set role = 'admin' where id = 'c1390000-0000-0000-0000-000000000003';
+update profiles set locale = 'ar' where id = 'c1390000-0000-0000-0000-000000000002';
+insert into salons (id, owner_id, slug, name_en, name_ar, is_verified, is_published, cr_number)
+values ('c1390000-0000-0000-0000-0000000000a1', 'c1390000-0000-0000-0000-000000000001',
+        'notice-test', 'Notice Test', 'صالون التنبيه', true, true, '1010139139');
+insert into staff (id, salon_id, name_en, name_ar)
+values ('c1390000-0000-0000-0000-0000000000b1', 'c1390000-0000-0000-0000-0000000000a1', 'S', 'س');
+insert into push_subscriptions (profile_id, endpoint, p256dh, auth) values
+  ('c1390000-0000-0000-0000-000000000002', 'https://push.example/cust-139', 'k', 'a'),
+  ('c1390000-0000-0000-0000-000000000001', 'https://push.example/owner-139', 'k', 'a');
+
+-- 139. Off until switched on: the deployed worker would word these as offers.
+do $$
+declare
+  n integer;
+begin
+  update notification_settings set notices_enabled = false, channels = '{push}';
+  insert into bookings (id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+                        subtotal_halalas, total_halalas)
+  values ('c1390000-0000-0000-0000-0000000000d0', 'SL-N1390000', 'c1390000-0000-0000-0000-000000000002',
+          'c1390000-0000-0000-0000-0000000000a1', 'c1390000-0000-0000-0000-0000000000b1',
+          now() + interval '3 days', now() + interval '3 days 45 minutes', 'confirmed', 15000, 17250);
+  set constraints bookings_notify_created immediate;
+  select count(*) into n from notifications where booking_id = 'c1390000-0000-0000-0000-0000000000d0';
+  if n <> 0 then
+    raise exception 'FAIL 139: % booking notices queued while notices are switched off', n;
+  end if;
+  raise notice 'PASS 139: booking and salon notices stay off until switched on';
+end
+$$;
+
+-- 140. A booking is confirmed, reminded twice, moved and cancelled — by the
+--      right channels, in the customer's language, and nothing stale is sent.
+do $$
+declare
+  cust   uuid := 'c1390000-0000-0000-0000-000000000002';
+  bk     uuid := 'c1390000-0000-0000-0000-0000000000d1';
+  n      integer;
+  r      notifications%rowtype;
+begin
+  update notification_settings set notices_enabled = true, channels = '{push,email}';
+
+  insert into bookings (id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+                        subtotal_halalas, total_halalas)
+  values (bk, 'SL-N1390001', cust, 'c1390000-0000-0000-0000-0000000000a1',
+          'c1390000-0000-0000-0000-0000000000b1',
+          now() + interval '5 days', now() + interval '5 days 45 minutes', 'confirmed', 15000, 17250);
+  insert into booking_items (booking_id, name_en, name_ar, duration_minutes, unit_price_halalas)
+  values (bk, 'Signature Haircut', 'قص شعر', 45, 15000);
+  set constraints bookings_notify_created immediate;
+
+  select * into r from notifications
+   where booking_id = bk and template = 'booking_confirmed' and channel = 'push';
+  if r.id is null or r.send_after > now() + interval '1 minute' then
+    raise exception 'FAIL 140a: no immediate push confirmation was queued';
+  end if;
+  if r.locale <> 'ar' or r.payload -> 'services' ->> 'ar' <> 'قص شعر'
+     or r.payload -> 'salon' ->> 'ar' <> 'صالون التنبيه' then
+    raise exception 'FAIL 140b: the confirmation is not in the customer''s language with what was booked: %', r.payload;
+  end if;
+  select count(*) into n from notifications where booking_id = bk and channel::text = 'email';
+  if n <> 3 then
+    raise exception 'FAIL 140c: % e-mails queued, expected a confirmation and two reminders', n;
+  end if;
+  select count(*) into n from notifications
+   where booking_id = bk and channel = 'push' and template in ('booking_reminder_24', 'booking_reminder_2')
+     and send_after >= now() + interval '4 days';
+  if n <> 2 then
+    raise exception 'FAIL 140d: % push reminders scheduled, expected 24 hours and 2 hours before', n;
+  end if;
+
+  -- Moved: the old reminders go, new ones follow the new time, and a notice says so.
+  update bookings set starts_at = now() + interval '6 days', ends_at = now() + interval '6 days 45 minutes'
+   where id = bk;
+  select count(*) into n from notifications
+   where booking_id = bk and template like 'booking_reminder_%' and channel = 'push'
+     and send_after < now() + interval '5 days';
+  if n <> 0 then
+    raise exception 'FAIL 140e: a reminder for the old time survived the move';
+  end if;
+  if not exists (select 1 from notifications where booking_id = bk and template = 'booking_moved') then
+    raise exception 'FAIL 140f: moving a booking said nothing';
+  end if;
+
+  -- Cancelled by the customer: they know, so nothing is queued, and the
+  -- reminders go.
+  perform auth.login_as(cust);
+  set local role authenticated;
+  update bookings set status = 'cancelled', cancelled_at = now() where id = bk;
+  reset role;
+  if exists (select 1 from notifications where booking_id = bk and template = 'booking_cancelled') then
+    raise exception 'FAIL 140g: a customer was told about a cancellation they made';
+  end if;
+  if exists (select 1 from notifications where booking_id = bk and sent_at is null
+              and template like 'booking_reminder_%') then
+    raise exception 'FAIL 140h: reminders for a cancelled appointment are still queued';
+  end if;
+
+  -- Cancelled by the salon: the customer is told.
+  insert into bookings (id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+                        subtotal_halalas, total_halalas)
+  values ('c1390000-0000-0000-0000-0000000000d2', 'SL-N1390002', cust,
+          'c1390000-0000-0000-0000-0000000000a1', 'c1390000-0000-0000-0000-0000000000b1',
+          now() + interval '8 days', now() + interval '8 days 45 minutes', 'confirmed', 15000, 17250);
+  set constraints bookings_notify_created immediate;
+  perform auth.login_as('c1390000-0000-0000-0000-000000000001');
+  update bookings set status = 'cancelled', cancelled_at = now()
+   where id = 'c1390000-0000-0000-0000-0000000000d2';
+  if not exists (select 1 from notifications where booking_id = 'c1390000-0000-0000-0000-0000000000d2'
+                  and template = 'booking_cancelled' and channel = 'push') then
+    raise exception 'FAIL 140i: a customer was not told the salon cancelled their appointment';
+  end if;
+
+  -- Only the worker can read the queue with addresses in it.
+  perform auth.login_as(cust);
+  set local role authenticated;
+  begin
+    perform * from claim_pending_notifications(10);
+    raise exception 'FAIL 140j: a customer called the sender''s claim function';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- Somebody with no registered device is e-mailed, and no push is queued
+  -- that nothing could ever deliver.
+  insert into bookings (id, reference, customer_id, salon_id, staff_id, starts_at, ends_at, status,
+                        subtotal_halalas, total_halalas)
+  values ('c1390000-0000-0000-0000-0000000000d3', 'SL-N1390003', 'c1390000-0000-0000-0000-000000000003',
+          'c1390000-0000-0000-0000-0000000000a1', 'c1390000-0000-0000-0000-0000000000b1',
+          now() + interval '9 days', now() + interval '9 days 45 minutes', 'confirmed', 15000, 17250);
+  set constraints bookings_notify_created immediate;
+  if exists (select 1 from notifications where booking_id = 'c1390000-0000-0000-0000-0000000000d3'
+              and channel = 'push') then
+    raise exception 'FAIL 140k: a push was queued for somebody with no device to receive it';
+  end if;
+  if not exists (select 1 from notifications where booking_id = 'c1390000-0000-0000-0000-0000000000d3'
+                  and channel::text = 'email') then
+    raise exception 'FAIL 140l: somebody with no device was not e-mailed either';
+  end if;
+
+  -- Allowing notifications after booking still brings that booking's reminders.
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('c1390000-0000-0000-0000-000000000003', 'https://push.example/admin-139', 'k', 'a');
+  if (select count(*) from notifications where booking_id = 'c1390000-0000-0000-0000-0000000000d3'
+       and channel = 'push' and template like 'booking_reminder_%') <> 2 then
+    raise exception 'FAIL 140m: a device registered after booking got no reminders for it';
+  end if;
+
+  update notification_settings set notices_enabled = false, channels = '{push}';
+  raise notice 'PASS 140: confirmed, reminded twice, moved and cancelled — and nothing stale';
+end
+$$;
+reset role;
+
+-- 141. A salon owner is told what Saloni decided, and not about what they did.
+do $$
+declare
+  owner_ uuid := 'c1390000-0000-0000-0000-000000000001';
+  admin_ uuid := 'c1390000-0000-0000-0000-000000000003';
+  salon  uuid := 'c1390000-0000-0000-0000-0000000000a2';
+  r      notifications%rowtype;
+begin
+  update notification_settings set notices_enabled = true, channels = '{push}';
+  insert into salons (id, owner_id, slug, name_en, name_ar, cr_number)
+  values (salon, owner_, 'notice-decide', 'Decide', 'قرار', '2020139139');
+
+  perform auth.login_as(admin_);
+  set local role authenticated;
+  perform admin_reject_salon(salon, 'The registration number does not match the name.');
+  reset role;
+  select * into r from notifications where profile_id = owner_ and template = 'salon_rejected';
+  if r.id is null or r.payload ->> 'reason' not like 'The registration number%' then
+    raise exception 'FAIL 141a: a turned-down owner was not told why';
+  end if;
+
+  update salons set cr_number = '3030139139' where id = salon;  -- re-queues it (0021)
+  perform auth.login_as(admin_);
+  set local role authenticated;
+  perform admin_verify_salon(salon, true);
+  perform admin_publish_salon(salon, true);
+  reset role;
+  if not exists (select 1 from notifications where profile_id = owner_ and template = 'salon_approved')
+     or not exists (select 1 from notifications where profile_id = owner_ and template = 'salon_live') then
+    raise exception 'FAIL 141b: an owner was not told their salon was approved and is live';
+  end if;
+
+  -- Closed by its own owner: nothing.
+  delete from notifications where profile_id = owner_;
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  perform close_my_salon(salon);
+  reset role;
+  if exists (select 1 from notifications where profile_id = owner_ and template = 'salon_closed') then
+    raise exception 'FAIL 141c: an owner was notified about closing their own salon';
+  end if;
+
+  -- Closed by Saloni: the former owner is told, and why.
+  insert into salons (id, owner_id, slug, name_en, name_ar, cr_number)
+  values ('c1390000-0000-0000-0000-0000000000a3', owner_, 'notice-close', 'Shut', 'مغلق', '4040139139');
+  perform auth.login_as(admin_);
+  set local role authenticated;
+  perform admin_close_salon('c1390000-0000-0000-0000-0000000000a3', 'Repeated complaints.');
+  reset role;
+  if not exists (select 1 from notifications where profile_id = owner_ and template = 'salon_closed'
+                  and payload ->> 'reason' = 'Repeated complaints.') then
+    raise exception 'FAIL 141d: an owner was not told Saloni closed their salon, or why';
+  end if;
+
+  update notification_settings set notices_enabled = false;
+  raise notice 'PASS 141: an owner hears what Saloni decided about their salon';
+end
+$$;
+reset role;
 
 select 'ALL DATABASE TESTS PASSED' as result;

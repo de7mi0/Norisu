@@ -1,10 +1,42 @@
 import type { PayMethod } from '../types';
 
 /**
- * Payment methods common in Saudi Arabia. These are presentational only — the
- * prototype simulates checkout and never collects card or wallet credentials.
+ * How a customer says they will pay **at the salon**. Nothing is paid through
+ * Saloni, so this records an intention and nothing more.
+ *
+ * This list used to show "mada •••• 4921", "Visa •••• 7734", an STC Pay
+ * "wallet balance SAR 340" and Tabby / Tamara instalments — saved cards and a
+ * balance that did not exist, and credit offers nobody had agreed to provide.
+ * Each was a claim about the customer's own money that the app could not back.
  */
 export const PAY_METHODS: PayMethod[] = [
+  {
+    id: 'cash',
+    name: 'Cash',
+    nameAr: 'نقداً',
+    badge: 'SAR',
+    badgeBg: '#f4f1ea',
+    badgeFg: '#1c1913',
+    badgeBd: '#d8d2c6',
+  },
+  {
+    id: 'mada',
+    name: 'mada card',
+    nameAr: 'بطاقة مدى',
+    badge: 'mada',
+    badgeBg: '#fff',
+    badgeFg: '#0f7a6b',
+    badgeBd: '#0f7a6b',
+  },
+  {
+    id: 'card',
+    name: 'Visa or Mastercard',
+    nameAr: 'فيزا أو ماستركارد',
+    badge: 'CARD',
+    badgeBg: '#1a1f71',
+    badgeFg: '#fff',
+    badgeBd: '#1a1f71',
+  },
   {
     id: 'applepay',
     name: 'Apple Pay',
@@ -15,69 +47,12 @@ export const PAY_METHODS: PayMethod[] = [
     badgeBd: '#000',
   },
   {
-    id: 'mada',
-    name: 'mada',
-    nameAr: 'مدى',
-    sub: '•••• 4921',
-    subAr: '•••• 4921',
-    badge: 'mada',
-    badgeBg: '#fff',
-    badgeFg: '#159d8f',
-    badgeBd: '#159d8f',
-  },
-  {
-    id: 'samsung',
-    name: 'Samsung Pay',
-    nameAr: 'سامسونج باي',
-    sub: '•••• 5510',
-    subAr: '•••• 5510',
-    badge: 'Pay',
-    badgeBg: '#1428a0',
-    badgeFg: '#fff',
-    badgeBd: '#1428a0',
-  },
-  {
     id: 'stc',
     name: 'STC Pay',
     nameAr: 'إس تي سي باي',
-    sub: 'Wallet balance SAR 340',
-    subAr: 'رصيد المحفظة 340 ر.س',
     badge: 'stc',
     badgeBg: '#4f008c',
     badgeFg: '#fff',
     badgeBd: '#4f008c',
-  },
-  {
-    id: 'visa',
-    name: 'Visa',
-    nameAr: 'فيزا',
-    sub: '•••• 7734',
-    subAr: '•••• 7734',
-    badge: 'VISA',
-    badgeBg: '#1a1f71',
-    badgeFg: '#fff',
-    badgeBd: '#1a1f71',
-  },
-  {
-    id: 'tabby',
-    name: 'Tabby',
-    nameAr: 'تابي',
-    sub: '4 interest-free payments',
-    subAr: '4 دفعات بدون فوائد',
-    badge: 'tabby',
-    badgeBg: '#3fd6c1',
-    badgeFg: '#04231f',
-    badgeBd: '#3fd6c1',
-  },
-  {
-    id: 'tamara',
-    name: 'Tamara',
-    nameAr: 'تمارا',
-    sub: 'Split in 3 · no interest',
-    subAr: 'قسّمها على 3 · بدون فوائد',
-    badge: 'tamara',
-    badgeBg: '#e9ddff',
-    badgeFg: '#5b2be0',
-    badgeBd: '#d3bdff',
   },
 ];

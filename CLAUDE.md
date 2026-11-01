@@ -90,7 +90,7 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              714 Chromium checks in both languages; see its README
+  browser-tests/              758 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
   test-hours.mjs              "Open now" from a salon's own hours, in Riyadh time
 src/
@@ -199,6 +199,11 @@ supabase/
                                       its Google Maps link, held to Google's hosts
   migrations/0024_public_reviews.sql  public_reviews(): a salon's reviews for its
                                       page, with "Nora A." and nothing else about her
+  migrations/0026_photo_alt_ar.sql    an Arabic description beside alt_text, both capped
+  migrations/0027_saved_salons.sql    the heart, on the account; private, capped at 200
+  migrations/0028_booking_and_salon_notices.sql  confirmations, moves, salon
+                                      cancellations, 24h + 2h reminders and salon
+                                      decisions, by push and e-mail. OFF by default
   migrations/0025_conversations.sql   messages: customer ↔ salon, customer ↔ Saloni.
                                       No table access at all; five functions that
                                       decide the caller's side themselves
@@ -376,7 +381,7 @@ Auth.tsx  ──dispatch──>  appReducer (authForm: the two steps)
   configured in Supabase. Phone OTP is the Saudi norm and should become the primary channel.
 - **One thing is gated: confirming a booking.** Browsing, picking services and the vendor portal
   still work signed out, because RLS lets anonymous visitors read the published catalogue. But a
-  booking has to belong to somebody, so "Confirm & pay" opens the sign-in sheet with
+  booking has to belong to somebody, so "Confirm booking" opens the sign-in sheet with
   `reason: 'booking'`, which tells the customer why they were interrupted. Nothing is written
   before they sign in.
 - **`profiles.full_name` is written now**, by the "Personal details" row on the profile screen and
@@ -419,7 +424,7 @@ functions in 0003–0012 —
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
 own `my_salon_review()`, and 0025's conversations — `start_conversation()`,
 `post_message()`, `conversation_messages()`, `my_conversations()` and `staff_inbox()`.
-30 RLS policies (plus four on storage.objects). 136 assertions.
+31 RLS policies (plus four on storage.objects). 141 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -716,12 +721,14 @@ failure means the key is already public and must be replaced in Supabase, not ju
 | **Closing a salon** | **Real.** Under Business details, a sheet that says what stops, what survives and that it releases the account, then asks the owner to type the word. It is what makes account deletion reachable for an owner. **Handing a salon to somebody else is still not built.** |
 | **Deleting your account** | **Real, and required by both stores.** A row under sign-out on the Profile screen, then a sheet that says what goes and what stays and asks the person to type the word. It removes the account, the sign-in identity, the queue position, queued messages, devices and reviews; past bookings stay on the salon's calendar with the reference where the name was. Refused while the account owns a salon. |
 | **Customer's name** | **Real.** Written to `profiles.full_name` from the profile screen or the prompt after booking. Optional — the salon sees the reference otherwise. |
-| **Privacy policy and terms** | **Written, and a draft.** In the app in both languages, from the Profile screen and at `?legal` — a URL a store reviewer opens with no account. Drafted from the schema, not a template. **No lawyer has read it**, and three blanks are named on the page itself. See §10. |
+| **Privacy policy, terms, cookies, deletion** | **Written, with the company filled in** — Oilgy Establishment, CR 7055444090, muh.business@gmail.com, data in Frankfurt (eu-central-1). Four tabs at `?legal`, `?legal=terms`, `?legal=cookies` and `?legal=delete` (the last is Google Play's deletion URL). Age 18+, no fees to customers, photo rights for salons. **No cookie banner, deliberately**: no cookies, analytics or ads exist, and the cookies tab says so. Consent is stated on the sign-in sheet and ticked (unticked by default) on salon registration. **Still not read by a lawyer**, and the address lacks a city and National Address. |
 | **Saloni's commission** | **Real, as a record.** A rate per salon and a snapshot per booking (0018); the vendor More hub opens a screen showing what is owed this month and last, from `commission_statement()`. **Nothing is collected** — this is what an invoice will say, not a payment. It replaced a "Payouts · SAR 18,240" row that was invented. |
-| Payment | Simulated. **No card details are ever requested or collected.** |
+| Payment | **Not taken through the app, and now said so.** Checkout reads "Confirm booking" and "You pay the salon at your visit… Saloni adds no fees"; the method chosen (cash, mada, card, Apple Pay, STC Pay) records an intention. It used to say "Confirm & pay" and list saved cards ("mada •••• 4921"), an STC Pay balance and Tabby/Tamara instalments, none of which existed. **No card details are ever requested or collected.** |
 | **Messages** | **Real** (0025). A customer writes to a salon from its page, or to Saloni's team through the assistant; the owner answers from **More → Messages**, an administrator from **Support** in the back office. One thread per customer per salon, read back every few seconds while open — **there is no realtime channel**, so a reply takes up to six seconds to appear. Unread replies show on the assistant button, on Profile → Messages and in the portal. **Push alerts for messages are built and switched off** (`notification_settings.message_push`) until the worker is redeployed — see `supabase/README.md`. |
 | **Saloni Assistant** | **A guide, not AI.** Answers from a written FAQ in both languages (`state/assistant.ts`), matching typed questions by keyword after the same Arabic folding search uses. It says "not sure" rather than guessing and offers a person; it never claims to have passed anything on, which the old script did. What is typed to it never leaves the phone. Built so a model can replace `answerFor()` later and nothing else. |
 | **Photos** | **Real, both sides.** A salon owner uploads from the vendor Gallery: resized, orientation applied, and **EXIF stripped** so a phone photo's GPS coordinates never leave the device, into the `salon-photos` bucket and indexed in `salon_media`. The customer now sees them — the home screen's featured card, every salon card, the salon page's header strip, checkout, chat and the booking list. **A salon with no photographs keeps its placeholder tile**, which is a design rather than a gap. |
+| **Saved salons and sharing** | **Real.** The ♡ on a salon page saves to the account (0027), so the list follows the customer to another phone; Profile → Saved salons lists them. It used to be forgotten on refresh and listed nowhere. Share hands over `?salon=<id>`, which opens that salon's page; it used to say "Link copied" and copy nothing. Assertion 138. |
+| **Confirmations, reminders, salon decisions** | **Built, switched off** (0028, `notification_settings.notices_enabled`) until the worker is redeployed. A customer is told by push — and by e-mail once `'email'` is in `channels` — when a booking is confirmed, moved or cancelled by the salon, and reminded 24 and 2 hours before; a device registered later catches up its reminders. An owner is told when Saloni approves, publishes, turns down (with the reason) or closes their salon. Not told, deliberately: a walk-in, a customer about their own cancellation, an owner about closing their own salon. **E-mail needs a domain of their own** — Resend will not send as gmail.com — so it is unexercised. The confirmation screen offers "Remind me" only when `reminders_on()` says reminders are really being sent. Assertions 139–141. |
 | **Finding a salon** | **Real.** A search field at the top of Explore, matching the salon's **name** in both languages — and folding Arabic so `ورده` finds `وردة`. It filters the catalogue already in memory rather than querying, so it works on the sample data too. **Names only, deliberately**: district, tags and category were matched in the first version and deliberately removed, and service names are not searched at all. |
 | **Writing a review** | **Real.** A past booking the salon marked completed offers "Write a review"; a visit not yet completed says why it cannot be reviewed yet. Final once posted. The salon page reads them through `public_reviews()` (0024) with a first name and initial. **A salon that never marks visits complete never gets reviewed** — that is the policy working, and the thing to watch. |
 | **Cities and location** | **Real.** Explore chooses a city (27, both languages, remembered on the device); a salon lists every city it serves and may give a Google Maps link or its pinned position (0023). "Call" and "Directions" use the salon's own number and location and are hidden when it gave none. |
@@ -990,10 +997,12 @@ the customer's half, confirmed to fail against the code before them.
   with a tag saying "rotate me" — strip the tag without acting on it and every portrait
   photograph in the app lies on its side. `07-photos.mjs` proves the coordinates are gone
   by reading the bytes leaving the browser, not by trusting the function's name.
-- **`salon_media.alt_text` is a single string** in an app that is otherwise bilingual
-  throughout. It wants an `alt_ar` beside it, and a way for an owner to write both — the
-  owner cannot write even the one today, so in practice the salon's name is the alt text on
-  the photograph it leads with and the rest are announced as decoration.
+- **Photographs are described in both languages** (0026): the Gallery marks each one
+  "+ Describe" until its owner writes what it shows in English and Arabic, and the
+  customer's side reads the description in the app's language. Assertion 137.
+- **Accessibility pass (WCAG 2.1 AA).** Five text colours failed 4.5:1 — the faintest grey
+  was 2.4:1 — and were darkened in `theme.ts`; the keyboard focus outline is `!important`
+  because five text fields switched it off inline. `20-checkout-and-access.mjs` checks both.
 - **Nothing moderates an upload.** These appear on a public salon profile, and the only
   limits are size, dimensions and MIME type.
 
@@ -1063,11 +1072,13 @@ the code before them.
 - **Latin names inside the Arabic text** — Supabase, GitHub Pages, Google Fonts — are marked
   `[[…]]` in the dictionary and wrapped in `.ltr-run` by a small renderer in `Legal.tsx`,
   because `Dictionary` values are plain strings and there is nowhere else to put the markup.
-- **Google Fonts is disclosed**, because `index.html` loads typefaces from it and that hands
-  Google the visitor's network address. It is the only third party the page reaches that
-  nobody had written down before.
+- **Google Fonts is gone.** The typefaces are bundled from `@fontsource/*` (SIL Open Font
+  License) and imported in `main.tsx`, so opening the app contacts no third party but
+  Supabase. The policy says so; do not add a CDN font back without changing it.
 
 **Structural gaps:**
+- **Owners are now told** (0028) when a salon is approved, published, turned down or
+  closed — once notices are switched on; see the table in §9.
 - **Verification is still a human decision, but no longer a dashboard one.** A registered salon
   stays invisible to customers until an administrator checks its commercial registration — that
   part is deliberate and is the only human check in the product. What changed in 0021 is where
@@ -1156,10 +1167,10 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (136 assertions);
-  UI changes with `scripts/browser-tests/` (714 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (141 assertions);
+  UI changes with `scripts/browser-tests/` (758 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
-  (21 checks, both languages). Do not report something as
+  (33 checks, both languages). Do not report something as
   working because the code looks right.
 - **A security assertion that cannot fail is worse than none.** Every assertion from 53 onward was
   run against a database with its own protection removed, and each fails there. Do the same for

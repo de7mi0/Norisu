@@ -24,7 +24,7 @@ const ROLE_KEYS = {
 
 /** Customer account screen, including the language switch and vendor hand-off. */
 export function Profile() {
-  const { t, dispatch, isArabic, chevron, session, signOut, unreadMessages } = useApp();
+  const { t, dispatch, isArabic, chevron, session, signOut, unreadMessages, savedIds } = useApp();
 
   // What is actually stored, as opposed to what the header falls back to
   // showing. A blank name is why the salon's calendar sees a reference.
@@ -97,12 +97,17 @@ export function Profile() {
           const isLanguage = row.label === 'Language';
           const isHelp = row.label === 'Help & support';
           const isMessages = row.label === 'Messages';
+          const isSaved = row.label === 'Saved salons';
           // Was a fixed "On" whatever the phone had allowed.
           const isNotifications = row.label === 'Notifications';
           // The rest of these rows are still demo values; this one is real now,
           // so it shows the account rather than the persona it used to.
           const isDetails = row.label === 'Personal details';
-          const value = isNotifications
+          const value = isSaved
+            ? signedIn
+              ? String(savedIds.length)
+              : ''
+            : isNotifications
             ? t[NOTIFY_KEYS[pushState()]]
             : isMessages
             ? unreadMessages > 0
@@ -122,6 +127,8 @@ export function Profile() {
               onClick={() => {
                 if (isLanguage) {
                   dispatch({ type: 'setLang', lang: isArabic ? 'en' : 'ar' });
+                } else if (isSaved) {
+                  dispatch({ type: 'go', screen: 'saved' });
                 } else if (isMessages) {
                   if (signedIn) dispatch({ type: 'openConversation', target: 'inbox', from: 'profile' });
                   else dispatch({ type: 'openAuth', reason: 'message' });

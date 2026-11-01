@@ -5,6 +5,8 @@ import { useApp } from '../../state/context';
 import { color, font } from '../../theme';
 import { canFrame } from '../../lib/images';
 import { PhotoCropSheet } from './PhotoCropSheet';
+import { SheetModal } from '../../components/SheetModal';
+import { ALT_MAX_LENGTH, type SalonPhoto } from '../../data/photos';
 
 /**
  * The salon's photographs.
@@ -19,8 +21,28 @@ import { PhotoCropSheet } from './PhotoCropSheet';
  * portal, because the portal stays browsable signed out on purpose.
  */
 export function Gallery() {
-  const { t, dispatch, isArabic, backIcon, owner, photos, photoBusy, addPhoto, removePhoto, setCoverPhoto } =
-    useApp();
+  const {
+    t,
+    dispatch,
+    isArabic,
+    backIcon,
+    owner,
+    photos,
+    photoBusy,
+    addPhoto,
+    removePhoto,
+    setCoverPhoto,
+    describePhoto,
+  } = useApp();
+  // The photograph whose description is being written, and the two drafts.
+  const [describing, setDescribing] = useState<SalonPhoto | null>(null);
+  const [altEn, setAltEn] = useState('');
+  const [altAr, setAltAr] = useState('');
+  const startDescribing = (photo: SalonPhoto) => {
+    setDescribing(photo);
+    setAltEn(photo.alt);
+    setAltAr(photo.altAr);
+  };
 
   const picker = useRef<HTMLInputElement>(null);
   const ownsSalon = owner.salon !== null;
@@ -106,7 +128,7 @@ export function Gallery() {
               >
                 <img
                   src={photo.url}
-                  alt={photo.alt}
+                  alt={isArabic ? photo.altAr || photo.alt : photo.alt || photo.altAr}
                   loading="lazy"
                   style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 />
@@ -146,6 +168,27 @@ export function Gallery() {
                     {t.photoSetCover}
                   </button>
                 )}
+                {/* What it shows, for customers using a screen reader. Marked
+                    until written, so a missing description is visible. */}
+                <button
+                  type="button"
+                  className="press"
+                  onClick={() => startDescribing(photo)}
+                  style={{
+                    position: 'absolute',
+                    bottom: 8,
+                    insetInlineStart: 8,
+                    background: photo.alt || photo.altAr ? 'rgba(255,255,255,0.92)' : color.gold,
+                    color: photo.alt || photo.altAr ? color.inkSoft : color.goldInk,
+                    font: `600 9px ${font.sans}`,
+                    padding: '4px 8px',
+                    borderRadius: 8,
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {photo.alt || photo.altAr ? t.photoDescribed : t.photoDescribe}
+                </button>
                 <button
                   type="button"
                   className="press"
@@ -264,6 +307,68 @@ export function Gallery() {
             void addPhoto(framing, crop);
           }}
         />
+      ) : null}
+      {describing ? (
+        <SheetModal
+          title={t.photoDescribeTitle}
+          cancelLabel={t.cancel}
+          saveLabel={t.saveChanges}
+          saveDisabled={!altEn.trim() || !altAr.trim()}
+          onCancel={() => setDescribing(null)}
+          onSave={() => {
+            void describePhoto(describing.id, altEn, altAr).then((saved) => {
+              if (saved) setDescribing(null);
+            });
+          }}
+        >
+          <p style={{ font: `500 12px/1.55 ${font.sans}`, color: color.muted, margin: '0 0 12px' }}>
+            {t.photoDescribeHint}
+          </p>
+          <label style={{ display: 'block', font: `600 11px ${font.sans}`, color: color.mutedSoft }}>
+            {t.photoDescribeEn}
+            <textarea
+              value={altEn}
+              dir="ltr"
+              maxLength={ALT_MAX_LENGTH}
+              onChange={(event) => setAltEn(event.target.value)}
+              rows={2}
+              style={{
+                display: 'block',
+                width: '100%',
+                marginTop: 6,
+                padding: 12,
+                borderRadius: 12,
+                border: `1.5px solid ${color.lineWarm}`,
+                background: color.surfaceWarm,
+                font: `500 13px/1.5 ${font.sans}`,
+                color: color.ink,
+                resize: 'none',
+              }}
+            />
+          </label>
+          <label style={{ display: 'block', marginTop: 12, font: `600 11px ${font.sans}`, color: color.mutedSoft }}>
+            {t.photoDescribeAr}
+            <textarea
+              value={altAr}
+              dir="rtl"
+              maxLength={ALT_MAX_LENGTH}
+              onChange={(event) => setAltAr(event.target.value)}
+              rows={2}
+              style={{
+                display: 'block',
+                width: '100%',
+                marginTop: 6,
+                padding: 12,
+                borderRadius: 12,
+                border: `1.5px solid ${color.lineWarm}`,
+                background: color.surfaceWarm,
+                font: `500 13px/1.5 ${font.sans}`,
+                color: color.ink,
+                resize: 'none',
+              }}
+            />
+          </label>
+        </SheetModal>
       ) : null}
     </Screen>
   );

@@ -1,18 +1,24 @@
 /** Design tokens taken from the Saloni prototype. */
 
+/**
+ * Text colours were checked against WCAG 2.1 AA (4.5:1 for normal text) on
+ * every light surface below. mutedSoft, mutedFaint, goldLink, danger and
+ * success all failed — the faintest grey was 2.4:1 — and were darkened to the
+ * nearest shade that passes. Keep new text colours at 4.5:1 or above.
+ */
 export const color = {
   gold: '#f5c542',
   goldDeep: '#c99a1e',
   goldInk: '#2a2205',
   goldInkAlt: '#3a2e08',
   goldSoft: '#f5d97a',
-  goldLink: '#b0891f',
+  goldLink: '#856817',
 
   ink: '#1c1913',
   inkSoft: '#4a453c',
   muted: '#6a6459',
-  mutedSoft: '#8a857a',
-  mutedFaint: '#a39e93',
+  mutedSoft: '#6f6b62',
+  mutedFaint: '#716d65',
   disabled: '#c9c3b7',
 
   page: '#fdfcfa',
@@ -33,8 +39,8 @@ export const color = {
   tealSoft: '#e8fbf6',
   tealLine: '#bff0e6',
   tealBright: '#3fd6c1',
-  danger: '#e05555',
-  success: '#3a8a3a',
+  danger: '#b94646',
+  success: '#337a33',
 } as const;
 
 export const font = {

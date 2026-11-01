@@ -56,7 +56,7 @@ function failureText(failure: AuthFailure, t: Dictionary): string {
  * the customer was on their way somewhere else.
  */
 export function Auth() {
-  const { t, state, dispatch, requestPasscode, submitPasscode, backIcon } = useApp();
+  const { t, state, dispatch, requestPasscode, submitPasscode, backIcon, isArabic } = useApp();
   const { channel, identifier, code, step, pending, error, sentAt } = state.authForm;
 
   const titleId = useId();
@@ -149,7 +149,7 @@ export function Auth() {
           <p
             style={{
               font: `600 12.5px/1.6 ${font.sans}`,
-              color: '#8a6d14',
+              color: '#856913',
               background: color.cream,
               border: `1px solid ${color.creamLine}`,
               borderRadius: 12,
@@ -161,7 +161,9 @@ export function Auth() {
               ? t.authWhyVendor
               : state.authReason === 'message'
                 ? t.authWhyMessage
-                : t.authWhyBooking}
+                : state.authReason === 'save'
+                  ? t.authWhySave
+                  : t.authWhyBooking}
           </p>
         ) : null}
 
@@ -299,6 +301,46 @@ export function Auth() {
         >
           {pending ? t.authWorking : onCodeStep ? t.authVerify : t.authSend}
         </button>
+
+        {/* The consent, said before an account exists rather than buried after.
+            No checkbox to pre-tick or forget: continuing is the agreement, and
+            the sentence says so in plain words. */}
+        {!onCodeStep ? (
+          <p
+            style={{
+              font: `500 11.5px/1.6 ${font.sans}`,
+              color: color.muted,
+              margin: '12px 0 0',
+              textAlign: 'center',
+            }}
+          >
+            {t.authConsentLead}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: 'closeAuth' });
+                dispatch({ type: 'openLegal', tab: 'terms' });
+              }}
+              style={{ font: 'inherit', color: color.goldInkAlt, textDecoration: 'underline' }}
+            >
+              {t.authConsentTerms}
+            </button>{' '}
+            {/* Arabic و joins the word after it; English "and the" does not. */}
+            {t.authConsentAnd}
+            {isArabic ? '' : ' '}
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: 'closeAuth' });
+                dispatch({ type: 'openLegal', tab: 'privacy' });
+              }}
+              style={{ font: 'inherit', color: color.goldInkAlt, textDecoration: 'underline' }}
+            >
+              {t.authConsentPrivacy}
+            </button>
+            .
+          </p>
+        ) : null}
 
         {onCodeStep ? (
           <button
