@@ -84,7 +84,7 @@ export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
           padding: '12px 14px',
         }}
       >
-        <div style={{ font: `700 12px ${font.sans}`, color: '#8a6d14' }}>
+        <div style={{ font: `700 12px ${font.sans}`, color: '#856913' }}>
           {/* "You closed this salon" is false when Saloni did it — and that
               owner is the one person who most needs to be told which it was. */}
           {closed.bySaloni ? t.closedBySaloniTitle : t.closedPortalTitle}
@@ -189,7 +189,7 @@ export function SampleDataNotice({ section }: SampleDataNoticeProps = {}) {
         gap: 10,
       }}
     >
-      <span style={{ font: `600 11.5px/1.45 ${font.sans}`, color: '#8a6d14' }}>
+      <span style={{ font: `600 11.5px/1.45 ${font.sans}`, color: '#856913' }}>
         {isArabic ? message.ar : message.en}
       </span>
       {owner.status === 'signedOut' ? (

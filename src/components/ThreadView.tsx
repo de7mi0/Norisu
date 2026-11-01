@@ -160,7 +160,7 @@ export function Initial({ text, dark = false }: { text: string; dark?: boolean }
         flex: 'none',
         borderRadius: '50%',
         background: dark ? color.ink : color.cream,
-        color: dark ? color.goldSoft : '#8a6d14',
+        color: dark ? color.goldSoft : '#856913',
         border: dark ? 'none' : `1px solid ${color.creamLine}`,
         display: 'flex',
         alignItems: 'center',

@@ -50,7 +50,7 @@ export function WaitlistSheet() {
           padding: '12px 14px',
           marginBottom: 12,
           font: `500 12px/1.55 ${font.sans}`,
-          color: '#8a6d14',
+          color: '#856913',
         }}
       >
         <div style={{ font: `700 12.5px ${font.sans}`, marginBottom: 3 }}>

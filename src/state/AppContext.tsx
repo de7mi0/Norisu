@@ -10,6 +10,7 @@ import {
 import { appReducer, initialStateFor } from './appReducer';
 import { AppContext, dateAtOffset, type AppContextValue, type CatalogSource } from './context';
 import { REPLY_DELAY } from './replies';
+import { loadSaved, setSaved } from '../data/saved';
 import {
   answerFor,
   answerForTopic,
@@ -80,6 +81,7 @@ import {
 import { isPushConfigured, pushState, registerWorker, subscribe as subscribeToPush, syncExisting } from '../lib/push';
 import {
   deletePhoto as deletePhotoRow,
+  describePhoto as describePhotoRow,
   loadPhotos,
   makeCover as makeCoverRow,
   uploadPhoto as uploadPhotoRow,
@@ -345,6 +347,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ---------------------------------------------------------------------
   // Arriving from a notification
   // ---------------------------------------------------------------------
+
+  // ?salon=<id>, from a shared link: open that salon once the catalogue that
+  // contains it has arrived. Read once and stripped, like ?claim.
+  const sharedSalon = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('salon');
+    if (!id || !/^[0-9a-z-]{1,64}$/i.test(id)) return;
+    sharedSalon.current = id;
+    params.delete('salon');
+    const rest = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`,
+    );
+  }, []);
+  useEffect(() => {
+    const id = sharedSalon.current;
+    if (!id || catalogSource === 'loading') return;
+    if (catalog.salons.some((salon) => salon.id === id)) {
+      sharedSalon.current = null;
+      dispatch({ type: 'pickMode', mode: 'customer' });
+      dispatch({ type: 'openSalon', salonId: id });
+    } else if (catalogSource !== 'demo' || !isSupabaseConfigured) {
+      sharedSalon.current = null;
+    }
+  }, [catalog.salons, catalogSource]);
 
   // The token from ?claim=, held until there is an account to claim it for.
   const pendingClaim = useRef<string | null>(null);
@@ -795,6 +825,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await refreshPhotos();
     },
     [flash, photoFailureText, refreshPhotos],
+  );
+
+  /** The owner's description of a photograph, in both languages (0026). */
+  const describePhoto = useCallback(
+    async (photoId: string, altEn: string, altAr: string): Promise<boolean> => {
+      const failure = await describePhotoRow(photoId, altEn, altAr);
+      if (failure) {
+        flash(photoFailureText(failure));
+        return false;
+      }
+      await refreshPhotos();
+      flash(isArabic ? 'حُفظ الوصف' : 'Description saved');
+      return true;
+    },
+    [flash, isArabic, photoFailureText, refreshPhotos],
   );
 
   const setCoverPhoto = useCallback(
@@ -1797,6 +1842,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const unreadMessages = inbox.items.filter((item) => item.unread).length;
 
+  // ---------------------------------------------------------------------------
+  // Saved salons (0027), on the account. Remote state like the inbox; the
+  // heart updates at once and goes back if the database says no.
+  // ---------------------------------------------------------------------------
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!userId) {
+      setSavedIds([]);
+      return;
+    }
+    let cancelled = false;
+    void loadSaved().then((ids) => {
+      if (!cancelled && ids) setSavedIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const toggleSave = useCallback(
+    async (salonId: string) => {
+      if (!userId) {
+        dispatch({ type: 'openAuth', reason: 'save' });
+        return;
+      }
+      const saving = !savedIds.includes(salonId);
+      setSavedIds((ids) => (saving ? [salonId, ...ids] : ids.filter((id) => id !== salonId)));
+      const ok = await setSaved(userId, salonId, saving);
+      if (!ok) {
+        setSavedIds((ids) => (saving ? ids.filter((id) => id !== salonId) : [salonId, ...ids]));
+        flash(isArabic ? 'تعذّر الحفظ. حاول مرة أخرى.' : 'Could not save that. Try again.');
+      }
+    },
+    [flash, isArabic, savedIds, userId],
+  );
+
   const waitlistFailureText = useCallback(
     (failure: WaitlistFailure): string => {
       const messages: Record<WaitlistFailure, { en: string; ar: string }> = {
@@ -2252,6 +2334,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addPhoto,
       removePhoto,
       setCoverPhoto,
+      describePhoto,
       vendorReviews,
       commission,
       admin,
@@ -2302,6 +2385,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       inbox,
       thread,
       unreadMessages,
+      savedIds,
+      toggleSave,
       openSalonChat,
       openInboxThread,
       sendThreadMessage,
@@ -2325,6 +2410,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       inbox,
       thread,
       unreadMessages,
+      savedIds,
+      toggleSave,
       openSalonChat,
       openInboxThread,
       sendThreadMessage,
@@ -2352,6 +2439,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addPhoto,
       removePhoto,
       setCoverPhoto,
+      describePhoto,
       vendorReviews,
       commission,
       admin,

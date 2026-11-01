@@ -15,10 +15,11 @@ export type CustomerScreen =
   | 'chat'
   | 'bot'
   | 'inbox'
+  | 'saved'
   | 'legal';
 
 /** Which half of the privacy-and-terms page is showing. */
-export type LegalTab = 'privacy' | 'terms';
+export type LegalTab = 'privacy' | 'terms' | 'cookies' | 'delete';
 
 export type VendorScreen =
   | 'v_onboard'

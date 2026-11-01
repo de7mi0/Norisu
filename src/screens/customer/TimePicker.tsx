@@ -69,7 +69,7 @@ export function TimePicker() {
               borderRadius: 12,
               padding: '11px 14px',
               font: `600 11.5px ${font.sans}`,
-              color: '#8a6d14',
+              color: '#856913',
             }}
           >
             {t.reschedulingNote}
@@ -126,7 +126,7 @@ export function TimePicker() {
                 borderRadius: 12,
                 padding: '10px 13px',
                 font: `500 11.5px/1.5 ${font.sans}`,
-                color: '#8a6d14',
+                color: '#856913',
               }}
             >
               {t.sampleTimesNotice}
@@ -253,7 +253,7 @@ export function TimePicker() {
             <div
               style={{
                 font: `600 14px ${font.sans}`,
-                color: '#8a6d14',
+                color: '#856913',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -348,8 +348,8 @@ export function TimePicker() {
             : state.reschedule
               ? t.bookConfirmMove
               : isArabic
-                ? 'المتابعة للدفع'
-                : 'Continue to payment'}
+                ? 'المتابعة للمراجعة'
+                : 'Continue to review'}
         </button>
       </BottomBar>
     </>

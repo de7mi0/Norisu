@@ -19,7 +19,7 @@ import type { AdminSalon, AdminStatus } from '../../data/admin';
 function toneFor(status: AdminStatus): { bg: string; fg: string; line: string } {
   switch (status) {
     case 'awaiting':
-      return { bg: color.cream, fg: '#8a6d14', line: color.creamLine };
+      return { bg: color.cream, fg: '#856913', line: color.creamLine };
     case 'live':
       return { bg: color.tealSoft, fg: color.teal, line: color.tealLine };
     case 'rejected':
@@ -102,7 +102,7 @@ export function AdminRegister() {
               background: awaiting > 0 ? color.cream : color.surfaceWarm,
               border: `1px solid ${awaiting > 0 ? color.creamLine : color.lineWarm}`,
               font: `600 12px ${font.sans}`,
-              color: awaiting > 0 ? '#8a6d14' : color.mutedSoft,
+              color: awaiting > 0 ? '#856913' : color.mutedSoft,
             }}
           >
             {awaiting > 0 ? `${awaiting} ${t.adminAwaitingLabel}` : t.adminNothingWaiting}

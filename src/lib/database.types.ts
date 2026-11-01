@@ -50,6 +50,8 @@ export interface SalonMediaRow {
   salon_id: string;
   storage_path: string;
   alt_text: string | null;
+  /** 0026. Absent until that migration is applied, hence optional. */
+  alt_text_ar?: string | null;
   is_cover: boolean;
   sort_order: number;
 }

@@ -7392,4 +7392,129 @@ $$;
 reset role;
 
 
+-- ---------------------------------------------------------------------------
+-- 137. A photograph's description is its salon owner's to write, in both
+--      languages, and nobody else's — and a visitor can read it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  owner_ uuid := 'c1310000-0000-0000-0000-000000000002';  -- owns "Chat Rival"
+  other  uuid := 'c1310000-0000-0000-0000-000000000004';
+  salon  uuid := 'c1310000-0000-0000-0000-0000000000a2';
+  photo  uuid;
+  n      integer;
+  seen   record;
+begin
+  insert into salon_media (salon_id, storage_path) values (salon, salon::text || '/gallery/x.jpg')
+  returning id into photo;
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  update salon_media set alt_text = 'Two chairs by a window', alt_text_ar = 'كرسيان بجانب نافذة'
+   where id = photo;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 1 then
+    raise exception 'FAIL 137a: the owner could not describe their own photograph';
+  end if;
+
+  perform auth.login_as(other);
+  set local role authenticated;
+  update salon_media set alt_text = 'spam', alt_text_ar = 'spam' where id = photo;
+  get diagnostics n = row_count;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 137b: somebody else rewrote a salon''s photograph description';
+  end if;
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    update salon_media set alt_text_ar = repeat('x', 201) where id = photo;
+    raise exception 'FAIL 137c: a 201-character description was accepted';
+  exception when check_violation then null;
+  end;
+  reset role;
+
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  select alt_text, alt_text_ar into seen from salon_media where id = photo;
+  reset role;
+  if seen.alt_text_ar is distinct from 'كرسيان بجانب نافذة' then
+    raise exception 'FAIL 137d: a visitor cannot read the Arabic description';
+  end if;
+
+  raise notice 'PASS 137: a photograph is described by its own salon, in both languages';
+end
+$$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 138. Saved salons are the account's own: nobody else reads them, nobody
+--      saves on another's behalf, an unpublished salon cannot be saved, and
+--      they go with the account.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  me     uuid := 'c1380000-0000-0000-0000-000000000001';
+  other  uuid := 'c1380000-0000-0000-0000-000000000002';
+  public_ uuid := 'c1310000-0000-0000-0000-0000000000a2';  -- published
+  hidden uuid := 'c1310000-0000-0000-0000-0000000000a3';   -- unpublished
+  n      integer;
+begin
+  insert into auth.users (id) values (me), (other);
+
+  perform auth.login_as(me);
+  set local role authenticated;
+  insert into saved_salons (profile_id, salon_id) values (me, public_);
+  begin
+    insert into saved_salons (profile_id, salon_id) values (other, public_);
+    raise exception 'FAIL 138a: an account saved a salon on somebody else''s list';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into saved_salons (profile_id, salon_id) values (me, hidden);
+    raise exception 'FAIL 138b: an unpublished salon was saved';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into saved_salons (profile_id, salon_id, created_at)
+    values (me, 'c1310000-0000-0000-0000-0000000000a1', now() - interval '1 year');
+    raise exception 'FAIL 138c: the saved time was written by the browser';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform auth.login_as(other);
+  set local role authenticated;
+  select count(*) into n from saved_salons;
+  reset role;
+  if n <> 0 then
+    raise exception 'FAIL 138d: one account read another''s saved salons';
+  end if;
+
+  perform set_config('request.jwt.claims', null, true);
+  set local role anon;
+  begin
+    perform 1 from saved_salons;
+    raise exception 'FAIL 138e: a signed-out visitor read saved salons';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  perform auth.login_as(me);
+  set local role authenticated;
+  perform delete_my_account();
+  reset role;
+  if exists (select 1 from saved_salons where profile_id = me) then
+    raise exception 'FAIL 138f: a deleted account''s saved salons were kept';
+  end if;
+
+  raise notice 'PASS 138: saved salons are private to their account and go with it';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

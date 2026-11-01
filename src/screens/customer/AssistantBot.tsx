@@ -166,7 +166,7 @@ export function AssistantBot() {
               borderRadius: 18,
               background: color.cream,
               border: `1px solid ${color.creamLine}`,
-              color: '#8a6d14',
+              color: '#856913',
               font: `600 11.5px ${font.sans}`,
             }}
           >

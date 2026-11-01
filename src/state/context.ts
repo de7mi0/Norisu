@@ -112,6 +112,8 @@ export interface AppContextValue {
   addPhoto: (file: File, crop?: CropRect) => Promise<void>;
   removePhoto: (photo: SalonPhoto) => Promise<void>;
   setCoverPhoto: (photoId: string) => Promise<void>;
+  /** Writes what a photograph shows, in English and Arabic. True when saved. */
+  describePhoto: (photoId: string, altEn: string, altAr: string) => Promise<boolean>;
   /** That salon's own reviews, unpublished ones included. */
   vendorReviews: VendorReviews;
   /**
@@ -222,6 +224,10 @@ export interface AppContextValue {
   /** The messages of the conversation on screen. */
   thread: Thread;
   unreadMessages: number;
+  /** The account's saved salons (0027), newest first. Empty when signed out. */
+  savedIds: string[];
+  /** Saves or unsaves; asks a signed-out visitor to sign in first. */
+  toggleSave: (salonId: string) => Promise<void>;
   /** A conversation with a salon, or with Saloni when `salonId` is null. */
   openSalonChat: (
     salonId: string | null,

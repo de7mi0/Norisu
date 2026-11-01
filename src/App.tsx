@@ -24,6 +24,7 @@ import { Bookings } from './screens/customer/Bookings';
 import { Chat } from './screens/customer/Chat';
 import { Chooser } from './screens/customer/Chooser';
 import { Inbox } from './screens/customer/Inbox';
+import { Saved } from './screens/customer/Saved';
 import { Confirmation } from './screens/customer/Confirmation';
 import { Home } from './screens/customer/Home';
 import { Legal } from './screens/customer/Legal';
@@ -64,6 +65,7 @@ const CUSTOMER_SCREENS: Record<CustomerScreen, () => React.ReactElement> = {
   chat: Chat,
   bot: AssistantBot,
   inbox: Inbox,
+  saved: Saved,
   legal: Legal,
 };
 

@@ -1,5 +1,5 @@
 export const en = {
-  chTag: "Book the Kingdom's finest salons — or grow your own. Choose how you'd like to enter.",
+  chTag: "Book a salon in Saudi Arabia — or list your own. Choose how you'd like to enter.",
   chCust: "I'm a customer",
   chCustSub: 'Browse & book appointments',
   chVend: 'I own a salon',
@@ -58,6 +58,8 @@ export const en = {
     'Register now and set up your hours, services and team straight away. Your salon appears to customers once we have checked your commercial registration.',
   registering: 'Registering…',
   registerNeedsFields: 'Name, CR number and a city required',
+  registerAgree: 'I am 18 or over, authorised to register this business, and I agree to the salon',
+  registerNeedsAgree: 'Tick the agreement to register',
   salonCategory: "Category",
   categoryOther: "Other",
   salonCities: "Cities you serve",
@@ -96,14 +98,15 @@ export const en = {
   sampleTimesNotice: 'Showing sample times — live availability is unavailable right now.',
   reschedulingNote: 'Rescheduling — choose a new time',
 
-  reviewPay: 'Review & pay',
+  reviewPay: 'Review & confirm',
   step3: 'Step 3 of 3',
   subtotal: 'Subtotal',
   discount: 'Discount',
   vat: 'VAT (15%)',
   total: 'Total',
-  paymentMethod: 'Payment method',
-  confirmPay: 'Confirm & pay',
+  paymentMethod: 'How you will pay at the salon',
+  confirmPay: 'Confirm booking',
+  payAtSalon: 'You pay the salon at your visit. Nothing is charged now, and Saloni adds no fees.',
 
   booked: "You're booked!",
   bookingRef: 'Booking ref',
@@ -133,7 +136,7 @@ export const en = {
   switchVendor: 'Switch to vendor portal',
 
   registerSalon: 'Register your salon',
-  registerDesc: "Join the Kingdom's premium salon network. It takes about 5 minutes.",
+  registerDesc: "List your salon on Saloni. Fill in your details below; we check your commercial registration before customers can see you.",
   dropPin: 'DROP PIN · MAP LOCATION',
   createSalon: 'Create salon & open dashboard',
 
@@ -188,9 +191,17 @@ export const en = {
   cropWide: "Wide",
   cropSquare: "Square",
   cropOriginal: "Original",
+  // Was "High-quality photos boost bookings by up to 3×" — a figure nobody
+  // measured. Now the one thing an owner must know before uploading.
   galleryDesc:
-    'High-quality photos boost bookings by up to 3×. The first photo is your cover.',
+    'Upload only photos you took yourself or have a licence to use. The first photo is your cover.',
   cover: 'COVER',
+  photoDescribe: '+ Describe',
+  photoDescribed: 'Described ✓',
+  photoDescribeTitle: 'Describe this photo',
+  photoDescribeHint: 'Say what the photo shows — for example “Two styling chairs by a window”. Customers who use a screen reader hear this instead of seeing the picture.',
+  photoDescribeEn: 'In English',
+  photoDescribeAr: 'In Arabic',
   upload: 'Upload',
 
   reviewsTitle: 'Reviews',
@@ -286,6 +297,10 @@ export const en = {
   assistantSub: 'Quick answers · a person when you need one',
   typeMessage: 'Type a message…',
   // Conversations with a salon or with Saloni (0025).
+  savedTitle: 'Saved salons',
+  savedSub: 'Kept on your account, on every phone you use',
+  savedEmpty: 'Nothing saved yet. Tap ♡ on a salon’s page to keep it here.',
+  savedRemove: 'Remove from saved',
   msgInboxTitle: 'Messages',
   notifyOn: 'On',
   notifyOff: 'Off',
@@ -421,6 +436,10 @@ export const en = {
   deleteDone: 'Your account has been deleted.',
   deleteFailed: 'Could not delete the account. Check your connection and try again.',
   authSignOut: 'Sign out',
+  authConsentLead: 'By continuing you confirm you are 18 or over and agree to the',
+  authConsentTerms: 'Terms',
+  authConsentAnd: 'and the',
+  authConsentPrivacy: 'Privacy Policy',
   vendorSignedInAs: 'Signed in as',
   vendorSignedOut: 'Sign in to manage your own salon.',
   vendorHaveSalon: 'Already registered your salon? Sign in with the same account to manage it.',
@@ -452,6 +471,7 @@ export const en = {
   bookFindSalon: 'Find a salon',
 
   authWhyBooking: 'Your booking is ready — sign in to save it to your account.',
+  authWhySave: 'Sign in to save salons — your list is kept on your account, on every phone you use.',
   authWhyMessage: 'Sign in so the reply can reach you — your message is kept while you do.',
 
   authWhyVendor:
@@ -474,11 +494,13 @@ export const en = {
   legalSub: 'What Saloni keeps, and the rules it runs by',
   legalTabPrivacy: 'Privacy',
   legalTabTerms: 'Terms',
-  legalDraftTitle: 'Draft — not approved yet',
-  legalDraftBody:
-    'This was written from what the app actually does, not by a lawyer. It has to be read and approved by one, and the blanks below filled in, before Saloni is submitted to either app store or relied on by anybody.',
-  legalDraftBlanks:
-    'Still to be supplied: the name and address of the company behind Saloni, a contact address for privacy questions, and the country the database is hosted in.',
+  legalOperatorTitle:
+    'Who runs Saloni',
+  legalOperatorBody:
+    'Saloni is operated by [[Oilgy Establishment]], commercial registration [[7055444090]], Prince Fawaz South Project, Saudi Arabia. For anything about this page, your data or your account, write to [[muh.business@gmail.com]].',
+  legalUpdated: 'Last updated 1 November 2026',
+  legalTabCookies: 'Cookies',
+  legalTabDelete: 'Delete account',
 
   legalPrivIntroH: 'What this covers',
   legalPrivIntroB:
@@ -488,7 +510,7 @@ export const en = {
   legalPrivCollectB:
     'Only what a booking needs. Every item below is stored because a screen you use depends on it.',
   legalPrivCollectL:
-    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. On the salon’s page it is shown with your first name and the first letter of your second — “Nora A.” — and to the salon itself with the name you gave.\nMessages you send to a salon or to the Saloni team, and their replies. A salon’s conversations are read by its owner; Saloni’s by its administrators, who do not read your conversations with salons. What you type to the Saloni Assistant is answered on your phone and is not kept anywhere.',
+    'The e-mail address or mobile number you sign in with. There is no password anywhere in Saloni — each sign-in uses a fresh six-digit code — so there is none to store, reset or leak.\nYour name, if you give one. It is optional, and it is the only thing about you a salon is shown.\nWhich language you chose, so the app opens in it on your next phone rather than on this one only.\nYour appointments: the salon, the services, the specialist, the date and time, and what they cost at the moment you booked. That price is a copy, kept so a salon raising its prices later cannot rewrite what you agreed to.\nYour place in a waitlist, for as long as you are in one.\nWhether you have asked to be notified, and the address your browser or phone gave for sending a notification to.\nAny review you write, with its rating and its words. On the salon’s page it is shown with your first name and the first letter of your second — “Nora A.” — and to the salon itself with the name you gave.\nThe salons you save with ♡, so your list is there on any phone you sign in on.\nMessages you send to a salon or to the Saloni team, and their replies. A salon’s conversations are read by its owner; Saloni’s by its administrators, who do not read your conversations with salons. What you type to the Saloni Assistant is answered on your phone and is not kept anywhere.',
 
   legalPrivNeverH: 'What Saloni never asks for',
   legalPrivNeverB:
@@ -514,7 +536,7 @@ export const en = {
 
   legalPrivWhereH: 'Where it is held',
   legalPrivWhereB:
-    'The database, the sign-in service and the photographs are hosted by [[Supabase]]. The app itself is served as a web page by [[GitHub Pages]]. That page loads its typefaces from [[Google Fonts]], which means [[Google]] sees the network address your device connects from when a screen first opens. The country the database is hosted in must be stated here before Saloni is submitted — see the note at the top.',
+    'The database, the sign-in service and the photographs are hosted by [[Supabase]] in its Frankfurt, Germany data centre, so your data is stored outside Saudi Arabia, in the European Union. The app itself is served as a web page by [[GitHub Pages]]. Its typefaces are part of the app, so opening it contacts nobody else — no font service, no advertising network, no analytics company.',
 
   legalPrivKeepH: 'How long it is kept',
   legalPrivKeepB:
@@ -532,7 +554,7 @@ export const en = {
 
   legalPrivChildH: 'Children',
   legalPrivChildB:
-    'Saloni is for adults. It is not designed for children and asks for nothing that would identify one.',
+    'You must be 18 or over to have a Saloni account. The app is not designed for children, and if we learn that an account belongs to somebody under 18 we delete it.',
 
   legalPrivChangeH: 'Changes to this page',
   legalPrivChangeB:
@@ -540,15 +562,15 @@ export const en = {
 
   legalPrivContactH: 'Contact',
   legalPrivContactB:
-    'A contact address for privacy questions has not been set yet, and must be before Saloni is submitted. Until then, ask through Help & support in the app.',
+    'Write to [[muh.business@gmail.com]]. We reply within 30 days, which is the time Saudi law allows for a request about your data.',
 
   legalTermIntroH: 'What Saloni is',
   legalTermIntroB:
-    'Saloni introduces you to a salon and holds your appointment with it. The work itself — the cut, the colour, the treatment — is the salon’s, and so is the responsibility for it. Saloni is not the salon and does not employ its staff.',
+    'Saloni is operated by [[Oilgy Establishment]] (commercial registration [[7055444090]]). It introduces you to a salon and holds your appointment with it. The work itself — the cut, the colour, the treatment — is the salon’s, and so is the responsibility for it. Saloni is not the salon and does not employ its staff.',
 
   legalTermAccountH: 'Your account',
   legalTermAccountB:
-    'Signing in takes a six-digit code sent to your e-mail address or your mobile number. There is no password. That code is how the app knows you, so anybody with your inbox or your phone can sign in as you — keep both to yourself. One account is one person.',
+    'You must be 18 or over to create an account. Signing in takes a six-digit code sent to your e-mail address or your mobile number. There is no password. That code is how the app knows you, so anybody with your inbox or your phone can sign in as you — keep both to yourself. One account is one person.',
 
   legalTermBookH: 'Booking and cancelling',
   legalTermBookB:
@@ -557,6 +579,10 @@ export const en = {
   legalTermPayH: 'Payment',
   legalTermPayB:
     'Nothing is paid through Saloni. Choosing a payment method at checkout records which one you would use; it takes no money and no card number, and you pay the salon directly. Prices come from the salon and include VAT at the rate stored with your booking, so a later change to that rate cannot alter what you were quoted.',
+
+  legalTermFeeH: 'Fees',
+  legalTermFeeB:
+    'Saloni charges you nothing: no booking fee, no service fee and no cancellation fee. The price you see is the salon’s own price, VAT included, and the full total is shown before you confirm. Salons pay Saloni a commission on visits they complete; it is never added to your price.',
 
   legalTermWaitH: 'Waitlists',
   legalTermWaitB:
@@ -568,7 +594,7 @@ export const en = {
 
   legalTermSalonH: 'If you run a salon',
   legalTermSalonB:
-    'You are responsible for what you publish: your services, your prices, your team, your photographs, and that your commercial registration is genuine and current. A person checks a salon before customers can see it, and being registered is not the same as being approved. Do not upload a photograph you have no right to use. What you are shown about a customer is a name or a booking reference — treat it as theirs, and use it only to do the work they booked.',
+    'You are responsible for what you publish: your services, your prices, your team, your photographs, and that your commercial registration is genuine and current. A person checks a salon before customers can see it, and being registered is not the same as being approved. Upload only photographs you took yourself or have a licence to use — a stock image only if its licence allows it — and describe each one so customers using a screen reader know what it shows. What you are shown about a customer is a name or a booking reference — treat it as theirs, and use it only to do the work they booked.',
 
   legalTermUseH: 'Using it fairly',
   legalTermUseB: 'A short list, all of which the database already enforces:',
@@ -634,6 +660,31 @@ export const en = {
   legalTermChangeH: 'Changes to these terms',
   legalTermChangeB:
     'These terms change with the app, on this page. Carrying on using Saloni after a change means accepting it.',
+
+  legalCookieIntroH:
+    'No cookies, no tracking',
+  legalCookieIntroB:
+    'Saloni sets no cookies and uses no advertising, analytics or tracking of any kind, so there is nothing to accept or refuse. It keeps a few things on your own device, only because the app cannot work without them:',
+  legalCookieL:
+    'Your sign-in, so you are still signed in when you reopen the app. Signing out removes it.\nThe city you chose on Explore, so you do not have to choose it on every visit.\nIf you allow notifications, the browser’s own record that you did. It is kept by the browser, not by Saloni.',
+  legalCookieClearH:
+    'Removing it',
+  legalCookieClearB:
+    'Signing out removes your sign-in. Clearing this site’s data in your browser settings, or uninstalling the app, removes all of it. None of it is shared with anybody.',
+  legalCookieChangeH:
+    'If this changes',
+  legalCookieChangeB:
+    'If Saloni ever adds something that is not strictly needed for the app to work — such as measuring how it is used — it will ask you first, and this page will say so.',
+  legalDelIntroH:
+    'Deleting your Saloni account',
+  legalDelIntroB:
+    'You can delete your account and the data attached to it at any time, in either of two ways:',
+  legalDelL:
+    'In the app: Profile → “Delete my account”, under Sign out. Type the word it asks for and it is done at once.\nWithout the app: e-mail [[muh.business@gmail.com]] from the address you sign in with, with the subject “Delete my account”. We delete it within 30 days and reply to confirm.',
+  legalDelWhatH:
+    'What is deleted, and what is kept',
+  legalDelWhatB:
+    'Your profile, your sign-in, your name, your messages, your reviews, your saved salons, your devices and your place in any waitlist are removed for good, and any appointment still to come is cancelled. Appointments you have already had stay on the salon’s own records with no name attached. If you own a salon, close it first: vendor portal → Business profile → Close this salon.',
 
 
   // ---------------------------------------------------------------------

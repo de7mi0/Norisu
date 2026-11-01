@@ -205,7 +205,7 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
     // Cover first, then the owner's order, which is the order the screens want.
     supabase
       .from('salon_media')
-      .select('id, salon_id, storage_path, alt_text, is_cover, sort_order')
+      .select('*')
       .order('is_cover', { ascending: false })
       .order('sort_order')
       .abortSignal(signal)

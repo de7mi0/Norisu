@@ -16,9 +16,15 @@ import type { LegalTab } from '../../types';
  * The second is that the words are **drafted from the schema**, not from a
  * template. Every line in "what Saloni keeps" is a column that exists, and
  * every line in "what it never asks for" is a column that deliberately does
- * not. Nobody involved in writing it is a lawyer, which is the first thing
- * the page says. Keep it that way: if a migration starts collecting something
- * new, the list here is part of the change, not a follow-up.
+ * not. If a migration starts collecting something new, the list here is part
+ * of the change, not a follow-up.
+ *
+ * Four tabs: privacy, terms, cookies (there are none, and the tab says so
+ * instead of a banner), and deletion — `?legal=delete` is the page Google
+ * Play asks for, usable with no app and no account. The company, its
+ * registration and the contact address head every tab. Nobody who wrote this
+ * is a lawyer; that is now said in CLAUDE.md rather than on the page, and a
+ * lawyer's reading is still owed before launch.
  *
  * The strings live in the dictionaries like every other string in the app; all
  * this file decides is the order they appear in.
@@ -61,6 +67,7 @@ const TERMS: Section[] = [
   { heading: 'legalTermAccountH', body: 'legalTermAccountB' },
   { heading: 'legalTermBookH', body: 'legalTermBookB' },
   { heading: 'legalTermPayH', body: 'legalTermPayB' },
+  { heading: 'legalTermFeeH', body: 'legalTermFeeB' },
   { heading: 'legalTermWaitH', body: 'legalTermWaitB' },
   { heading: 'legalTermReviewH', body: 'legalTermReviewB' },
   { heading: 'legalTermSalonH', body: 'legalTermSalonB' },
@@ -71,9 +78,40 @@ const TERMS: Section[] = [
   { heading: 'legalTermChangeH', body: 'legalTermChangeB' },
 ];
 
+/**
+ * No cookie banner, deliberately: the app sets no cookies and runs no
+ * analytics or advertising, and what it keeps on the device (the sign-in, the
+ * chosen city) is strictly necessary, which needs no consent. A banner asking
+ * about cookies that do not exist would be the misleading thing. This tab says
+ * so instead, and names everything that is kept.
+ */
+const COOKIES: Section[] = [
+  { heading: 'legalCookieIntroH', body: 'legalCookieIntroB', list: 'legalCookieL' },
+  { heading: 'legalCookieClearH', body: 'legalCookieClearB' },
+  { heading: 'legalCookieChangeH', body: 'legalCookieChangeB' },
+];
+
+/**
+ * Google Play requires a web page, usable without the app, that says how to
+ * delete an account. `?legal=delete` is that page.
+ */
+const DELETION: Section[] = [
+  { heading: 'legalDelIntroH', body: 'legalDelIntroB', list: 'legalDelL' },
+  { heading: 'legalDelWhatH', body: 'legalDelWhatB' },
+];
+
+const SECTIONS: Record<LegalTab, Section[]> = {
+  privacy: PRIVACY,
+  terms: TERMS,
+  cookies: COOKIES,
+  delete: DELETION,
+};
+
 const TABS: { key: LegalTab; label: keyof Dictionary }[] = [
   { key: 'privacy', label: 'legalTabPrivacy' },
   { key: 'terms', label: 'legalTabTerms' },
+  { key: 'cookies', label: 'legalTabCookies' },
+  { key: 'delete', label: 'legalTabDelete' },
 ];
 
 /**
@@ -106,7 +144,7 @@ function Bidi({ text }: { text: string }) {
 export function Legal() {
   const { t, state, dispatch, backIcon, isArabic } = useApp();
 
-  const sections = state.legalTab === 'privacy' ? PRIVACY : TERMS;
+  const sections = SECTIONS[state.legalTab];
 
   return (
     <Screen bottomInset={28}>
@@ -127,11 +165,8 @@ export function Legal() {
         <LangToggle variant="pill" />
       </div>
 
-      {/*
-        Said before anything else, and styled so it cannot be mistaken for a
-        footnote. Publishing an unreviewed policy as though it were settled is
-        the failure mode worth designing against.
-      */}
+      {/* Who is responsible for all of this, and how to reach them — the
+          first thing a reviewer or a customer with a question needs. */}
       <div
         role="note"
         style={{
@@ -142,26 +177,14 @@ export function Legal() {
           border: `1px solid ${color.creamLine}`,
         }}
       >
-        <div style={{ font: `700 12px ${font.sans}`, color: color.goldLink }}>
-          {t.legalDraftTitle}
+        <div style={{ font: `700 12px ${font.sans}`, color: color.goldInkAlt }}>
+          {t.legalOperatorTitle}
         </div>
-        <p
-          style={{
-            font: `500 11.5px/1.6 ${font.sans}`,
-            color: color.inkSoft,
-            margin: '6px 0 0',
-          }}
-        >
-          {t.legalDraftBody}
+        <p style={{ font: `500 12px/1.6 ${font.sans}`, color: color.inkSoft, margin: '6px 0 0' }}>
+          <Bidi text={t.legalOperatorBody} />
         </p>
-        <p
-          style={{
-            font: `600 11.5px/1.6 ${font.sans}`,
-            color: color.inkSoft,
-            margin: '8px 0 0',
-          }}
-        >
-          {t.legalDraftBlanks}
+        <p style={{ font: `500 11px ${font.sans}`, color: color.muted, margin: '8px 0 0' }}>
+          {t.legalUpdated}
         </p>
       </div>
 
@@ -170,6 +193,7 @@ export function Legal() {
         aria-label={t.legalTitle}
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           gap: 8,
           padding: '18px 24px 0',
         }}
@@ -185,7 +209,7 @@ export function Legal() {
               onClick={() => dispatch({ type: 'setLegalTab', tab: tab.key })}
               className="press"
               style={{
-                flex: 1,
+                flex: '1 1 40%',
                 padding: '10px 12px',
                 borderRadius: 12,
                 background: active ? color.ink : color.surfaceSand,

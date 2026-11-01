@@ -109,7 +109,7 @@ for (const arabic of [false, true]) {
   await page.waitForTimeout(1200);
   await page.getByRole('button', { name: '15:00' }).click();
   await page.waitForTimeout(250);
-  await page.getByRole('button', { name: /Continue to payment|المتابعة للدفع/i }).click();
+  await page.getByRole('button', { name: /Continue to review|المتابعة للمراجعة/i }).click();
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: /Confirm|تأكيد/i }).last().click();
   await page.waitForTimeout(1200);
@@ -155,7 +155,7 @@ for (const [code, needle, label] of [
   await page.waitForTimeout(1200);
   await page.getByRole('button', { name: '15:00' }).click();
   await page.waitForTimeout(250);
-  await page.getByRole('button', { name: /Continue to payment/i }).click();
+  await page.getByRole('button', { name: /Continue to review/i }).click();
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: /Confirm/i }).last().click();
   await page.waitForTimeout(1000);

@@ -428,7 +428,9 @@ async function toVendor(page) {
   await page.waitForTimeout(500);
   let body = await page.locator('body').innerText();
 
-  check('profile: no invented saved-salon count', !body.includes('Saved salons'));
+  // The row came back as a real feature (0027); what must not come back is the
+  // invented "6" it used to show to everybody.
+  check('profile: no invented saved-salon count', !/Saved salons\s*6/.test(body), body.slice(0, 400));
   check('profile: no invented card count', !body.includes('3 cards'));
   check('profile: a blank name says so', body.includes('Not given'));
 
