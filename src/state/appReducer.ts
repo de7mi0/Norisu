@@ -364,6 +364,7 @@ const BACK_MAP: Partial<Record<Screen, Screen>> = {
 export type Action =
   | { type: 'setLang'; lang: Lang }
   | { type: 'pickMode'; mode: Mode }
+  | { type: 'goStart' }
   | { type: 'openAdminSalon'; salonId: string }
   | { type: 'openAdminReason'; kind: 'reject' | 'close' }
   | { type: 'setAdminReason'; value: string }
@@ -483,6 +484,13 @@ export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'setLang':
       return { ...state, lang: action.lang };
+
+    // Back to the opening screen, where customer, salon owner and admin are
+    // chosen. The way out of every side used to lead straight into the other
+    // one — the customer's into the salon portal — so leaving felt like
+    // landing somewhere you never asked to go.
+    case 'goStart':
+      return { ...state, mode: null, screen: 'home' };
 
     case 'pickMode':
       if (action.mode === 'customer') return { ...state, mode: 'customer', screen: 'home' };

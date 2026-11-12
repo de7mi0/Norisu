@@ -1199,7 +1199,7 @@ The Claude Code environment's egress proxy **blocks `supabase.co` and `github.io
 working on this repo **cannot** query the live database or load the deployed site. Work around it
 by running Postgres locally with the same schema (`./scripts/test-db.sh`, which starts and if
 necessary creates that Postgres itself) and by testing the app's fallback path. Playwright is not a dependency — install it ad hoc (`npm install --no-save
-playwright`, browser at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`). For anything needing
+playwright`, browser at `/opt/pw-browsers/chromium`, a stable link to whichever version is installed). For anything needing
 a *working* backend, `page.route()` the Supabase endpoints (`**/auth/v1/otp*`, `**/auth/v1/verify*`,
 `**/rest/v1/profiles*`) and answer them yourself. **Live behaviour has to be confirmed by the user
 in their own browser.**

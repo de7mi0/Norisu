@@ -77,7 +77,7 @@ export function AdminRegister() {
           </button>
           <button
             type="button"
-            onClick={() => dispatch({ type: 'pickMode', mode: 'customer' })}
+            onClick={() => dispatch({ type: 'goStart' })}
             className="press"
             style={{
               flex: 'none',

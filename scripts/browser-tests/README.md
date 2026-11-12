@@ -29,6 +29,7 @@ scrambled inside Arabic text.
 | `19-no-invented-facts.mjs` | Screens that stated things nobody had checked: "Open now · until 11:00 PM" and "Private rooms" on every salon, "Near you" with no location, "5 photos", "4.9 ★" and "Verified" to every owner, and notifications "On" whatever the phone allowed. All 8 fail against the build before the fix |
 | `20-checkout-and-access.mjs` | Checkout says "Confirm booking" and "pay at the salon" with no invented saved cards or instalments; an owner describes a photograph in both languages; a focused text field shows its outline |
 | `21-saved-and-share.mjs` | The ♡ saves to the account and survives a reload, Profile lists the saved salons, and Share hands over a link that opens that salon |
+| `22-back-to-start.mjs` | "Back to start" on the customer and salon sides opens the opening screen, not the other side |
 | `15-search.mjs` | Finding a salon by name on Explore, the Arabic folding that decides whether the field feels like it works, and that a district or a tag is **not** matched |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about

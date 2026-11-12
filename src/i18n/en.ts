@@ -138,7 +138,7 @@ export const en = {
   reschedule: 'Reschedule',
   directions: 'Directions',
 
-  switchVendor: 'Switch to vendor portal',
+  switchVendor: 'Back to start',
 
   registerSalon: 'Register your salon',
   registerDesc: "List your salon on Saloni. Fill in your details below; we check your commercial registration before customers can see you.",
@@ -217,7 +217,7 @@ export const en = {
   ownerStatusVerified: 'Approved · not in the catalogue yet',
   ownerStatusAwaiting: 'Awaiting review',
   ownerStatusRejected: 'Turned down · see Business profile',
-  switchCustomer: 'Switch to customer app',
+  switchCustomer: 'Back to start',
 
   explore: 'Explore',
   bookingsTab: 'Bookings',
@@ -705,7 +705,7 @@ export const en = {
 
   adminTitle: 'Salons',
   adminSub: 'Every salon on Saloni',
-  adminLeave: 'Leave',
+  adminLeave: 'Back to start',
   adminLoading: 'Loading the register…',
   adminEmpty: 'No salon has registered yet.',
   adminLoadFailed: 'Could not load the register. Check your connection and try again.',
