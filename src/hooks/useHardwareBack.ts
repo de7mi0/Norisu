@@ -83,8 +83,10 @@ export function useHardwareBack(state: AppState, dispatch: (action: Action) => v
         //      it, so it leaves like a first tab does.
         if (s.mode === null) return void App.minimizeApp();
 
+        // The first tab of a side goes back to the opening screen, and only
+        // the opening screen leaves the app.
         const first = firstTabFor(s.mode);
-        if (s.screen === first) return void App.minimizeApp();
+        if (s.screen === first) return go({ type: 'goStart' });
         if (isTabScreen(s)) return go({ type: 'go', screen: first });
         go({ type: 'back' });
       });

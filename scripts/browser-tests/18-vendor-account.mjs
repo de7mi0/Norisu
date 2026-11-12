@@ -12,7 +12,7 @@ const BASE = process.env.BASE || BASE;
 const REF='nicdmspejrvruszlwhvm', USER='44444444-4444-4444-4444-444444444444';
 const session={access_token:'stub',refresh_token:'stub',token_type:'bearer',expires_in:360000,expires_at:Math.floor(Date.now()/1000)+360000,user:{id:USER,aud:'authenticated',role:'authenticated',email:'owner@kingdom.test',phone:'',app_metadata:{},user_metadata:{},created_at:'2026-01-01T00:00:00Z'}};
 const ok=(r,b)=>r.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(b)});
-const b=await chromium.launch({executablePath:'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
+const b=await chromium.launch({executablePath: process.env.CHROMIUM || '/opt/pw-browsers/chromium'});
 let fails=0; const check=(n,v)=>{console.log((v?'PASS ':'FAIL ')+n); if(!v)fails++;};
 for (const [ar, signed] of [[false,true],[true,true],[false,false],[true,false]]) {
  const p=await b.newPage({viewport:{width:420,height:900}});

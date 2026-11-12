@@ -10,7 +10,8 @@
 // walk-in on the calendar as what it is.
 import { chromium } from 'playwright';
 
-const BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// The stable path; the versioned one under it changes when the image updates.
+const BROWSER = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
 const BASE = process.env.BASE || 'http://localhost:4173/';
 const REF = 'nicdmspejrvruszlwhvm';
 const USER = '33333333-3333-3333-3333-333333333333';

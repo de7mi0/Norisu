@@ -138,7 +138,7 @@ export const ar: Dictionary = {
   reschedule: 'إعادة جدولة',
   directions: 'الاتجاهات',
 
-  switchVendor: 'التبديل لبوابة الصالون',
+  switchVendor: 'العودة للبداية',
 
   registerSalon: 'سجّل صالونك',
   registerDesc: "أضف صالونك إلى صالوني. املأ بياناتك أدناه، ونتحقق من سجلك التجاري قبل أن يراك العملاء.",
@@ -211,7 +211,7 @@ export const ar: Dictionary = {
   ownerStatusVerified: 'معتمد · لم يُنشر في الدليل بعد',
   ownerStatusAwaiting: 'بانتظار المراجعة',
   ownerStatusRejected: 'مرفوض · راجع ملف العمل',
-  switchCustomer: 'التبديل لتطبيق العميل',
+  switchCustomer: 'العودة للبداية',
 
   explore: 'استكشف',
   bookingsTab: 'الحجوزات',
@@ -683,7 +683,7 @@ export const ar: Dictionary = {
 
   adminTitle: 'الصالونات',
   adminSub: 'كل صالون في صالوني',
-  adminLeave: 'خروج',
+  adminLeave: 'العودة للبداية',
   adminLoading: 'نحمّل السجل…',
   adminEmpty: 'لم يسجّل أي صالون بعد.',
   adminLoadFailed: 'تعذّر تحميل السجل. تحقق من الاتصال وحاول مرة أخرى.',

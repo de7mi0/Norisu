@@ -242,7 +242,7 @@ export function More() {
 
       <button
         type="button"
-        onClick={() => dispatch({ type: 'pickMode', mode: 'customer' })}
+        onClick={() => dispatch({ type: 'goStart' })}
         className="press"
         style={{
           display: 'block',

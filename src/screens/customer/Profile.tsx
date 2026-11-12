@@ -261,7 +261,7 @@ export function Profile() {
 
       <button
         type="button"
-        onClick={() => dispatch({ type: 'pickMode', mode: 'vendor' })}
+        onClick={() => dispatch({ type: 'goStart' })}
         className="press"
         style={{
           display: 'block',

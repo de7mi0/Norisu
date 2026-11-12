@@ -17,7 +17,8 @@
 // confirmed to fail against the code before 0020.
 import { chromium } from 'playwright';
 
-const BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// The stable path; the versioned one under it changes when the image updates.
+const BROWSER = process.env.CHROMIUM || '/opt/pw-browsers/chromium';
 const BASE = process.env.BASE || 'http://localhost:4173/';
 const REF = 'nicdmspejrvruszlwhvm';
 const USER = '44444444-4444-4444-4444-444444444444';
