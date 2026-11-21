@@ -108,6 +108,30 @@ function ttlSeconds(payload: { expires_at?: string }): number {
   return Math.max(60, Math.min(left, 3600));
 }
 
+/**
+ * The push services browsers actually use — the same list as 0029's
+ * is_push_service_endpoint(). The database refuses anything else, and this
+ * checks again because the worker is the side that makes the request: a row
+ * that got past one check must not get past both. Without it, a registered
+ * "device" at http://169.254.169.254/ was a request this worker made for
+ * whoever registered it.
+ */
+const PUSH_SERVICE =
+  /^https:\/\/(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)\//;
+
+function isPushServiceEndpoint(endpoint: string): boolean {
+  return endpoint.length <= 1000 && PUSH_SERVICE.test(endpoint);
+}
+
+/**
+ * Per device, and per message. A push service answers in well under a second;
+ * a host that never answers used to hold the whole batch — everybody's
+ * messages — until the function was killed. The database keeps ten devices
+ * per account (0029); the slice is the same rule, held here too.
+ */
+const DEVICE_TIMEOUT_MS = 5000;
+const MAX_DEVICES = 10;
+
 /** True when the push service says this endpoint is gone for good. */
 function isDead(status: number): boolean {
   return status === 404 || status === 410;
@@ -150,12 +174,16 @@ async function pushToDevices(n: Claimed): Promise<void> {
   let delivered = 0;
   const problems: string[] = [];
 
-  for (const device of n.devices) {
+  for (const device of n.devices.slice(0, MAX_DEVICES)) {
     // Native devices will register here too once the Capacitor wrap exists,
     // and they do not speak Web Push. Skipping rather than failing keeps one
     // old iPhone from blocking the laptop that would have worked.
     if (device.platform !== 'web') {
       problems.push(`${device.platform}: no sender yet`);
+      continue;
+    }
+    if (!isPushServiceEndpoint(device.endpoint)) {
+      problems.push('not a push service, skipped');
       continue;
     }
     try {
@@ -164,6 +192,7 @@ async function pushToDevices(n: Claimed): Promise<void> {
         message,
         {
           TTL: ttl,
+          timeout: DEVICE_TIMEOUT_MS,
           // web-push defaults this to "normal", which lets Android hold the
           // message until the phone next leaves Doze — in practice, until
           // somebody unlocks it. That is fine for a newsletter and useless for

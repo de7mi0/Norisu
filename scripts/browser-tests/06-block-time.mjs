@@ -62,8 +62,12 @@ async function install(page) {
         db.blocks = [];
         return ok(route, []);
       }
-      return ok(route, db.blocks);
+      // 0029: reasons are in no SELECT grant, so a table read would carry none.
+      // Answering it empty makes these checks fail if the calendar goes back
+      // to reading the table instead of salon_time_off().
+      return ok(route, []);
     }
+    if (url.includes('rpc/salon_time_off')) return ok(route, db.blocks);
 
     if (url.includes('rpc/salon_day')) return ok(route, []);
     if (url.includes('rpc/salon_stats')) return ok(route, [{ bookings_today: 0,

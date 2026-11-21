@@ -499,7 +499,8 @@ select
     where table_name = 'salon_media' and column_name = 'alt_text_ar') as "0026 photo descriptions",
   (select count(*) = 1 from information_schema.tables
     where table_name = 'saved_salons')                as "0027 saved salons",
-  bool_or(p.proname = 'enqueue_notice')              as "0028 notices"
+  bool_or(p.proname = 'enqueue_notice')              as "0028 notices",
+  bool_or(p.proname = 'salon_time_off')              as "0029 third audit"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -513,7 +514,8 @@ select
   (select count(*) = 0 from storage.buckets where id = 'salon-photos')      as "0013 MISSING",
   has_column_privilege('authenticated', 'salons', 'is_published', 'UPDATE') as "0004 MISSING",
   has_column_privilege('authenticated', 'profiles', 'role', 'UPDATE')       as "0006 MISSING",
-  has_table_privilege('authenticated', 'bookings', 'INSERT')                as "0008 MISSING";
+  has_table_privilege('authenticated', 'bookings', 'INSERT')                as "0008 MISSING",
+  has_column_privilege('anon', 'time_off', 'reason', 'SELECT')              as "0029 MISSING";
 ```
 
 A `true` in the second block is a live security hole, not a missing feature: an
@@ -527,6 +529,53 @@ adds the cities a salon serves and its map link; until it is applied, salon
 registration and Business details cannot save, and the owner's portal cannot
 load. 0024 is what shows a salon's real reviews to customers. Run 0023 first,
 then 0024, each pasted on its own — the steps are the same as above.
+
+### 0029 — the third audit: push addresses, commission, time-off reasons
+
+Four fixes, all found by attacking a copy of the database (assertions 142–145):
+a push "device" could be any web address, so the worker would send requests
+wherever an account pointed it; one account could register thousands of devices
+and stall everybody's notifications; an owner could flip a completed visit to
+no-show after the review came in, so it never counted towards commission; and
+the time-off reason marked "Only you see this" was readable by every visitor.
+
+**Do these in order, close together.** Between step 2 and step 4 the owner's
+calendar shows no blocked periods — they are still in force and customers
+still cannot book them, only the list is empty — because the old app reads
+reasons from the table and the new one reads them through a function.
+
+1. **Optional check first.** In the SQL Editor, this lists any registered device
+   the migration will remove. Expect **no rows**; a real browser is always at
+   one of these four push services. A row here is either an attempt at the hole
+   being closed or something worth telling the developer about before going on.
+
+   ```sql
+   select profile_id, platform, left(endpoint, 60) as endpoint, created_at
+   from push_subscriptions
+   where platform = 'web'
+     and endpoint !~ '^https://(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)/';
+   ```
+
+2. **Run the migration.** Open `supabase/migrations/0029_audit_push_commission_time_off.sql`
+   on GitHub, copy it, paste it into **SQL Editor → + New query**, and **Run**.
+   `Success. No rows returned` is right.
+3. **Redeploy the worker** with the new `bundled.ts` — the steps under
+   [Deploy the worker](#3-deploy-the-worker). This adds the same address check on
+   the sending side and a five-second limit per device.
+4. **Merge the branch** so the website redeploys with the calendar change, and
+   check the Actions run goes green.
+5. **Confirm.** Run the two queries under "One query that says which migrations
+   are applied": `0029 third audit` must read `true`, and `0029 MISSING` must
+   read `false`.
+
+What changes for people: nothing an honest owner or customer can see. A
+completed visit can no longer be changed from the portal (the screen never
+offered it). If one was marked completed by mistake, correct it here in the SQL
+Editor, which is the only place that can:
+
+```sql
+update bookings set status = 'no_show' where reference = 'SL-XXXXXXXX';
+```
 
 ### 0026, 0027 and 0028 — photo descriptions, saved salons, confirmations and reminders
 

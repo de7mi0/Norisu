@@ -204,6 +204,10 @@ supabase/
   migrations/0028_booking_and_salon_notices.sql  confirmations, moves, salon
                                       cancellations, 24h + 2h reminders and salon
                                       decisions, by push and e-mail. OFF by default
+  migrations/0029_audit_push_commission_time_off.sql  the third audit: push
+                                      addresses held to push services, ten devices,
+                                      a completed visit stays completed, and the
+                                      time-off reason is the owner's alone
   migrations/0025_conversations.sql   messages: customer ↔ salon, customer ↔ Saloni.
                                       No table access at all; five functions that
                                       decide the caller's side themselves
@@ -214,7 +218,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   130 assertions
+  tests/01_policy_tests.sql   145 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -424,7 +428,7 @@ functions in 0003–0012 —
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
 own `my_salon_review()`, and 0025's conversations — `start_conversation()`,
 `post_message()`, `conversation_messages()`, `my_conversations()` and `staff_inbox()`.
-31 RLS policies (plus four on storage.objects). 141 assertions.
+31 RLS policies (plus four on storage.objects). 145 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -627,6 +631,26 @@ disguises, one of them critical:
     answer one, so a booking list never becomes a mailing list. Thirty messages per ten
     minutes and five new conversations a day per account. Assertions 131–136, each checked
     against twelve deliberately broken versions of 0025.
+34. **A push device is an address at a push service, and nothing else** (0029). The worker
+    POSTs to every endpoint an account registers, as the service role, so an unchecked
+    endpoint made it a request-forger for anybody: `http://169.254.169.254/…` was
+    accepted, a waitlist offer arranged with a second account, and the failure text
+    came back through `notifications.error`. A **check constraint** on the table holds
+    web endpoints to FCM, Mozilla, Apple and WNS — a constraint, so a future function
+    cannot write past it — the worker re-checks before sending, and `error` is in no
+    SELECT grant. Assertion 142.
+35. **One account cannot stall everybody's notifications** (0029). Ten devices per
+    account, newest kept; five seconds per device in the worker; and a claimed row is
+    not due again for five minutes, so a worker killed mid-batch does not burn every
+    other row's five attempts on consecutive ticks. Assertions 142 and 143.
+36. **A completed visit stays completed** (0029). 0006 trusted the owner with the whole
+    lifecycle because a review still needs the customer's account; 0018 made that
+    insufficient, because `commission_statement()` counts `completed` and the owner
+    could flip a reviewed visit to no-show at month end. Only the dashboard (no JWT)
+    can change one now. The portal never offered it. Assertion 144.
+37. **"Only you see this" is true** (0029). `time_off` was readable table-wide by anon, so
+    every reason an owner typed was public. The columns are named without `reason`, and
+    the owner's calendar reads through `salon_time_off()`. Assertion 145.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -652,7 +676,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-130 assertions, drops it. Each of 53–130 was checked against a database with its own protection
+145 assertions, drops it. Each of 53–145 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -847,6 +871,17 @@ The lesson worth keeping: **a rule enforced in one place is a rule until somebod
 place.** Both of these were rules the schema genuinely stated, walked around by a function that
 was written before the rule existed. When adding a constraint, ask which existing functions could
 move a row past it.
+
+**A fourth pass, at what the third skipped (0029).** The earlier audits went at tables,
+policies and the functions that move rows; this one went at the worker and at what the
+policies let anybody read. Four, each demonstrated, each with an assertion confirmed to
+fail against 0028: the worker would post to any address (SSRF), unbounded devices could
+stall the outbox, an owner could zero their own commission, and the time-off reason was
+public. Still open from the same report, lower severity: reviewers' account ids are
+readable from `reviews` directly (bypassing `public_reviews()`), salon registration is
+uncapped server-side and a CR number can be reused, the worker secret is still opt-in,
+`allowBackup` is on in the Android manifest, there is no CSP, and `profiles.full_name`
+has no length constraint in the database.
 
 What is deliberately *not* closed: rate limiting on sign-in (a Supabase setting, not a
 schema change), deposits (needs payments), photo moderation (a product decision), and deleting an
@@ -1167,7 +1202,7 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (141 assertions);
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (145 assertions);
   UI changes with `scripts/browser-tests/` (758 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (33 checks, both languages). Do not report something as

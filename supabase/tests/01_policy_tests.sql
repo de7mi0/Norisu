@@ -3695,12 +3695,12 @@ do $$
 begin
   perform auth.login_as('a1111111-0000-0000-0000-00000000000a');
   set local role authenticated;
-  perform register_push_device('https://push.example/aaa', 'key-a', 'auth-a', 'web', 'iPhone');
+  perform register_push_device('https://fcm.googleapis.com/fcm/send/aaa', 'key-a', 'auth-a', 'web', 'iPhone');
   reset role;
 
   perform auth.login_as('a2222222-0000-0000-0000-00000000000b');
   set local role authenticated;
-  perform register_push_device('https://push.example/bbb', 'key-b', 'auth-b', 'web', 'Pixel');
+  perform register_push_device('https://fcm.googleapis.com/fcm/send/bbb', 'key-b', 'auth-b', 'web', 'Pixel');
   reset role;
 end
 $$;
@@ -4147,6 +4147,8 @@ begin
       'create_walkin_booking', 'reassign_appointment', 'my_salon_cr',
       'delete_my_account', 'commission_statement', 'close_my_salon',
       'my_closed_salon', 'my_salon_review', 'public_reviews',
+      -- 0029: the owner's own time off, reasons included; guarded inside.
+      'salon_time_off',
       -- Saloni's own back office (0021). Each is guarded by is_admin() in its
       -- first line rather than by a grant, because an administrator signs in
       -- as `authenticated` like everybody else.
@@ -4204,14 +4206,14 @@ begin
   -- another profile.
   begin
     insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
-    values (theirs, 'https://push.example/forged', 'k', 'a');
+    values (theirs, 'https://fcm.googleapis.com/fcm/send/forged', 'k', 'a');
     raise exception 'FAIL 85b: registered a device against another account';
   exception
     when insufficient_privilege then null;
   end;
 
   begin
-    update push_subscriptions set endpoint = 'https://push.example/hijacked';
+    update push_subscriptions set endpoint = 'https://fcm.googleapis.com/fcm/send/hijacked';
     raise exception 'FAIL 85c: re-pointed a device by writing the table';
   exception
     when insufficient_privilege then null;
@@ -4219,14 +4221,14 @@ begin
 
   -- Revoking somebody else's device is a no-op, not an error: an error would
   -- say whether that endpoint exists.
-  select forget_push_device('https://push.example/bbb') into gone;
+  select forget_push_device('https://fcm.googleapis.com/fcm/send/bbb') into gone;
   if gone <> 0 then
     raise exception 'FAIL 85d: revoked another account''s device';
   end if;
   reset role;
 
   select profile_id into owner_ from push_subscriptions
-   where endpoint = 'https://push.example/bbb';
+   where endpoint = 'https://fcm.googleapis.com/fcm/send/bbb';
   if owner_ <> theirs then
     raise exception 'FAIL 85e: another account''s device was taken away from them';
   end if;
@@ -4235,18 +4237,18 @@ begin
   -- whoever is signed in now is who should be notified on it.
   perform auth.login_as(mine);
   set local role authenticated;
-  perform register_push_device('https://push.example/bbb', 'key-b', 'auth-b', 'web', 'shared phone');
+  perform register_push_device('https://fcm.googleapis.com/fcm/send/bbb', 'key-b', 'auth-b', 'web', 'shared phone');
   reset role;
 
   select profile_id into owner_ from push_subscriptions
-   where endpoint = 'https://push.example/bbb';
+   where endpoint = 'https://fcm.googleapis.com/fcm/send/bbb';
   if owner_ <> mine then
     raise exception 'FAIL 85f: re-registering a shared browser did not move it';
   end if;
 
   -- Put it back, so later assertions see the fixture they expect.
   update push_subscriptions set profile_id = theirs
-   where endpoint = 'https://push.example/bbb';
+   where endpoint = 'https://fcm.googleapis.com/fcm/send/bbb';
 
   raise notice 'PASS 85: a device is its owner''s, and cannot be registered or moved by anyone else';
 end
@@ -5412,7 +5414,7 @@ begin
   returning id into future_b;
 
   insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
-  values (leaver, 'https://push.example/leaver', 'k', 'a');
+  values (leaver, 'https://fcm.googleapis.com/fcm/send/leaver', 'k', 'a');
 
   perform auth.login_as(leaver);
   set local role authenticated;
@@ -5642,7 +5644,7 @@ do $$
 declare
   mine   uuid := '11111111-1111-1111-1111-111111111111';
   theirs uuid := '22222222-2222-2222-2222-222222222222';
-  url    text := 'https://push.example/shared-browser';
+  url    text := 'https://fcm.googleapis.com/fcm/send/shared-browser';
   holder uuid;
 begin
   perform auth.login_as(mine);
@@ -7339,8 +7341,8 @@ declare
   row_   notifications%rowtype;
 begin
   insert into push_subscriptions (profile_id, endpoint, p256dh, auth) values
-    (owner_, 'https://push.example/owner-1310', 'k', 'a'),
-    (cust,   'https://push.example/cust-1310',  'k', 'a');
+    (owner_, 'https://fcm.googleapis.com/fcm/send/owner-1310', 'k', 'a'),
+    (cust,   'https://fcm.googleapis.com/fcm/send/cust-1310',  'k', 'a');
   delete from notifications where template = 'new_message';
 
   -- Off by default: the deployed worker may not know what a message is yet.
@@ -7535,8 +7537,8 @@ values ('c1390000-0000-0000-0000-0000000000a1', 'c1390000-0000-0000-0000-0000000
 insert into staff (id, salon_id, name_en, name_ar)
 values ('c1390000-0000-0000-0000-0000000000b1', 'c1390000-0000-0000-0000-0000000000a1', 'S', 'س');
 insert into push_subscriptions (profile_id, endpoint, p256dh, auth) values
-  ('c1390000-0000-0000-0000-000000000002', 'https://push.example/cust-139', 'k', 'a'),
-  ('c1390000-0000-0000-0000-000000000001', 'https://push.example/owner-139', 'k', 'a');
+  ('c1390000-0000-0000-0000-000000000002', 'https://fcm.googleapis.com/fcm/send/cust-139', 'k', 'a'),
+  ('c1390000-0000-0000-0000-000000000001', 'https://fcm.googleapis.com/fcm/send/owner-139', 'k', 'a');
 
 -- 139. Off until switched on: the deployed worker would word these as offers.
 do $$
@@ -7669,7 +7671,7 @@ begin
 
   -- Allowing notifications after booking still brings that booking's reminders.
   insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
-  values ('c1390000-0000-0000-0000-000000000003', 'https://push.example/admin-139', 'k', 'a');
+  values ('c1390000-0000-0000-0000-000000000003', 'https://fcm.googleapis.com/fcm/send/admin-139', 'k', 'a');
   if (select count(*) from notifications where booking_id = 'c1390000-0000-0000-0000-0000000000d3'
        and channel = 'push' and template like 'booking_reminder_%') <> 2 then
     raise exception 'FAIL 140m: a device registered after booking got no reminders for it';
@@ -7737,6 +7739,253 @@ begin
 
   update notification_settings set notices_enabled = false;
   raise notice 'PASS 141: an owner hears what Saloni decided about their salon';
+end
+$$;
+reset role;
+
+
+-- ---------------------------------------------------------------------------
+-- 142-145. The third audit (0029). Each was demonstrated against the schema
+--          before it was fixed, and each assertion fails against 0028.
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id, email) values
+  ('c1420000-0000-0000-0000-0000000000a1', 'owner-142@example.test'),
+  ('c1420000-0000-0000-0000-0000000000a2', 'rival-142@example.test'),
+  ('c1420000-0000-0000-0000-0000000000a3', 'cust-142@example.test'),
+  ('c1420000-0000-0000-0000-0000000000a4', 'admin-142@example.test');
+update profiles set role = 'admin' where id = 'c1420000-0000-0000-0000-0000000000a4';
+
+insert into salons (id, owner_id, slug, name_en, name_ar, cr_number) values
+  ('c1420000-0000-0000-0000-0000000000b1', 'c1420000-0000-0000-0000-0000000000a1', 'audit-142', 'Audit', 'تدقيق', '1420142014'),
+  ('c1420000-0000-0000-0000-0000000000b2', 'c1420000-0000-0000-0000-0000000000a2', 'rival-142', 'Rival', 'منافس', '1420142015');
+update salons set is_verified = true where id = 'c1420000-0000-0000-0000-0000000000b1';
+update salons set is_published = true where id = 'c1420000-0000-0000-0000-0000000000b1';
+insert into staff (id, salon_id, name_en, name_ar, initials) values
+  ('c1420000-0000-0000-0000-0000000000c1', 'c1420000-0000-0000-0000-0000000000b1', 'Fatima', 'فاطمة', 'F');
+
+-- 142. M1 + M2: a web device is an address at a push service, and an account
+--      keeps ten of them.
+do $$
+declare
+  cust constant uuid := 'c1420000-0000-0000-0000-0000000000a3';
+  n integer;
+begin
+  perform auth.login_as(cust);
+  set local role authenticated;
+
+  -- The demonstrated attack: an internal address, accepted and handed to the
+  -- service-role worker.
+  begin
+    perform register_push_device('http://169.254.169.254/latest/meta-data/', 'k', 'a', 'web', '');
+    raise exception 'FAIL 142a: registered a cloud metadata address as a push device';
+  exception when sqlstate 'SL022' then null;
+  end;
+  begin
+    perform register_push_device('https://10.0.0.5:6379/', 'k', 'a', 'web', '');
+    raise exception 'FAIL 142b: registered a private address as a push device';
+  exception when sqlstate 'SL022' then null;
+  end;
+  -- A look-alike host: the name has to END where the service's does.
+  begin
+    perform register_push_device('https://fcm.googleapis.com.evil.example/x', 'k', 'a', 'web', '');
+    raise exception 'FAIL 142c: registered a look-alike of FCM';
+  exception when sqlstate 'SL022' then null;
+  end;
+
+  -- Real ones still work.
+  perform register_push_device('https://fcm.googleapis.com/fcm/send/real-142', 'k', 'a', 'web', 'Pixel');
+  perform register_push_device('https://web.push.apple.com/QWxw-142', 'k2', 'a2', 'web', 'iPhone');
+  perform register_push_device('https://wns2-par02p.notify.windows.com/w/?token=142', 'k3', 'a3', 'web', 'Edge');
+
+  -- 2,000 was the demonstration; fifteen is enough to prove the cap.
+  for i in 1..15 loop
+    perform register_push_device('https://fcm.googleapis.com/fcm/send/flood-142-' || i, 'k' || i, 'a' || i, 'web', '');
+  end loop;
+  select count(*) into n from push_subscriptions;
+  if n <> 10 then
+    raise exception 'FAIL 142d: an account holds % devices, expected the cap of 10', n;
+  end if;
+  if not exists (select 1 from push_subscriptions where endpoint like '%flood-142-15') then
+    raise exception 'FAIL 142e: the cap evicted the newest device rather than the oldest';
+  end if;
+
+  -- The worker's failure text is not the account's to read: that was the
+  -- channel the scan results came back through.
+  begin
+    perform error from notifications limit 1;
+    raise exception 'FAIL 142f: an account can read notifications.error';
+  exception when insufficient_privilege then null;
+  end;
+  perform count(id) from notifications;  -- its own rows, still readable
+  reset role;
+
+  -- The constraint, not only the function: a row written by any other path
+  -- (a future function, the dashboard) is refused too.
+  begin
+    insert into push_subscriptions (profile_id, platform, endpoint, p256dh, auth)
+    values (cust, 'web', 'https://attacker.example/push', 'k', 'a');
+    raise exception 'FAIL 142g: the table accepted a non-push-service endpoint';
+  exception when check_violation then null;
+  end;
+
+  delete from push_subscriptions where profile_id = cust;
+  raise notice 'PASS 142: a push device is a push service address, ten per account';
+end
+$$;
+reset role;
+
+-- 143. M2: a claimed message is not due again for five minutes, so a worker
+--      killed mid-batch cannot spend everybody's retries in five ticks.
+do $$
+declare
+  cust constant uuid := 'c1420000-0000-0000-0000-0000000000a3';
+  v_id uuid;
+  v_after timestamptz;
+  again integer;
+begin
+  insert into push_subscriptions (profile_id, platform, endpoint, p256dh, auth)
+  values (cust, 'web', 'https://fcm.googleapis.com/fcm/send/claim-143', 'k', 'a');
+  insert into notifications (profile_id, channel, template, payload, locale, send_after)
+  values (cust, 'push', 'new_message', '{"kind":"message"}', 'en', now() - interval '1 minute')
+  returning id into v_id;
+
+  set local role service_role;
+  perform * from claim_pending_notifications(200);
+  -- Killed here: neither marked sent nor failed. The next tick:
+  select count(*) into again from claim_pending_notifications(200) c where c.id = v_id;
+  reset role;
+
+  select send_after into v_after from notifications where id = v_id;
+  if v_after < now() + interval '4 minutes' then
+    raise exception 'FAIL 143a: a claimed message is due again at %', v_after;
+  end if;
+  if again <> 0 then
+    raise exception 'FAIL 143b: a message claimed a moment ago was claimed again';
+  end if;
+
+  delete from notifications where id = v_id;
+  delete from push_subscriptions where profile_id = cust;
+  raise notice 'PASS 143: a claimed message waits five minutes before it can be claimed again';
+end
+$$;
+reset role;
+
+-- 144. M3: a completed visit stays completed — the owner held the one switch
+--      that decided what they owe.
+do $$
+declare
+  owner_ constant uuid := 'c1420000-0000-0000-0000-0000000000a1';
+  cust   constant uuid := 'c1420000-0000-0000-0000-0000000000a3';
+  salon  constant uuid := 'c1420000-0000-0000-0000-0000000000b1';
+  done_  constant uuid := 'c1420000-0000-0000-0000-0000000000d1';
+  live_  constant uuid := 'c1420000-0000-0000-0000-0000000000d2';
+  visits integer;
+  st booking_status;
+begin
+  insert into bookings (id, reference, customer_id, salon_id, staff_id, starts_at, ends_at,
+                        status, subtotal_halalas, total_halalas, commission_halalas) values
+    (done_, 'SL-AUD144A', cust, salon, 'c1420000-0000-0000-0000-0000000000c1',
+     now() - interval '3 days', now() - interval '3 days' + interval '1 hour', 'completed', 10000, 11500, 1000),
+    (live_, 'SL-AUD144B', cust, salon, 'c1420000-0000-0000-0000-0000000000c1',
+     now() - interval '2 days', now() - interval '2 days' + interval '1 hour', 'confirmed', 10000, 11500, 1000);
+  insert into reviews (booking_id, salon_id, customer_id, rating, body)
+  values (done_, salon, cust, 5, 'Lovely.');
+
+  perform auth.login_as(owner_);
+  set local role authenticated;
+
+  -- The demonstrated attack: complete, collect the review, flip to no-show.
+  foreach st in array array['no_show', 'cancelled', 'confirmed', 'pending']::booking_status[] loop
+    begin
+      update bookings set status = st where id = done_;
+      raise exception 'FAIL 144a: an owner moved a completed visit to %', st;
+    exception when insufficient_privilege then null;
+    end;
+  end loop;
+
+  select bookings_count into visits
+  from commission_statement(salon, now() - interval '30 days', now());
+  if visits <> 1 then
+    raise exception 'FAIL 144b: the statement counts % completed visits, expected 1', visits;
+  end if;
+
+  -- What the owner's screen does offer still works.
+  update bookings set status = 'completed' where id = live_;
+  reset role;
+
+  -- A genuine mistake is corrected by Saloni in the Supabase dashboard's SQL
+  -- editor, which runs with no JWT. No booking row policy names an
+  -- administrator, so there is no in-app path, and this adds none.
+  perform set_config('request.jwt.claims', '', true);
+  update bookings set status = 'no_show' where id = live_;
+  if (select status from bookings where id = live_) <> 'no_show' then
+    raise exception 'FAIL 144c: the dashboard could not correct a completed visit';
+  end if;
+
+  raise notice 'PASS 144: a completed visit stays completed, unless Saloni corrects it in the dashboard';
+end
+$$;
+reset role;
+
+-- 145. M4: "Only you see this" is true — the reason for time off is the
+--      owner's, and the table is readable by every visitor.
+do $$
+declare
+  owner_ constant uuid := 'c1420000-0000-0000-0000-0000000000a1';
+  rival  constant uuid := 'c1420000-0000-0000-0000-0000000000a2';
+  salon  constant uuid := 'c1420000-0000-0000-0000-0000000000b1';
+  got text;
+  n integer;
+begin
+  insert into time_off (salon_id, staff_id, starts_at, ends_at, reason)
+  values (salon, 'c1420000-0000-0000-0000-0000000000c1',
+          now() + interval '1 day', now() + interval '1 day 2 hours', 'Hospital appointment');
+
+  -- The demonstrated leak: a signed-out visitor read the reason.
+  set local role anon;
+  begin
+    select reason into got from time_off where salon_id = salon;
+    raise exception 'FAIL 145a: a visitor read a time-off reason: %', got;
+  exception when insufficient_privilege then null;
+  end;
+  -- The period itself is not secret.
+  select count(*) into n from time_off where salon_id = salon and ends_at > now();
+  if n <> 1 then
+    raise exception 'FAIL 145b: a visitor can no longer see that a period is blocked';
+  end if;
+  begin
+    perform * from salon_time_off(salon, now(), now() + interval '7 days');
+    raise exception 'FAIL 145c: a visitor called salon_time_off()';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- A signed-in customer or rival is no better placed.
+  perform auth.login_as(rival);
+  set local role authenticated;
+  begin
+    select reason into got from time_off where salon_id = salon;
+    raise exception 'FAIL 145d: a signed-in account read another salon''s reason';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform * from salon_time_off(salon, now(), now() + interval '7 days');
+    raise exception 'FAIL 145e: a rival read the salon''s time off through the function';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- The owner's calendar reads it.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  select reason into got from salon_time_off(salon, now(), now() + interval '7 days');
+  reset role;
+  if got is distinct from 'Hospital appointment' then
+    raise exception 'FAIL 145f: the owner cannot read their own reason (got %)', got;
+  end if;
+
+  raise notice 'PASS 145: a time-off reason is read by its own salon''s owner and nobody else';
 end
 $$;
 reset role;
