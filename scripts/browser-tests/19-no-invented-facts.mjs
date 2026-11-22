@@ -60,7 +60,12 @@ async function install(page, signedIn) {
     }
     if (url.includes('/rest/v1/profiles')) return ok(route, { id: USER, role: 'vendor',
       full_name: 'Owner', phone: null, locale: 'en' });
-    if (url.includes('/rest/v1/salons')) return ok(route, db.published || url.includes('owner_id') ? salonRow() : []);
+    // Since 0030 the portal asks my_salon_id() which salon is the owner's, then
+    // reads it by id; the owner_id filter is the fallback for a database
+    // without 0030. Both are answered (24-owner-finds-salon.mjs tells them apart).
+    if (url.includes('rpc/my_salon_id')) return ok(route, SALON);
+    if (url.includes('/rest/v1/salons')) return ok(route,
+      db.published || url.includes('owner_id') || url.includes(`id=eq.${SALON}`) ? salonRow() : []);
     return ok(route, []);
   });
   if (signedIn) {
