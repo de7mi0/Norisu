@@ -691,25 +691,51 @@ It is opt-in on purpose. If the function demanded a header the moment it
 deployed, your existing cron job would not be sending it, and every notification
 would stop.
 
-1. Pick any long random string.
-2. **Edge Functions → send-notifications → Secrets**, add
-   `SALONI_WORKER_SECRET` with that value.
-3. Update the cron job to send it, replacing the value with yours:
+**Order matters.** Teach the cron job the word first and switch the lock on
+second: the function ignores the extra header until the secret exists, so
+nothing stops in between. The other way round, every call is refused until the
+job catches up.
+
+1. Pick any long random string — letters and numbers, no spaces or quote marks.
+   A password manager's generator is ideal. Do not paste it into a chat.
+2. In the **SQL Editor**, reschedule the job with the word added, replacing only
+   `PUT-YOUR-WORD-HERE`:
 
 ```sql
-select cron.unschedule('send-notifications');
-select cron.schedule('send-notifications', '* * * * *', $$
+select cron.unschedule(jobid) from cron.job where command like '%send-notifications%';
+
+select cron.schedule('send-notifications', '* * * * *', $job$
   select net.http_post(
-    url     := 'https://<your project ref>.supabase.co/functions/v1/send-notifications',
+    url := 'https://nicdmspejrvruszlwhvm.supabase.co/functions/v1/send-notifications',
     headers := jsonb_build_object(
       'Content-Type',    'application/json',
-      'Authorization',   'Bearer <your sb_secret_ key>',
-      'x-saloni-worker', '<the value you picked>'
+      'apikey',          'sb_publishable_eRn58Oq07-aEww1zsw5ztA_chwPRXY_',
+      'Authorization',   'Bearer sb_publishable_eRn58Oq07-aEww1zsw5ztA_chwPRXY_',
+      'x-saloni-worker', 'PUT-YOUR-WORD-HERE'
     ),
-    timeout_milliseconds := 8000
+    body := jsonb_build_object('invoked_at', now()),
+    timeout_milliseconds := 10000
   );
-$$);
+$job$);
 ```
+
+   This is the **publishable** key, in both `apikey` and `Authorization`, exactly
+   as in [Run it every minute](#4-run-it-every-minute). An earlier version of this
+   section used the `sb_secret_` key in `Authorization` alone: the gateway answered
+   `401 {"message":"Invalid API key"}` before the function ran, and notifications
+   stopped. The secret key also has no business in a cron job, which is stored as
+   plain text in the database.
+3. **Edge Functions → Secrets**: add `SALONI_WORKER_SECRET` with the same word.
+   The name is fixed — the function reads exactly that one.
+
+Reading the replies in `net._http_response` (newest first):
+
+| Reply | Meaning |
+| --- | --- |
+| `200` with `"guarded":true` | Locked, and the cron job is let through. Done. |
+| `200` with `"guarded":false` | Working, but the secret is not set yet (step 3). |
+| `401 {"error":"not authorised"}` | The lock is on and the job's word does not match — usually a stray space. |
+| `401 {"message":"Invalid API key"}` | The gateway refused the key before the function ran — the job is not sending the publishable key in both headers. |
 
 The function's own reply says whether it is on: `"guarded": true` once the
 secret is set. Check it in `net._http_response`, the same place §"If no
