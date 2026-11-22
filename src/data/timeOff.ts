@@ -68,19 +68,17 @@ export async function loadTimeOff(salonId: string, day: Date): Promise<TimeBlock
   const from = `${date}T00:00:00+03:00`;
   const to = `${date}T23:59:59.999+03:00`;
 
+  // Through salon_time_off() (0029), not the table: `reason` is in no SELECT
+  // grant, because the table is readable by every visitor and the reason is
+  // the owner's alone ("Only you see this").
   const { data, error } = await supabase
-    .from('time_off')
-    .select('id, staff_id, starts_at, ends_at, reason')
-    .eq('salon_id', salonId)
-    // Any overlap with the day, not only blocks that begin inside it.
-    .lt('starts_at', to)
-    .gt('ends_at', from)
-    .order('starts_at')
-    .returns<TimeOffRow[]>();
+    // Any overlap with the day, not only blocks that begin inside it; the
+    // function filters and orders.
+    .rpc('salon_time_off', { p_salon_id: salonId, p_from: from, p_to: to });
 
-  if (error || !data) return [];
+  if (error || !Array.isArray(data)) return [];
 
-  return data.map((row) => ({
+  return (data as TimeOffRow[]).map((row) => ({
     id: row.id,
     staffId: row.staff_id,
     startsAt: row.starts_at,
