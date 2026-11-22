@@ -251,17 +251,30 @@ export async function loadMySalon(userId: string): Promise<OwnerState> {
   });
 
   try {
-    const salonCall = supabase
+    // Which salon is mine? Through my_salon_id() (0030), because owner_id is
+    // in no SELECT grant any more: it linked salon owners to the reviews they
+    // wrote. Before 0030 is applied the function does not exist (PGRST202), and
+    // the owner_id filter still works, so this app is right on either side of
+    // the migration.
+    const { data: mineId, error: mineError } = await Promise.race([
+      supabase.rpc('my_salon_id'),
+      expiry,
+    ]);
+    const beforeMigration = mineError?.code === 'PGRST202';
+    if (mineError && !beforeMigration) return { status: 'error', salon: null };
+    const myId = typeof mineId === 'string' ? mineId : null;
+
+    const base = supabase
       .from('salons')
       // No cr_number: 0015 revoked SELECT on it from every role, because the
       // catalogue's `select *` was handing each salon's commercial registration
       // number to anonymous visitors. The owner's own comes back from
       // my_salon_cr() below.
-      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cities, maps_url, latitude, longitude, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled')
-      .eq('owner_id', userId)
-      // One salon per owner for now; the schema permits more.
-      .order('created_at', { ascending: true })
-      .limit(1);
+      .select('id, name_en, name_ar, category_en, category_ar, area_en, area_ar, city, cities, maps_url, latitude, longitude, phone, is_verified, is_published, slot_step_minutes, waitlist_enabled');
+    // One salon per owner: 0030 enforces it on registration too.
+    const salonCall = beforeMigration
+      ? base.eq('owner_id', userId).order('created_at', { ascending: true }).limit(1)
+      : base.eq('id', myId ?? '00000000-0000-0000-0000-000000000000').limit(1);
 
     const { data: salons, error } = await Promise.race([salonCall, expiry]);
     if (error) return { status: 'error', salon: null };
@@ -501,7 +514,15 @@ export type RegisterFailure =
   | 'missingCr'
   | 'badMapsUrl'
   | 'alreadyOwns'
+  | 'crTaken'
   | 'network';
+
+/** What 0030's registration rules answer, in the app's own words. */
+function registrationFailure(code: string | undefined): RegisterFailure {
+  if (code === 'SL050') return 'alreadyOwns';
+  if (code === 'SL051') return 'crTaken';
+  return 'network';
+}
 
 /**
  * A url-safe handle from the salon's name, with a short random tail because
@@ -581,7 +602,8 @@ export async function createSalon(
     .limit(1);
 
   const row = (data ?? [])[0] as { id: string } | undefined;
-  if (error || !row) return { error: 'network' };
+  if (error) return { error: registrationFailure(error.code) };
+  if (!row) return { error: 'network' };
 
   // Best effort: a salon with no hours still works, it just offers no times
   // until the owner sets them, so a failure here is not worth undoing the
@@ -812,7 +834,7 @@ export async function saveProfile(
     })
     .eq('id', salonId);
 
-  return error ? 'network' : null;
+  return error ? registrationFailure(error.code) : null;
 }
 
 /** Why closing a salon was refused. */

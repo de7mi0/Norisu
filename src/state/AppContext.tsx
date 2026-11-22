@@ -1118,6 +1118,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             en: 'This account already has a salon.',
             ar: 'هذا الحساب يملك صالوناً بالفعل.',
           },
+          crTaken: {
+            en: 'That commercial registration number is already registered on Saloni. If it is yours, contact Saloni and we will sort it out.',
+            ar: 'رقم السجل التجاري هذا مسجّل مسبقاً في صالوني. إن كان رقمك فتواصل مع صالوني وسنحلّ الأمر.',
+          },
           network: {
             en: 'Could not register the salon. Check your connection and try again.',
             ar: 'تعذّر تسجيل الصالون. تحقق من الاتصال وحاول مرة أخرى.',
@@ -1283,6 +1287,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           badMapsUrl: {
             en: 'The location link must be a Google Maps link — use Share in Google Maps and copy it.',
             ar: 'رابط الموقع يجب أن يكون من خرائط Google — استخدم «مشاركة» في الخرائط وانسخه.',
+          },
+          crTaken: {
+            en: 'That commercial registration number is already registered on Saloni. If it is yours, contact Saloni and we will sort it out.',
+            ar: 'رقم السجل التجاري هذا مسجّل مسبقاً في صالوني. إن كان رقمك فتواصل مع صالوني وسنحلّ الأمر.',
           },
         };
         const message = messages[failure] ?? {

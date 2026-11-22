@@ -500,7 +500,8 @@ select
   (select count(*) = 1 from information_schema.tables
     where table_name = 'saved_salons')                as "0027 saved salons",
   bool_or(p.proname = 'enqueue_notice')              as "0028 notices",
-  bool_or(p.proname = 'salon_time_off')              as "0029 third audit"
+  bool_or(p.proname = 'salon_time_off')              as "0029 third audit",
+  bool_or(p.proname = 'my_salon_id')                 as "0030 ids, registration, names"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -515,7 +516,8 @@ select
   has_column_privilege('authenticated', 'salons', 'is_published', 'UPDATE') as "0004 MISSING",
   has_column_privilege('authenticated', 'profiles', 'role', 'UPDATE')       as "0006 MISSING",
   has_table_privilege('authenticated', 'bookings', 'INSERT')                as "0008 MISSING",
-  has_column_privilege('anon', 'time_off', 'reason', 'SELECT')              as "0029 MISSING";
+  has_column_privilege('anon', 'time_off', 'reason', 'SELECT')              as "0029 MISSING",
+  has_column_privilege('anon', 'reviews', 'customer_id', 'SELECT')          as "0030 MISSING";
 ```
 
 A `true` in the second block is a live security hole, not a missing feature: an
@@ -529,6 +531,38 @@ adds the cities a salon serves and its map link; until it is applied, salon
 registration and Business details cannot save, and the owner's portal cannot
 load. 0024 is what shows a salon's real reviews to customers. Run 0023 first,
 then 0024, each pasted on its own — the steps are the same as above.
+
+### 0030 — reviewer ids, one salon per account, name length
+
+Three fixes (assertions 146–148): a reviewer's account id was readable from the
+`reviews` table, so one person's reviews could be linked across salons — and to
+the salon they own, through `salons.owner_id`; registration had no limit outside
+the app, so one account could file hundreds of salons under one CR number; and
+a name had no length limit in the database.
+
+**This one runs the other way round from 0029: merge first, migrate second.**
+The app that is live today finds an owner's salon by its `owner_id`, which this
+migration hides — applied first, every owner would be shown the registration
+form as if they owned nothing, and the customer list of salons would fall back
+to sample data. The new app works against the database before *and* after the
+migration (browser check 24 proves both), so there is no gap at all this way.
+
+1. **Merge the branch**, and wait for the Actions run to go green.
+2. Open the website once and check your own salon still opens in the portal.
+3. **Run the migration.** Copy
+   `supabase/migrations/0030_audit_identifiers_registration_names.sql` into
+   **SQL Editor → + New query** and **Run**. `Success. No rows returned` is right.
+4. Run the two queries under "One query that says which migrations are
+   applied": `0030 ids, registration, names` must read `true` and `0030 MISSING`
+   must read `false`.
+5. Open the portal again. Your salon should still be there.
+
+What changes for people: a second salon from the same account, or a CR number
+another live salon already uses, is refused with a message saying so — the CR
+one tells them to contact Saloni, because a genuine owner can be blocked by
+somebody who registered their number first. Close the squatter's salon from the
+back office and the number is free again. Names longer than 60 characters, if
+any were stored, are cut to 60.
 
 ### 0029 — the third audit: push addresses, commission, time-off reasons
 
@@ -691,25 +725,51 @@ It is opt-in on purpose. If the function demanded a header the moment it
 deployed, your existing cron job would not be sending it, and every notification
 would stop.
 
-1. Pick any long random string.
-2. **Edge Functions → send-notifications → Secrets**, add
-   `SALONI_WORKER_SECRET` with that value.
-3. Update the cron job to send it, replacing the value with yours:
+**Order matters.** Teach the cron job the word first and switch the lock on
+second: the function ignores the extra header until the secret exists, so
+nothing stops in between. The other way round, every call is refused until the
+job catches up.
+
+1. Pick any long random string — letters and numbers, no spaces or quote marks.
+   A password manager's generator is ideal. Do not paste it into a chat.
+2. In the **SQL Editor**, reschedule the job with the word added, replacing only
+   `PUT-YOUR-WORD-HERE`:
 
 ```sql
-select cron.unschedule('send-notifications');
-select cron.schedule('send-notifications', '* * * * *', $$
+select cron.unschedule(jobid) from cron.job where command like '%send-notifications%';
+
+select cron.schedule('send-notifications', '* * * * *', $job$
   select net.http_post(
-    url     := 'https://<your project ref>.supabase.co/functions/v1/send-notifications',
+    url := 'https://nicdmspejrvruszlwhvm.supabase.co/functions/v1/send-notifications',
     headers := jsonb_build_object(
       'Content-Type',    'application/json',
-      'Authorization',   'Bearer <your sb_secret_ key>',
-      'x-saloni-worker', '<the value you picked>'
+      'apikey',          'sb_publishable_eRn58Oq07-aEww1zsw5ztA_chwPRXY_',
+      'Authorization',   'Bearer sb_publishable_eRn58Oq07-aEww1zsw5ztA_chwPRXY_',
+      'x-saloni-worker', 'PUT-YOUR-WORD-HERE'
     ),
-    timeout_milliseconds := 8000
+    body := jsonb_build_object('invoked_at', now()),
+    timeout_milliseconds := 10000
   );
-$$);
+$job$);
 ```
+
+   This is the **publishable** key, in both `apikey` and `Authorization`, exactly
+   as in [Run it every minute](#4-run-it-every-minute). An earlier version of this
+   section used the `sb_secret_` key in `Authorization` alone: the gateway answered
+   `401 {"message":"Invalid API key"}` before the function ran, and notifications
+   stopped. The secret key also has no business in a cron job, which is stored as
+   plain text in the database.
+3. **Edge Functions → Secrets**: add `SALONI_WORKER_SECRET` with the same word.
+   The name is fixed — the function reads exactly that one.
+
+Reading the replies in `net._http_response` (newest first):
+
+| Reply | Meaning |
+| --- | --- |
+| `200` with `"guarded":true` | Locked, and the cron job is let through. Done. |
+| `200` with `"guarded":false` | Working, but the secret is not set yet (step 3). |
+| `401 {"error":"not authorised"}` | The lock is on and the job's word does not match — usually a stray space. |
+| `401 {"message":"Invalid API key"}` | The gateway refused the key before the function ran — the job is not sending the publishable key in both headers. |
 
 The function's own reply says whether it is on: `"guarded": true` once the
 secret is set. Check it in `net._http_response`, the same place §"If no

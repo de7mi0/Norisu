@@ -90,7 +90,7 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              758 Chromium checks in both languages; see its README
+  browser-tests/              792 Chromium checks in both languages; see its README
   test-notification-text.mjs  the words a push carries, in both languages
   test-hours.mjs              "Open now" from a salon's own hours, in Riyadh time
 src/
@@ -208,6 +208,9 @@ supabase/
                                       addresses held to push services, ten devices,
                                       a completed visit stays completed, and the
                                       time-off reason is the owner's alone
+  migrations/0030_audit_identifiers_registration_names.sql  the rest of it:
+                                      reviewer/owner ids hidden, one salon per
+                                      account and per CR number, names <= 60
   migrations/0025_conversations.sql   messages: customer ↔ salon, customer ↔ Saloni.
                                       No table access at all; five functions that
                                       decide the caller's side themselves
@@ -218,7 +221,7 @@ supabase/
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   145 assertions
+  tests/01_policy_tests.sql   148 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -428,7 +431,7 @@ functions in 0003–0012 —
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
 own `my_salon_review()`, and 0025's conversations — `start_conversation()`,
 `post_message()`, `conversation_messages()`, `my_conversations()` and `staff_inbox()`.
-31 RLS policies (plus four on storage.objects). 145 assertions.
+31 RLS policies (plus four on storage.objects). 148 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -651,6 +654,18 @@ disguises, one of them critical:
 37. **"Only you see this" is true** (0029). `time_off` was readable table-wide by anon, so
     every reason an owner typed was public. The columns are named without `reason`, and
     the owner's calendar reads through `salon_time_off()`. Assertion 145.
+38. **A reviewer cannot be traced by id** (0030). `public_reviews()` promised "Nora A." and
+    nothing else, while the `reviews` table handed every visitor `customer_id`, and
+    `salons.owner_id` / `staff.profile_id` let the same ids be joined to "owns a rival
+    salon". None of the three is in a SELECT grant now; the portal asks `my_salon_id()`
+    which salon is the caller's. `booking_id` stays readable — the customer's booking
+    list embeds `reviews (id)` through it, and it links nobody. Assertion 146.
+39. **One salon per account, and a CR number belongs to one live salon** (0030). Both
+    lived in the app alone. A trigger, not a unique index, because the seeded demo
+    salons share an owner and the dashboard (no browser role) is not what is being
+    limited. A closed salon frees its number. Assertion 147.
+40. **A name is at most 60 characters** in the database, as in the app, and a sign-up's
+    metadata name is cut rather than refused. Assertion 148.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -676,7 +691,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-145 assertions, drops it. Each of 53–145 was checked against a database with its own protection
+148 assertions, drops it. Each of 53–148 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -877,11 +892,14 @@ policies and the functions that move rows; this one went at the worker and at wh
 policies let anybody read. Four, each demonstrated, each with an assertion confirmed to
 fail against 0028: the worker would post to any address (SSRF), unbounded devices could
 stall the outbox, an owner could zero their own commission, and the time-off reason was
-public. Still open from the same report, lower severity: reviewers' account ids are
-readable from `reviews` directly (bypassing `public_reviews()`), salon registration is
-uncapped server-side and a CR number can be reused, the worker secret is still opt-in,
-`allowBackup` is on in the Android manifest, there is no CSP, and `profiles.full_name`
-has no length constraint in the database.
+public. The six lower-severity findings are closed too: 0030 hides reviewer, owner and
+staff ids, caps registration at one salon per account and per CR number, and bounds
+names; the worker secret is set (by the owner, in the dashboard); the Android manifest
+allows no backup or device transfer; and the built site carries a Content-Security-Policy
+(`vite.config.ts`, browser check 23). **0030 is the first migration that must follow its
+app change rather than precede it** — see `supabase/README.md`. Found while testing 0030:
+0029's device cap could drop the device being registered when two registrations shared a
+transaction; 0030 corrects it.
 
 What is deliberately *not* closed: rate limiting on sign-in (a Supabase setting, not a
 schema change), deposits (needs payments), photo moderation (a product decision), and deleting an
@@ -1202,8 +1220,8 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (145 assertions);
-  UI changes with `scripts/browser-tests/` (758 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (148 assertions);
+  UI changes with `scripts/browser-tests/` (792 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (33 checks, both languages). Do not report something as
   working because the code looks right.
