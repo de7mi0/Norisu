@@ -500,7 +500,8 @@ select
   (select count(*) = 1 from information_schema.tables
     where table_name = 'saved_salons')                as "0027 saved salons",
   bool_or(p.proname = 'enqueue_notice')              as "0028 notices",
-  bool_or(p.proname = 'salon_time_off')              as "0029 third audit"
+  bool_or(p.proname = 'salon_time_off')              as "0029 third audit",
+  bool_or(p.proname = 'my_salon_id')                 as "0030 ids, registration, names"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -515,7 +516,8 @@ select
   has_column_privilege('authenticated', 'salons', 'is_published', 'UPDATE') as "0004 MISSING",
   has_column_privilege('authenticated', 'profiles', 'role', 'UPDATE')       as "0006 MISSING",
   has_table_privilege('authenticated', 'bookings', 'INSERT')                as "0008 MISSING",
-  has_column_privilege('anon', 'time_off', 'reason', 'SELECT')              as "0029 MISSING";
+  has_column_privilege('anon', 'time_off', 'reason', 'SELECT')              as "0029 MISSING",
+  has_column_privilege('anon', 'reviews', 'customer_id', 'SELECT')          as "0030 MISSING";
 ```
 
 A `true` in the second block is a live security hole, not a missing feature: an
@@ -529,6 +531,38 @@ adds the cities a salon serves and its map link; until it is applied, salon
 registration and Business details cannot save, and the owner's portal cannot
 load. 0024 is what shows a salon's real reviews to customers. Run 0023 first,
 then 0024, each pasted on its own — the steps are the same as above.
+
+### 0030 — reviewer ids, one salon per account, name length
+
+Three fixes (assertions 146–148): a reviewer's account id was readable from the
+`reviews` table, so one person's reviews could be linked across salons — and to
+the salon they own, through `salons.owner_id`; registration had no limit outside
+the app, so one account could file hundreds of salons under one CR number; and
+a name had no length limit in the database.
+
+**This one runs the other way round from 0029: merge first, migrate second.**
+The app that is live today finds an owner's salon by its `owner_id`, which this
+migration hides — applied first, every owner would be shown the registration
+form as if they owned nothing, and the customer list of salons would fall back
+to sample data. The new app works against the database before *and* after the
+migration (browser check 24 proves both), so there is no gap at all this way.
+
+1. **Merge the branch**, and wait for the Actions run to go green.
+2. Open the website once and check your own salon still opens in the portal.
+3. **Run the migration.** Copy
+   `supabase/migrations/0030_audit_identifiers_registration_names.sql` into
+   **SQL Editor → + New query** and **Run**. `Success. No rows returned` is right.
+4. Run the two queries under "One query that says which migrations are
+   applied": `0030 ids, registration, names` must read `true` and `0030 MISSING`
+   must read `false`.
+5. Open the portal again. Your salon should still be there.
+
+What changes for people: a second salon from the same account, or a CR number
+another live salon already uses, is refused with a message saying so — the CR
+one tells them to contact Saloni, because a genuine owner can be blocked by
+somebody who registered their number first. Close the squatter's salon from the
+back office and the number is free again. Names longer than 60 characters, if
+any were stored, are cut to 60.
 
 ### 0029 — the third audit: push addresses, commission, time-off reasons
 

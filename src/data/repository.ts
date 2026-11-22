@@ -193,7 +193,9 @@ async function fetchCatalog(signal: AbortSignal): Promise<Catalog> {
       .returns<ServiceRow[]>(),
     supabase
       .from('staff')
-      .select('*')
+      // Named rather than `*` since 0030: profile_id is in no SELECT grant,
+      // and asking for a column you may not read fails the whole request.
+      .select('id, salon_id, name_en, name_ar, role_en, role_ar, initials, is_active, is_archived, sort_order')
       .eq('is_active', true)
       .eq('is_archived', false)
       .order('sort_order')

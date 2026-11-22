@@ -1,6 +1,6 @@
 # Browser checks
 
-758 checks that drive the built app in real Chromium, in **both languages**, against a
+792 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -30,6 +30,8 @@ scrambled inside Arabic text.
 | `20-checkout-and-access.mjs` | Checkout says "Confirm booking" and "pay at the salon" with no invented saved cards or instalments; an owner describes a photograph in both languages; a focused text field shows its outline |
 | `21-saved-and-share.mjs` | The ♡ saves to the account and survives a reload, Profile lists the saved salons, and Share hands over a link that opens that salon |
 | `22-back-to-start.mjs` | "Back to start" on the customer and salon sides opens the opening screen, not the other side |
+| `23-security-policy.mjs` | The site's Content-Security-Policy: browsing both sides meets no violation, a Supabase photograph still loads, and an injected script, a foreign script, sending data elsewhere and code built from a string are each refused. 16 of 20 fail against the same build with the policy removed |
+| `24-owner-finds-salon.mjs` | How the portal finds the owner's salon after 0030 hid `owner_id`: through `my_salon_id()`, still through the old filter before the migration is applied, and nothing invented for an account that owns none. The app before this change fails 8 of 14 |
 | `15-search.mjs` | Finding a salon by name on Explore, the Arabic folding that decides whether the field feels like it works, and that a district or a tag is **not** matched |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about

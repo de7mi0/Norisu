@@ -1345,9 +1345,8 @@ begin
   );
   set local role authenticated;
 
-  select id into mine from salons
-  where owner_id = '33333333-3333-3333-3333-333333333333'
-  order by created_at limit 1;
+  -- How the portal finds it since 0030, when owner_id left every SELECT grant.
+  select id into mine from salons where id = my_salon_id();
 
   if mine is distinct from 'aaaaaaaa-0000-0000-0000-000000000001' then
     raise exception 'FAIL 35a: the owner could not find their own unpublished salon';
@@ -1406,7 +1405,8 @@ begin
   end if;
 
   -- The owner can see it straight away, which is what the portal depends on.
-  if not exists (select 1 from salons where owner_id = newbie) then
+  if my_salon_id() is distinct from mine
+     or not exists (select 1 from salons where id = mine) then
     raise exception 'FAIL 36b: the owner cannot see the salon they just registered';
   end if;
 
@@ -4149,6 +4149,8 @@ begin
       'my_closed_salon', 'my_salon_review', 'public_reviews',
       -- 0029: the owner's own time off, reasons included; guarded inside.
       'salon_time_off',
+      -- 0030: which salon is mine, now that owner_id is in no SELECT grant.
+      'my_salon_id',
       -- Saloni's own back office (0021). Each is guarded by is_admin() in its
       -- first line rather than by a grant, because an administrator signs in
       -- as `authenticated` like everybody else.
@@ -4892,7 +4894,7 @@ begin
 
   -- Registering the honest way still works, and lands unverified.
   insert into salons (owner_id, slug, name_en, name_ar, cr_number)
-  values (cust, 'honest-salon', 'Honest', 'صادق', '1010999999')
+  values (cust, 'honest-salon', 'Honest', 'صادق', '1010999995')
   returning id into made;
 
   select is_verified, is_published into v, p from salons where id = made;
@@ -7986,6 +7988,181 @@ begin
   end if;
 
   raise notice 'PASS 145: a time-off reason is read by its own salon''s owner and nobody else';
+end
+$$;
+reset role;
+
+
+-- ---------------------------------------------------------------------------
+-- 146-148. The rest of the third audit (0030). Each fails against 0029.
+-- ---------------------------------------------------------------------------
+
+insert into auth.users (id, email) values
+  ('c1460000-0000-0000-0000-0000000000a1', 'owner-146@example.test'),
+  ('c1460000-0000-0000-0000-0000000000a2', 'other-146@example.test');
+
+-- 146. L1: nobody can link a reviewer across salons, or to the salon they own.
+do $$
+declare
+  owner_ constant uuid := 'c1460000-0000-0000-0000-0000000000a1';
+  other  constant uuid := 'c1460000-0000-0000-0000-0000000000a2';
+  got uuid;
+  n integer;
+begin
+  -- 145's fixtures: a published salon with a completed, reviewed visit.
+  set local role anon;
+  -- The demonstrated leak: a visitor read the reviewer's account id.
+  begin
+    select customer_id into got from reviews limit 1;
+    raise exception 'FAIL 146a: a visitor read reviews.customer_id';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    select profile_id into got from staff limit 1;
+    raise exception 'FAIL 146b: a visitor read staff.profile_id';
+  exception when insufficient_privilege then null;
+  end;
+  -- What the pages need still reads: ratings, and the review text.
+  select count(*) into n from salon_ratings;
+  select count(*) into n from reviews where is_published;
+  if n < 1 then
+    raise exception 'FAIL 146c: a visitor can no longer read published reviews';
+  end if;
+  select count(*) into n from staff;
+  reset role;
+
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    select owner_id into got from salons limit 1;
+    raise exception 'FAIL 146d: a signed-in account read salons.owner_id';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    select customer_id into got from reviews limit 1;
+    raise exception 'FAIL 146e: a signed-in account read reviews.customer_id';
+  exception when insufficient_privilege then null;
+  end;
+  if my_salon_id() is not null then
+    raise exception 'FAIL 146f: my_salon_id() named a salon for an account that owns none';
+  end if;
+  reset role;
+
+  -- The owner still finds, reads and edits their own salon.
+  insert into salons (id, owner_id, slug, name_en, name_ar, cr_number)
+  values ('c1460000-0000-0000-0000-0000000000b1', owner_, 'mine-146', 'Mine', 'لي', '1460146014');
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  if my_salon_id() is distinct from 'c1460000-0000-0000-0000-0000000000b1' then
+    raise exception 'FAIL 146g: my_salon_id() did not find the owner''s salon';
+  end if;
+  select count(*) into n from salons where id = 'c1460000-0000-0000-0000-0000000000b1';
+  if n <> 1 then
+    raise exception 'FAIL 146h: an owner can no longer read their own salon';
+  end if;
+  update salons set phone = '+966500000146' where id = 'c1460000-0000-0000-0000-0000000000b1';
+  reset role;
+  if (select phone from salons where id = 'c1460000-0000-0000-0000-0000000000b1') <> '+966500000146' then
+    raise exception 'FAIL 146i: an owner can no longer edit their own salon';
+  end if;
+
+  raise notice 'PASS 146: reviewers, staff and owners cannot be linked by id';
+end
+$$;
+reset role;
+
+-- 147. L2: one salon per account, and a registration number is one live salon's.
+do $$
+declare
+  owner_ constant uuid := 'c1460000-0000-0000-0000-0000000000a1';
+  other  constant uuid := 'c1460000-0000-0000-0000-0000000000a2';
+  theirs uuid;
+begin
+  -- The owner's one salon (146 makes it too; this stands on its own).
+  insert into salons (id, owner_id, slug, name_en, name_ar, cr_number)
+  values ('c1460000-0000-0000-0000-0000000000b1', owner_, 'mine-146', 'Mine', 'لي', '1460146014')
+  on conflict (id) do nothing;
+
+  -- The demonstrated flood: a second salon from an account that has one.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  begin
+    insert into salons (owner_id, slug, name_en, name_ar, cr_number)
+    values (owner_, 'second-147', 'Second', 'ثان', '1470147014');
+    raise exception 'FAIL 147a: an account registered a second salon';
+  exception when sqlstate 'SL050' then null;
+  end;
+  reset role;
+
+  -- Somebody else's number.
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    insert into salons (owner_id, slug, name_en, name_ar, cr_number)
+    values (other, 'copy-147', 'Copy', 'نسخة', ' 1460146014 ');
+    raise exception 'FAIL 147b: a salon registered with another salon''s CR number';
+  exception when sqlstate 'SL051' then null;
+  end;
+  -- A number of its own is fine.
+  insert into salons (owner_id, slug, name_en, name_ar, cr_number)
+  values (other, 'own-147', 'Own', 'خاص', '1470147015')
+  returning id into theirs;
+  -- And it cannot change to a taken one afterwards either.
+  begin
+    update salons set cr_number = '1460146014' where id = theirs;
+    raise exception 'FAIL 147c: a salon changed its CR number to another salon''s';
+  exception when sqlstate 'SL051' then null;
+  end;
+  reset role;
+
+  -- A closed salon frees its number, so the business can register again.
+  perform auth.login_as(owner_);
+  set local role authenticated;
+  perform close_my_salon('c1460000-0000-0000-0000-0000000000b1');
+  reset role;
+  perform auth.login_as(other);
+  set local role authenticated;
+  update salons set cr_number = '1460146014' where id = theirs;
+  reset role;
+  if (select cr_number from salons where id = theirs) <> '1460146014' then
+    raise exception 'FAIL 147d: a closed salon''s CR number was not freed';
+  end if;
+
+  -- The dashboard (no browser role) is not what is being limited.
+  insert into salons (owner_id, slug, name_en, name_ar, cr_number)
+  values (other, 'dash-147', 'Dash', 'لوحة', '1460146014');
+
+  raise notice 'PASS 147: one salon per account, one live salon per CR number';
+end
+$$;
+reset role;
+
+-- 148. L6: a name is at most 60 characters, however it arrives.
+do $$
+declare
+  other constant uuid := 'c1460000-0000-0000-0000-0000000000a2';
+  n integer;
+begin
+  perform auth.login_as(other);
+  set local role authenticated;
+  begin
+    update profiles set full_name = repeat('x', 61) where id = other;
+    raise exception 'FAIL 148a: a 61-character name was stored';
+  exception when check_violation then null;
+  end;
+  update profiles set full_name = repeat('x', 60) where id = other;
+  reset role;
+
+  -- Sign-up metadata is cut, not refused: the sign-up itself must not fail.
+  insert into auth.users (id, email, raw_user_meta_data)
+  values ('c1460000-0000-0000-0000-0000000000a3', 'long-148@example.test',
+          jsonb_build_object('full_name', repeat('y', 5000)));
+  select char_length(full_name) into n from profiles where id = 'c1460000-0000-0000-0000-0000000000a3';
+  if n <> 60 then
+    raise exception 'FAIL 148b: a sign-up name arrived % characters long', n;
+  end if;
+
+  raise notice 'PASS 148: a name is at most 60 characters, however it arrives';
 end
 $$;
 reset role;
