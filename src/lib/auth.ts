@@ -25,6 +25,49 @@ export type AuthChannel = 'phone' | 'email';
 export const defaultChannel: AuthChannel = isPhoneOtpEnabled ? 'phone' : 'email';
 
 /**
+ * The one account App Store and Google Play reviewers sign in to.
+ *
+ * Reviewers cannot read the e-mail a passcode goes to, so for this address
+ * alone no code is sent, and the code typed is checked by the review-sign-in
+ * Edge Function against a fixed one the reviewers are given (see that
+ * function's header for what stops it being a back door). Empty switches it
+ * off: every address then signs in the ordinary way.
+ *
+ * Not a secret — the address opens nothing without the code, which lives only
+ * in the function's own secrets.
+ */
+const reviewEmail = (import.meta.env.VITE_REVIEW_EMAIL ?? '').trim().toLowerCase();
+
+function isReviewAccount(channel: AuthChannel, identifier: string): boolean {
+  return channel === 'email' && reviewEmail !== '' && identifier.trim().toLowerCase() === reviewEmail;
+}
+
+/** What the review-sign-in function answers, in the app's own failure codes. */
+async function verifyReviewCode(identifier: string, code: string): Promise<AuthFailure | null> {
+  if (!supabase) return { code: 'notConfigured' };
+  const { data, error } = await supabase.functions.invoke('review-sign-in', {
+    body: { email: identifier, code },
+  });
+  if (error) {
+    // FunctionsHttpError carries the response; anything else never reached it.
+    const status = (error as { context?: Response }).context?.status ?? 0;
+    if (status === 401) return { code: 'invalidCode' };
+    if (status === 429) return { code: 'rateLimited' };
+    if (status === 404 || status === 403) return { code: 'providerDisabled' };
+    return { code: 'network', detail: error.message };
+  }
+  const tokens = data as { access_token?: string; refresh_token?: string } | null;
+  if (!tokens?.access_token || !tokens.refresh_token) return { code: 'unknown' };
+  // From here it is an ordinary session: supabase-js stores and refreshes it,
+  // and useSession hears about it like any other sign-in.
+  const { error: sessionError } = await supabase.auth.setSession({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+  });
+  return sessionError ? classify(sessionError) : null;
+}
+
+/**
  * Why an attempt did not work, as a code the dictionaries can translate.
  * `detail` carries Supabase's own wording, and is only shown for `unknown`,
  * where an untranslated message beats a shrug.
@@ -137,6 +180,8 @@ export async function sendPasscode(
   identifier: string,
 ): Promise<AuthFailure | null> {
   if (!supabase) return { code: 'notConfigured' };
+  // Nothing to send: the reviewers were given their code.
+  if (isReviewAccount(channel, identifier)) return null;
   try {
     const { error } =
       channel === 'phone'
@@ -161,6 +206,7 @@ export async function verifyPasscode(
 ): Promise<AuthFailure | null> {
   if (!supabase) return { code: 'notConfigured' };
   try {
+    if (isReviewAccount(channel, identifier)) return await verifyReviewCode(identifier, code);
     const { error } = await supabase.auth.verifyOtp(
       channel === 'phone'
         ? { phone: identifier, token: code, type: 'sms' }

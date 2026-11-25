@@ -381,9 +381,11 @@ and all against Supabase. What follows is what stands between that and a publish
 
 ### Needed for review, not for the code to work
 
-6. **A demo account for Apple.** Browsing works signed out, but the vendor portal only shows
-   real data to an account that owns a salon. Reviewers need credentials for one, verified and
-   published, or they see the sample portal and may read it as broken.
+6. ~~**A demo account for Apple.**~~ **Built** — the `review-sign-in` Edge Function lets one
+   account sign in with a fixed code, because a reviewer cannot read the e-mail a passcode
+   goes to. `supabase/README.md` "Signing in app-store reviewers" has the setup, the demo
+   salon to give it, and the text for the review notes. **Untested against real Supabase**
+   until the owner tries it.
 7. **Privacy labels and the data-safety form.** Apple's and Google's questionnaires must match
    what is actually collected. The privacy page written for `?legal` is the source material —
    it was drafted from the schema, so the answers are already enumerated.
@@ -398,9 +400,10 @@ and all against Supabase. What follows is what stands between that and a publish
     Nothing today reports a crash on somebody's phone.
 11. **Phone sign-in.** `VITE_AUTH_PHONE_OTP` is still false and no SMS provider is configured.
     A six-digit code to a mobile is the Saudi norm; e-mail is the unusual choice here.
-12. **The tests do not run in CI.** `deploy.yml` builds and deploys only. The 111 database
-    assertions and 346 browser checks are run by hand, which means they are run when somebody
-    remembers.
+12. ~~**The tests do not run in CI.**~~ **They do** — `.github/workflows/tests.yml` runs
+    lint, the build, the Node suites, every database assertion on Postgres 16 and every
+    browser check, on each pull request and before each deploy. A failing merge no longer
+    reaches the site.
 13. **No staging.** Production is GitHub Pages built from the default branch, so every merge
     is a deploy. There is one database and it is the live one.
 14. **Moderation.** Nothing reviews an uploaded photograph or a review before it is public.

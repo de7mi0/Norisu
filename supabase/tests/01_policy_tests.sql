@@ -8167,4 +8167,80 @@ end
 $$;
 reset role;
 
+
+-- ---------------------------------------------------------------------------
+-- 149. The reviewers' sign-in (0031): five wrong codes an hour, and nothing
+--      about it reachable from the browser.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  n integer;
+begin
+  -- No browser role can see the count, reset it, or ask whether it is open.
+  set local role anon;
+  begin
+    perform review_sign_in_allowed();
+    raise exception 'FAIL 149a: a visitor asked whether the review sign-in is open';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+  perform auth.login_as('11111111-1111-1111-1111-111111111111');
+  set local role authenticated;
+  begin
+    perform review_sign_in_failed();
+    raise exception 'FAIL 149b: a signed-in account could record a failed review sign-in';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from review_sign_in_failures;
+    raise exception 'FAIL 149c: a signed-in account could clear the review sign-in lock';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+
+  -- Each layer on its own, not only the two together: the functions run with
+  -- the caller's rights, so a stray grant on one is still stopped by the
+  -- table — and a stray grant on the table by the functions. Checked by name,
+  -- so removing either layer fails here even while the other still holds.
+  if has_function_privilege('anon', 'review_sign_in_allowed()', 'execute')
+     or has_function_privilege('authenticated', 'review_sign_in_allowed()', 'execute')
+     or has_function_privilege('anon', 'review_sign_in_failed()', 'execute')
+     or has_function_privilege('authenticated', 'review_sign_in_failed()', 'execute') then
+    raise exception 'FAIL 149h: a browser role can execute a review sign-in function';
+  end if;
+  if has_table_privilege('anon', 'review_sign_in_failures', 'select, insert, update, delete')
+     or has_table_privilege('authenticated', 'review_sign_in_failures', 'select, insert, update, delete') then
+    raise exception 'FAIL 149i: a browser role holds a privilege on review_sign_in_failures';
+  end if;
+
+  -- The worker's role: open, then locked after the fifth wrong code.
+  delete from review_sign_in_failures;
+  set local role service_role;
+  if not review_sign_in_allowed() then
+    raise exception 'FAIL 149d: the review sign-in was locked before anybody guessed';
+  end if;
+  for i in 1..4 loop perform review_sign_in_failed(); end loop;
+  if not review_sign_in_allowed() then
+    raise exception 'FAIL 149e: four wrong codes locked the review sign-in';
+  end if;
+  perform review_sign_in_failed();
+  if review_sign_in_allowed() then
+    raise exception 'FAIL 149f: five wrong codes in an hour did not lock the review sign-in';
+  end if;
+  reset role;
+
+  -- An hour later it opens again.
+  update review_sign_in_failures set at = now() - interval '61 minutes';
+  set local role service_role;
+  if not review_sign_in_allowed() then
+    raise exception 'FAIL 149g: the review sign-in stayed locked after the hour';
+  end if;
+  reset role;
+  delete from review_sign_in_failures;
+
+  raise notice 'PASS 149: the reviewers'' sign-in locks after five wrong codes, and the browser cannot touch it';
+end
+$$;
+reset role;
+
 select 'ALL DATABASE TESTS PASSED' as result;

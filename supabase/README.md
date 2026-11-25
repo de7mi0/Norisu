@@ -501,7 +501,8 @@ select
     where table_name = 'saved_salons')                as "0027 saved salons",
   bool_or(p.proname = 'enqueue_notice')              as "0028 notices",
   bool_or(p.proname = 'salon_time_off')              as "0029 third audit",
-  bool_or(p.proname = 'my_salon_id')                 as "0030 ids, registration, names"
+  bool_or(p.proname = 'my_salon_id')                 as "0030 ids, registration, names",
+  bool_or(p.proname = 'review_sign_in_allowed')      as "0031 reviewer sign-in lock"
 from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public';
@@ -774,6 +775,66 @@ Reading the replies in `net._http_response` (newest first):
 The function's own reply says whether it is on: `"guarded": true` once the
 secret is set. Check it in `net._http_response`, the same place §"If no
 notification arrives at all" points at.
+
+## Signing in app-store reviewers
+
+Apple and Google both sign in to an app before approving it, and Saloni signs
+people in with a code sent to their e-mail — which a reviewer cannot read. A
+reviewer who cannot get in rejects the app. So **one** account, which you
+choose, accepts **one** fixed six-digit code that you give the reviewers.
+Everything else signs in exactly as before, and there is still no password
+anywhere.
+
+It is safe to leave on: the code works for that one account only, five wrong
+tries in an hour from anybody locks it for the hour, it refuses to work if the
+account is ever made an administrator, and without both secrets below it does
+not exist at all.
+
+**Do these in order.**
+
+1. **Choose the review address.** An e-mail address you can read, used for
+   nothing else — e.g. `review@your-domain`, or for now a Gmail alias such as
+   `you+saloni-review@gmail.com`.
+2. **Create the account the ordinary way.** Open the app, Profile → Sign in,
+   enter that address, and type the code that arrives. It must *not* be an
+   administrator — never run the `role = 'admin'` update on it.
+3. **Give it something to review.** Reviewers look at both sides of the app.
+   Signed in as the review account, register a salon named so nobody mistakes
+   it, e.g. *Saloni Demo Salon (test)*, add two services, a stylist and hours.
+   Then from your own admin account, approve and publish it, so the reviewer
+   can also book it as a customer. **Unpublish it after approval** (back office
+   → the salon → Unpublish), so real customers never find it.
+4. **Run migration 0031** (`0031_review_sign_in_lock.sql`): SQL Editor →
+   + New query → paste → Run. `Success. No rows returned` is right.
+5. **Deploy the function.** Edge Functions → **Deploy a new function** → **Via
+   Editor**, name it exactly **`review-sign-in`**, delete what is in the editor,
+   paste all of `supabase/functions/review-sign-in/bundled.ts`, then **Deploy**.
+6. **Set its two secrets.** Edge Functions → **Secrets** → add:
+   - `REVIEW_EMAIL` — the address from step 1
+   - `REVIEW_CODE` — six digits you make up. Not 123456, not your birthday.
+7. **Tell the app the address.** In `.env`, set `VITE_REVIEW_EMAIL=` to the same
+   address and merge (or ask the developer to). The address is not a secret —
+   it opens nothing without the code. The code is: it lives only in step 6 and
+   in the store's review notes, never in the repository.
+8. **Try it yourself:** sign out, Profile → Sign in, the review address, Send
+   code (no e-mail arrives — that is right), then your six digits.
+
+**What to paste into the review notes** (App Store Connect → the version →
+App Review Information → Sign-in required; Google Play Console → App content →
+App access):
+
+> Saloni signs in with a one-time code. For review, use:
+> Profile → Sign in → e-mail `<review address>` → Send code → enter `<code>`.
+> No e-mail is sent to this account; the code above always works for it.
+> To see the salon owner's side, choose "I own a salon" on the first screen
+> while signed in. *Saloni Demo Salon (test)* is a test salon you may book.
+
+If a reviewer reports they could not sign in: check `REVIEW_EMAIL` and
+`REVIEW_CODE` are both set, that the account still exists (a reviewer testing
+**Delete my account** removes it — repeat step 2 and 3), and wait out the hour
+if somebody has been guessing. The function's **Logs** tab shows each attempt's
+answer: `401` wrong code, `429` locked, `403` the account is an administrator,
+`404 review_account_missing` the account does not exist.
 
 ## Turning on notifications
 
@@ -1095,6 +1156,11 @@ about in an hour, default 4) and `app_base_url`, which is where the claim link p
 change that when the app moves off GitHub Pages.
 
 ## Running the tests
+
+**They run on GitHub by themselves now** (`.github/workflows/tests.yml`): on
+every pull request, and before every deploy — a merge that fails them does not
+reach the live site; the Actions tab shows a red cross and the site stays as it
+was. What follows is for running them by hand.
 
 ```bash
 ./scripts/test-db.sh

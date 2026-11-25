@@ -1,0 +1,100 @@
+name: Tests
+
+# Every check this project has, on every pull request — and, through
+# deploy.yml, before every deploy, so a change that fails them never reaches
+# the live site. Until this existed they ran when somebody remembered.
+#
+#   checks     lint, the type check and build (with the secret scan before and
+#              after it), and the small Node suites
+#   database   every assertion in supabase/tests against a real Postgres 16,
+#              with the migrations applied exactly as on Supabase
+#   browser    every file in scripts/browser-tests, in Chromium, split four
+#              ways because one machine takes about twenty-five minutes
+#
+# What none of it can prove: anything about the live Supabase project — its
+# settings, its secrets, its Edge Functions — or a real phone. The browser
+# checks answer Supabase themselves (CLAUDE.md §12).
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request makes the older run pointless.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # tsc -b, the secret scan of the source, vite build, the scan of dist/.
+      - run: npm run build
+      - name: The secret scan catches what it claims to
+        run: node scripts/test-check-secrets.mjs
+      - name: The words a notification carries
+        run: node --experimental-strip-types scripts/test-notification-text.mjs
+      - name: Who the reviewers' sign-in lets in
+        run: node --experimental-strip-types scripts/test-review-sign-in.mjs
+      - name: Open now, in Riyadh time
+        run: node --experimental-strip-types scripts/test-hours.mjs
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Pointing test-db.sh at this server means it starts none of its own.
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/test-db.sh
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Not a dependency on purpose (scripts/browser-tests/README.md), so it is
+      # installed here at the version the checks were written against.
+      - run: npm install --no-save playwright@1.65.1
+      - run: npx playwright install --with-deps chromium
+      - name: Browser checks, share ${{ matrix.shard }} of 4
+        run: |
+          export CHROMIUM="$(node -e "console.log(require('playwright').chromium.executablePath())")"
+          ./scripts/run-browser-tests.sh ${{ matrix.shard }} 4

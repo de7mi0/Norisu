@@ -80,7 +80,9 @@ dashboard rather than assuming. The local test harness runs against Postgres 16,
 
 ```
 .env                          Supabase URL + publishable key (committed on purpose — see §7)
-.github/workflows/deploy.yml  builds and deploys to GitHub Pages on push to the default branch
+.github/workflows/deploy.yml  runs tests.yml, then builds and deploys to GitHub Pages
+.github/workflows/tests.yml   every check: lint, build, Node suites, the database
+                              assertions on Postgres 16, browser checks in 4 shards
 index.html                    fonts, favicon, meta
 scripts/
   test-db.sh                  applies migrations to a throwaway Postgres, runs assertions
@@ -90,7 +92,9 @@ scripts/
   build-function-bundle.sh    inlines the worker into one pasteable file
   check-secrets.mjs           fails the build if a secret is committed or in the site
   test-check-secrets.mjs      13 checks that it catches what it claims to
-  browser-tests/              792 Chromium checks in both languages; see its README
+  browser-tests/              814 Chromium checks in both languages; see its README
+  run-browser-tests.sh        builds, serves and runs them — all, or one CI shard
+  test-review-sign-in.mjs     who the reviewers' sign-in lets in (27 checks)
   test-notification-text.mjs  the words a push carries, in both languages
   test-hours.mjs              "Open now" from a salon's own hours, in Riyadh time
 src/
@@ -211,17 +215,22 @@ supabase/
   migrations/0030_audit_identifiers_registration_names.sql  the rest of it:
                                       reviewer/owner ids hidden, one salon per
                                       account and per CR number, names <= 60
+  migrations/0031_review_sign_in_lock.sql  five wrong reviewer codes an hour,
+                                      counted where no browser role can reach
   migrations/0025_conversations.sql   messages: customer ↔ salon, customer ↔ Saloni.
                                       No table access at all; five functions that
                                       decide the caller's side themselves
   functions/send-notifications/  the worker that drains the outbox; deployed and
                                  scheduled. message.ts is pure and is tested;
                                  bundled.ts is GENERATED, for the dashboard editor
+  functions/review-sign-in/      app-store reviewers' sign-in: one account, one
+                                 fixed code. review.ts decides and is tested;
+                                 bundled.ts is GENERATED, as above
   setup.sql                   GENERATED — every migration concatenated, for one-paste setup
   seed.sql                    4 demo salons, 11 services, 6 staff, opening hours (verified counts)
   email-templates/magic-link.html  the sign-in e-mail; bilingual, carries {{ .Token }}
   tests/00_local_shim.sql     recreates Supabase's auth schema/roles for local testing
-  tests/01_policy_tests.sql   148 assertions
+  tests/01_policy_tests.sql   149 assertions
   README.md                   Supabase setup, approving a salon, applying a later migration
 docs/whatsapp-waitlist-template.md  the message a customer gets when a seat opens,
                               in both languages, plus how to get it approved by Meta
@@ -396,6 +405,17 @@ Auth.tsx  ──dispatch──>  appReducer (authForm: the two steps)
   Giving a name stays optional; the salon sees the booking reference otherwise, because 0005 hands
   it no e-mail or phone number to fall back on. Capped at `NAME_MAX_LENGTH` (60) on the input and
   again on write.
+- **App-store reviewers sign in with a fixed code, to one account only.** A reviewer cannot
+  read the e-mail a passcode goes to, and adding passwords would break the promise above. So
+  for the address in `VITE_REVIEW_EMAIL` the app sends no code and hands the typed one to the
+  `review-sign-in` Edge Function, which checks it against `REVIEW_CODE` (a function secret,
+  never in the repo) and returns an ordinary session. It refuses an administrator account,
+  creates no account, answers a wrong e-mail and a wrong code identically, and locks for an
+  hour after five wrong codes from anybody (0031, assertion 149). Empty `VITE_REVIEW_EMAIL`
+  or a missing secret switches it off. `scripts/test-review-sign-in.mjs` and browser check 25.
+  **Not run against real Supabase**: the function's network half — `generateLink`, the
+  profile read, `verifyOtp` — has only been reasoned about, so the first real test is the
+  owner signing in with it before any submission.
 - **`profiles.locale`** is the one genuinely per-account behaviour today: the account's language
   wins on sign-in, and a later change is written back. Its reconciliation is a **single effect in
   `AppContext.tsx` guarded by a ref**. Split into two effects it races itself and overwrites the
@@ -431,7 +451,7 @@ functions in 0003–0012 —
 `admin_reject_salon()`, `admin_close_salon()`, `admin_set_commission()` and the owner's
 own `my_salon_review()`, and 0025's conversations — `start_conversation()`,
 `post_message()`, `conversation_messages()`, `my_conversations()` and `staff_inbox()`.
-31 RLS policies (plus four on storage.objects). 148 assertions.
+31 RLS policies (plus four on storage.objects). 149 assertions.
 
 **Row policies are not the whole boundary — column privileges are the other half.** 0002 grants
 `insert, update, delete on all tables to authenticated`, which is column-blind, and a policy sees
@@ -666,6 +686,11 @@ disguises, one of them critical:
     limited. A closed salon frees its number. Assertion 147.
 40. **A name is at most 60 characters** in the database, as in the app, and a sign-up's
     metadata name is cut rather than refused. Assertion 148.
+41. **A fixed sign-in code cannot be guessed** (0031). The reviewers' code is six digits, so
+    five wrong attempts in an hour — counted for everybody, because an attacker picks the
+    address — close it for the hour. The count and both functions are reachable by
+    `service_role` alone; assertion 149 checks each layer by name, because either alone
+    still refuses the browser and so a test of the pair could not fail.
 
 **Conventions:**
 - Money is **integer halalas** (`15000` = 150.00 SAR). **Never floats.**
@@ -691,7 +716,7 @@ a Postgres of your own and leaves the starting to you. The server listens on a U
 never on a network port.
 
 It then creates a throwaway database, applies the migrations, runs all
-148 assertions, drops it. Each of 53–148 was checked against a database with its own protection
+149 assertions, drops it. Each of 53–149 was checked against a database with its own protection
 removed, and each fails there — a security assertion that cannot fail is worse than none. `tests/00_local_shim.sql` recreates the `auth` schema, `auth.uid()` and the
 `anon`/`authenticated` roles so policies are exercised exactly as in production. **That shim is
 never applied to Supabase.** After changing anything in `migrations/`, re-run `scripts/build-setup-sql.sh`.
@@ -1220,14 +1245,18 @@ the code before them.
 
 ## 12. Working conventions
 
-- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (148 assertions);
-  UI changes with `scripts/browser-tests/` (792 checks, both languages), and the words a
+- **Verify, don't assume.** DB changes are proven with `./scripts/test-db.sh` (149 assertions);
+  UI changes with `scripts/browser-tests/` (814 checks, both languages), and the words a
   notification carries with `node --experimental-strip-types scripts/test-notification-text.mjs`
   (33 checks, both languages). Do not report something as
   working because the code looks right.
 - **A security assertion that cannot fail is worse than none.** Every assertion from 53 onward was
   run against a database with its own protection removed, and each fails there. Do the same for
   any new one — it takes a minute and it is the difference between a test and a decoration.
+- **They run by themselves now** (`.github/workflows/tests.yml`) on every pull request and
+  before every deploy: `deploy.yml` waits for them, so a merge that fails a check does not
+  reach the site. **Not yet seen running on GitHub** at the time of writing — the first
+  pull request is the test of the workflow itself.
 - **The two suites prove different halves.** The browser checks stub Supabase, so they can say
   nothing about whether a grant or policy would really allow something; the database assertions are
   the evidence for that. Neither substitutes for the other.

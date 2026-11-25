@@ -1,6 +1,6 @@
 # Browser checks
 
-792 checks that drive the built app in real Chromium, in **both languages**, against a
+814 checks that drive the built app in real Chromium, in **both languages**, against a
 fake Supabase. They exist because `CLAUDE.md` §12 says UI changes are driven in a
 browser before being called done — and because several real bugs in this project were
 found here rather than by reading the code: an action bar that scrolled over the slot
@@ -32,6 +32,7 @@ scrambled inside Arabic text.
 | `22-back-to-start.mjs` | "Back to start" on the customer and salon sides opens the opening screen, not the other side |
 | `23-security-policy.mjs` | The site's Content-Security-Policy: browsing both sides meets no violation, a Supabase photograph still loads, and an injected script, a foreign script, sending data elsewhere and code built from a string are each refused. 16 of 20 fail against the same build with the policy removed |
 | `24-owner-finds-salon.mjs` | How the portal finds the owner's salon after 0030 hid `owner_id`: through `my_salon_id()`, still through the old filter before the migration is applied, and nothing invented for an account that owns none. The app before this change fails 8 of 14 |
+| `25-review-sign-in.mjs` | The app-store reviewers' sign-in: the review address is sent no e-mail, its code goes to the `review-sign-in` function and the session it returns is kept, a wrong code and a locked hour read like any other, and every other address still signs in through Supabase. Needs a build with `VITE_REVIEW_EMAIL` set; `run-browser-tests.sh` makes one. The app before it fails 14 of 22 |
 | `15-search.mjs` | Finding a salon by name on Explore, the Arabic folding that decides whether the field feels like it works, and that a district or a tag is **not** matched |
 
 `11-commission.mjs` has three checks worth more than the rest, and none of them is about
@@ -91,6 +92,13 @@ no subscription ever saved, which left six waitlist offers producing nothing and
 anywhere. It was confirmed to fail against the code that had the bug before being trusted.
 
 ## Running them
+
+**The simple way:** `./scripts/run-browser-tests.sh` builds the app twice (once
+with `VITE_REVIEW_EMAIL` set, for check 25), serves both, runs every file and
+exits non-zero if any failed. `./scripts/run-browser-tests.sh 2 4` runs the
+second quarter only — GitHub runs the four quarters at once on every pull
+request and before every deploy (`.github/workflows/tests.yml`). The steps
+below are what it does, for running one file by hand.
 
 Playwright is **not** a dependency — it is installed ad hoc, because CI does not run
 these and adding it would put a browser download in every `npm install`:

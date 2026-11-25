@@ -17,7 +17,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every check first (tests.yml). If any fails, nothing below runs and the
+  # site stays as it was — a broken merge costs a red cross, not a broken app.
+  tests:
+    uses: ./.github/workflows/tests.yml
+
   build:
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
